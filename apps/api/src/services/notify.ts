@@ -22,6 +22,8 @@ export const NOTIFICATION_EVENTS = [
   { event: 'lead_assigned', label: 'Lead assigned to you', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
   { event: 'registration_expiring', label: 'Deal registration expiring', thresholdDays: 30, defaults: { inApp: true, email: true, teams: true } },
   { event: 'registration_expired', label: 'Deal registration expired', thresholdDays: 0, defaults: { inApp: true, email: true, teams: true } },
+  { event: 'renewal_due', label: 'Subscription coming up for renewal', thresholdDays: 90, defaults: { inApp: true, email: true, teams: true } },
+  { event: 'renewal_lapsed', label: 'Subscription lapsed without renewal', thresholdDays: 0, defaults: { inApp: true, email: true, teams: true } },
   { event: 'approval_requested', label: 'Approval requested', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
   { event: 'approval_decided', label: 'Approval granted or rejected', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
   { event: 'quote_accepted', label: 'Quote accepted', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },

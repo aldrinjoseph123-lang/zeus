@@ -40,6 +40,7 @@ model User {
   ownedContacts         Contact[]       @relation("ContactOwner")
   ownedLeads            Lead[]          @relation("LeadOwner")
   ownedDeals            Deal[]          @relation("DealOwner")
+  ownedSubscriptions    Subscription[]  @relation("SubscriptionOwner")
   activities            Activity[]      @relation("ActivityOwner")
   createdActivities     Activity[]      @relation("ActivityCreator")
   auditLogs             AuditLog[]
@@ -139,6 +140,8 @@ model Account {
   activities         Activity[]
   attachments        Attachment[]
   convertedFromLeads Lead[]
+  subscriptions      Subscription[]
+  vendorSubscriptions Subscription[] @relation("SubscriptionVendor")
 
   @@index([domain])
   @@index([type])
@@ -339,6 +342,8 @@ model Deal {
 
   ownerId String?
   owner   User?   @relation("DealOwner", fields: [ownerId], references: [id])
+  soldSubscriptions    Subscription[] @relation("SubscriptionSourceDeal")
+  renewingSubscriptions Subscription[] @relation("SubscriptionRenewalDeal")
 
   /// Manager sign-off. The record cannot take its next irreversible step — a deal
   /// closing won, a PO going to the supplier, an invoice going to the customer —
@@ -450,6 +455,90 @@ model DealRegistration {
   @@index([side, status])
 }
 
+// ---------------------------------------------------------------- renewals
+
+/// Where an entitlement sits in its life. EXPIRING is derived nightly rather than
+/// typed, so the list a rep works from is never stale.
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRING
+  RENEWED
+  LAPSED
+  CANCELLED
+}
+
+/// What a customer actually owns, and until when.
+///
+/// A reseller's income is mostly re-sold time: licences and managed services that end
+/// on a date. Deals and invoices record that something was sold; this records that it
+/// is still running, what it is worth, and when it has to be sold again. Without it an
+/// expiry is invisible until the customer has already gone elsewhere.
+model Subscription {
+  id          String             @id @default(cuid())
+  /// Human reference, e.g. ZEU-SUB-000042.
+  reference   String             @unique
+  accountId   String
+  account     Account            @relation(fields: [accountId], references: [id])
+  productId   String?
+  product     Product?           @relation(fields: [productId], references: [id])
+  /// Kept even when a product is linked: the line as sold, which may differ from the
+  /// catalogue name a year later.
+  description String
+  vendorId    String?
+  vendor      Account?           @relation("SubscriptionVendor", fields: [vendorId], references: [id])
+
+  quantity    Decimal            @default(1) @db.Decimal(12, 2)
+  unit        String             @default("licence")
+  /// Per-unit sell and buy for one term, so renewal quotes start from real numbers.
+  unitPrice   Decimal            @default(0) @db.Decimal(14, 2)
+  unitCost    Decimal            @default(0) @db.Decimal(14, 2)
+  currency    String             @default("AED")
+  /// quantity x unitPrice, stored so the renewals list can sum without joining lines.
+  termValue   Decimal            @default(0) @db.Decimal(14, 2)
+  termCost    Decimal            @default(0) @db.Decimal(14, 2)
+
+  startDate   DateTime
+  endDate     DateTime
+  termMonths  Int                @default(12)
+  autoRenew   Boolean            @default(true)
+  status      SubscriptionStatus @default(ACTIVE)
+
+  /// Where it came from, so the paper trail runs both ways.
+  sourceInvoiceId String?
+  sourceInvoice   Invoice?       @relation("SubscriptionSource", fields: [sourceInvoiceId], references: [id])
+  sourceDealId    String?
+  sourceDeal      Deal?          @relation("SubscriptionSourceDeal", fields: [sourceDealId], references: [id])
+
+  /// The renewal opportunity Zeus opened for it, and the term it replaced.
+  renewalDealId String?
+  renewalDeal   Deal?            @relation("SubscriptionRenewalDeal", fields: [renewalDealId], references: [id])
+  renewedFromId String?          @unique
+  renewedFrom   Subscription?    @relation("RenewalChain", fields: [renewedFromId], references: [id])
+  renewedTo     Subscription?    @relation("RenewalChain")
+
+  /// Licence key, vendor contract number, support ID — whatever the renewal needs.
+  vendorRef   String?
+  notes       String?
+  cancelReason String?
+  /// Set when the renewal deal was opened, so the job never opens two.
+  renewalOpenedAt DateTime?
+  /// Last time someone was told this is coming up, per reminder step.
+  lastRemindedDays Int?
+
+  ownerId     String?
+  owner       User?              @relation("SubscriptionOwner", fields: [ownerId], references: [id])
+  customFields Json              @default("{}")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+
+  @@index([accountId])
+  @@index([endDate])
+  @@index([status, endDate])
+  @@index([ownerId])
+  @@index([vendorId])
+}
+
 // ---------------------------------------------------------------- catalog & money
 
 enum ProductType {
@@ -481,6 +570,7 @@ model Product {
   quoteLines   QuoteLine[]
   invoiceLines InvoiceLine[]
   poLines      PurchaseOrderLine[]
+  subscriptions Subscription[]
 
   @@index([category])
   @@index([vendorId])
@@ -620,6 +710,8 @@ model Invoice {
   approvalDecidedBy   User?          @relation("InvoiceApprover", fields: [approvalDecidedById], references: [id])
   /// Why it was rejected, or a condition attached to the approval.
   approvalNote        String?
+
+  subscriptions Subscription[] @relation("SubscriptionSource")
 
   status     InvoiceStatus @default(DRAFT)
   issueDate  DateTime      @default(now())

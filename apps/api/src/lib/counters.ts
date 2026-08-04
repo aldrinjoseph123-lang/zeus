@@ -5,7 +5,7 @@ import { getSetting } from './settings.js';
  * Gap-free reference numbers (ZEU-D-000142). The atomic `update ... returning`
  * is what stops two reps creating the same reference on a double-click.
  */
-export type ReferenceKind = 'deal' | 'quote' | 'invoice' | 'creditNote' | 'purchaseOrder';
+export type ReferenceKind = 'deal' | 'quote' | 'invoice' | 'creditNote' | 'purchaseOrder' | 'subscription';
 
 export async function nextReference(kind: ReferenceKind): Promise<string> {
   const prefixKey = {
@@ -14,6 +14,7 @@ export async function nextReference(kind: ReferenceKind): Promise<string> {
     invoice: 'numbering.invoicePrefix',
     creditNote: 'numbering.creditNotePrefix',
     purchaseOrder: 'numbering.poPrefix',
+    subscription: 'numbering.subscriptionPrefix',
   }[kind];
   const [prefix, padding] = await Promise.all([
     getSetting<string>(prefixKey),

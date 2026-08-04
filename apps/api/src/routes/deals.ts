@@ -12,6 +12,7 @@ import { getSetting, vatRate } from '../lib/settings.js';
 import { notify } from '../services/notify.js';
 import { mailPartnerAboutRegistration } from '../services/registrations.js';
 import { approvalRequired, blockedReason } from '../services/approvals.js';
+import { markRenewed } from '../services/renewals.js';
 import { touch } from '../lib/touch.js';
 
 const dealSchema = z.object({
@@ -400,6 +401,12 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     }
 
     await touch({ accountId: deal.accountId });
+
+    // Winning a renewal closes the old term and starts the next one, so the chain
+    // stays unbroken without anyone re-keying dates.
+    if (status === 'WON') {
+      await markRenewed(id).catch((err) => console.error('[renewals] could not roll the term forward:', (err as Error).message));
+    }
 
     if (status !== 'OPEN') {
       const facts = [

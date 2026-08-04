@@ -4,6 +4,7 @@ import { getSetting } from '../lib/settings.js';
 import { notify } from '../services/notify.js';
 import { runBackup } from '../services/backup.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
+import { sweepRenewals } from '../services/renewals.js';
 import { formatAed } from '../lib/money.js';
 
 /**
@@ -406,6 +407,10 @@ export function startScheduler(): void {
     await safely('staleAccounts', staleAccounts);
     await safely('stuckDeals', stuckDeals);
     await safely('expiringRegistrations', expiringRegistrations);
+    await safely('renewals', async () => {
+      const { opened, reminded, lapsed } = await sweepRenewals();
+      if (opened || reminded || lapsed) console.log(`[scheduler] renewals: ${opened} opened, ${reminded} reminded, ${lapsed} lapsed`);
+    });
     await safely('overdueInvoices', overdueInvoices);
     await safely('paymentsDueSoon', paymentsDueSoon);
     await safely('overduePayables', overduePayables);

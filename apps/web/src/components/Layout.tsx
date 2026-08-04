@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Bell, Building2, ClipboardList, Contact2, FileText, Gauge, LayoutGrid, LogOut, Menu, Package, Undo2,
+  Bell, Building2, CalendarClock, ClipboardList, Contact2, FileText, Gauge, LayoutGrid, LogOut, Menu, Package, Undo2,
   Receipt, ScrollText, Settings as SettingsIcon, ShieldCheck, Target, Upload, UserRound, Users, } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -41,6 +41,7 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
       { to: '/quotes', label: 'Quotes', icon: FileText, module: 'quotes' },
       { to: '/purchase-orders', label: 'Purchase orders', icon: ScrollText, module: 'invoices' },
       { to: '/invoices', label: 'Invoices', icon: Receipt, module: 'invoices' },
+      { to: '/renewals', label: 'Renewals', icon: CalendarClock, module: 'deals' },
       { to: '/products', label: 'Catalog', icon: Package, module: 'products' },
     ],
   },

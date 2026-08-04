@@ -4,6 +4,7 @@ import { extractDomain, normalizeCompany } from './services/dedupe.js';
 import { parseCsv } from './services/xlsx.js';
 import { buildCard } from './services/teams.js';
 import { alertText, normalizeNumber } from './services/whatsapp.js';
+import { addMonths, termEnd } from './services/renewals.js';
 import { MODULES, SYSTEM_ROLES, can, type SessionUser, maskFields, stripUnwritableFields } from './auth/rbac.js';
 
 /**
@@ -246,6 +247,41 @@ check('the shipped roles put sign-off with the managers', () => {
     assert.equal(can(roleByName('Sales Executive'), module, 'approve'), false);
     assert.equal(can(roleByName('Read Only'), module, 'approve'), false);
   }
+});
+
+// ── renewals ──────────────────────────────────────────────────────────────────
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+check('a term ends on the same day of the month it started', () => {
+  assert.equal(iso(addMonths(new Date('2026-03-15T00:00:00Z'), 12)), '2027-03-15');
+  assert.equal(iso(addMonths(new Date('2026-03-15T00:00:00Z'), 1)), '2026-04-15');
+  assert.equal(iso(addMonths(new Date('2026-08-04T00:00:00Z'), 36)), '2029-08-04');
+});
+
+check('a term starting on a long month end clamps instead of overflowing', () => {
+  // 31 Jan + 1 month is 28 Feb, not 3 March — a naive setMonth gets this wrong and
+  // every downstream expiry date is then a few days late.
+  assert.equal(iso(addMonths(new Date('2026-01-31T00:00:00Z'), 1)), '2026-02-28');
+  assert.equal(iso(addMonths(new Date('2028-01-31T00:00:00Z'), 1)), '2028-02-29', 'leap year');
+  assert.equal(iso(addMonths(new Date('2026-05-31T00:00:00Z'), 1)), '2026-06-30');
+  assert.equal(iso(addMonths(new Date('2026-12-31T00:00:00Z'), 2)), '2027-02-28');
+});
+
+check('cover ends the day before the anniversary, as a vendor quotes it', () => {
+  assert.equal(iso(termEnd(new Date('2026-01-01T00:00:00Z'), 12)), '2026-12-31');
+  assert.equal(iso(termEnd(new Date('2026-03-15T00:00:00Z'), 12)), '2027-03-14');
+  assert.equal(iso(termEnd(new Date('2026-08-04T00:00:00Z'), 1)), '2026-09-03');
+});
+
+check('a renewal chain never leaves a gap, an overlap, or drifts', () => {
+  // Each term starts the day after the last one ended. Three annual renewals must
+  // still land on the original anniversary — taking the anniversary itself as the end
+  // date would push every term a day later than the one before it.
+  let start = new Date('2026-01-01T00:00:00Z');
+  for (let year = 0; year < 3; year++) {
+    start = new Date(termEnd(start, 12).getTime() + 86_400_000);
+  }
+  assert.equal(iso(start), '2029-01-01');
 });
 
 // ── WhatsApp ──────────────────────────────────────────────────────────────────

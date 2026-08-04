@@ -50,6 +50,7 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'numbering.invoicePrefix': 'ZEU-INV-',
   'numbering.creditNotePrefix': 'ZEU-CN-',
   'numbering.poPrefix': 'ZEU-PO-',
+  'numbering.subscriptionPrefix': 'ZEU-SUB-',
   'numbering.padding': 6,
 
   'pipeline.staleAccountDays': 7,
@@ -80,6 +81,19 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   /// small team where the manager carries a bag too, that would deadlock — switch this
   /// on and the audit trail carries who approved what instead.
   'approvals.allowSelfApproval': false,
+
+  /// Renewals. A reseller's income is mostly re-sold time, so an expiry has to become
+  /// a piece of work before it becomes a lost customer.
+  /// Days before expiry that Zeus opens the renewal opportunity.
+  'renewals.leadDays': 90,
+  /// Days before expiry someone gets told. Each step fires once per subscription.
+  'renewals.reminderDays': [90, 30, 7],
+  /// Turn an issued invoice's termed lines into entitlements automatically.
+  'renewals.autoCreateFromInvoice': true,
+  /// Standard uplift applied to the renewal opportunity's value, in percent.
+  'renewals.upliftPct': 0,
+  /// Source recorded on renewal deals, so the pipeline can be split new vs renewal.
+  'renewals.dealSource': 'Renewal',
 
   /// How far back the undo button reaches. Past this the change stands and has to be
   /// corrected by hand — undo is a safety net for a mis-click, not a time machine.

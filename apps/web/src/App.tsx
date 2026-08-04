@@ -23,6 +23,7 @@ import Products from './pages/Products';
 import Reports from './pages/Reports';
 import Imports from './pages/Imports';
 import Settings from './pages/Settings';
+import Renewals from './pages/Renewals';
 
 /** Gate a route on a module permission rather than hiding it silently. */
 function Guard({ module, children }: { module: string; children: JSX.Element }) {
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="contacts" element={<Guard module="contacts"><Contacts /></Guard>} />
         <Route path="activities" element={<Guard module="activities"><Activities /></Guard>} />
 
+        <Route path="renewals" element={<Guard module="deals"><Renewals /></Guard>} />
         <Route path="quotes" element={<Guard module="quotes"><Quotes /></Guard>} />
         <Route path="quotes/new" element={<Guard module="quotes"><QuoteEditor /></Guard>} />
         <Route path="quotes/:id" element={<Guard module="quotes"><QuoteEditor /></Guard>} />

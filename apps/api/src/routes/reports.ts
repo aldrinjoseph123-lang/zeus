@@ -699,6 +699,58 @@ export const REPORTS: ReportDef[] = [
       };
     },
   },
+  {
+    key: 'renewals',
+    name: 'Renewals pipeline',
+    description: 'What is under cover, when it expires, and whether anyone is working it.',
+    module: 'deals',
+    columns: [
+      { key: 'reference', label: 'Ref', width: 95 },
+      { key: 'account', label: 'Customer' },
+      { key: 'description', label: 'Entitlement' },
+      { key: 'vendor', label: 'Vendor', width: 100 },
+      { key: 'quantity', label: 'Qty', width: 55, align: 'right' },
+      { key: 'endDate', label: 'Expires', width: 85, format: 'date' },
+      { key: 'daysLeft', label: 'Days', width: 55, align: 'right' },
+      { key: 'termValue', label: 'Term value', width: 100, align: 'right', format: 'money' },
+      { key: 'status', label: 'Status', width: 80 },
+      { key: 'renewal', label: 'Renewal deal', width: 110 },
+      { key: 'owner', label: 'Owner', width: 110 },
+    ],
+    run: async () => {
+      const subs = await prisma.subscription.findMany({
+        where: { deletedAt: null, status: { not: 'CANCELLED' } },
+        include: { account: true, vendor: true, owner: true, renewalDeal: { select: { reference: true, status: true } } },
+        orderBy: { endDate: 'asc' },
+      });
+      const live = subs.filter((s) => s.status === 'ACTIVE' || s.status === 'EXPIRING');
+      const soon = live.filter((s) => {
+        const left = s.endDate.getTime() - Date.now();
+        return left > 0 && left < 90 * 86_400_000;
+      });
+      return {
+        rows: subs.map((s) => ({
+          reference: s.reference,
+          account: s.account.name,
+          description: s.description,
+          vendor: s.vendor?.name ?? '',
+          quantity: num(s.quantity),
+          endDate: s.endDate,
+          daysLeft: Math.ceil((s.endDate.getTime() - Date.now()) / 86_400_000),
+          termValue: num(s.termValue),
+          status: s.status,
+          renewal: s.renewalDeal ? `${s.renewalDeal.reference} (${s.renewalDeal.status})` : 'not opened',
+          owner: s.owner?.name ?? '',
+        })),
+        summary: [
+          ['Under cover', String(live.length)],
+          ['Annual value', aed(live.reduce((sum, s) => sum + num(s.termValue), 0))],
+          ['Expiring in 90d', aed(soon.reduce((sum, s) => sum + num(s.termValue), 0))],
+          ['Unworked', String(soon.filter((s) => !s.renewalDealId).length)],
+        ],
+      };
+    },
+  },
 ];
 
 async function buildContext(request: FastifyRequest): Promise<ReportContext> {

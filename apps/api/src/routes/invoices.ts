@@ -13,6 +13,7 @@ import { sendMail } from '../services/graph.js';
 import { emailTemplate } from '../services/notify.js';
 import { touch } from '../lib/touch.js';
 import { approvalRequired, blockedReason } from '../services/approvals.js';
+import { createFromInvoice } from '../services/renewals.js';
 
 const lineSchema = z.object({
   productId: z.string().optional().nullable(),
@@ -253,6 +254,14 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
       const blocking = gaps.filter((g) => g.includes('no line items') || g.includes('must reference'));
       if (blocking.length) throw badRequest(blocking[0]);
       await snapshotParties(id);
+    }
+
+    // Issuing the invoice is the moment the customer owns what is on it, so termed
+    // lines become entitlements with an expiry Zeus will chase.
+    if (status === 'SENT' && existing.status === 'DRAFT' && (await getSetting<boolean>('renewals.autoCreateFromInvoice', true))) {
+      const made = await createFromInvoice(id, request.user.id)
+        .catch((err) => { console.error('[renewals] could not create entitlements:', (err as Error).message); return 0; });
+      if (made) app.log.info(`created ${made} entitlement(s) from ${existing.number}`);
     }
 
     const invoice = await prisma.invoice.update({
