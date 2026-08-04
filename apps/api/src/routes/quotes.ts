@@ -1,0 +1,447 @@
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { prisma, num } from '../db.js';
+import { audit, undoHardDelete } from '../lib/audit.js';
+import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { maskFields } from '../auth/rbac.js';
+import { nextReference } from '../lib/counters.js';
+import { formatAed, lineTotals, taxDocumentTotals } from '../lib/money.js';
+import { getSetting, vatRate } from '../lib/settings.js';
+import { recalcInvoice, snapshotParties } from '../lib/commercial.js';
+import { quotePdf, type QuotePdfData } from '../services/pdf.js';
+import { sendMail } from '../services/graph.js';
+import { notify, emailTemplate } from '../services/notify.js';
+import { touch } from '../lib/touch.js';
+
+const lineSchema = z.object({
+  id: z.string().optional(),
+  productId: z.string().optional().nullable(),
+  description: z.string().min(1, 'Every line needs a description.'),
+  quantity: z.number().positive('Quantity must be greater than zero.').default(1),
+  unit: z.string().default('licence'),
+  unitPrice: z.number().nonnegative().default(0),
+  unitCost: z.number().nonnegative().default(0),
+  discountPct: z.number().min(0).max(100).default(0),
+  taxable: z.boolean().default(true),
+  termMonths: z.number().int().positive().optional().nullable(),
+});
+
+const quoteSchema = z.object({
+  dealId: z.string().optional().nullable(),
+  accountId: z.string().min(1, 'Pick the customer.'),
+  contactId: z.string().optional().nullable(),
+  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']).optional(),
+  issueDate: z.string().optional(),
+  validUntil: z.string().optional().nullable(),
+  discountPct: z.number().min(0).max(100).optional(),
+  vatRate: z.number().min(0).max(100).optional(),
+  terms: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  lines: z.array(lineSchema).default([]),
+});
+
+const quoteInclude = {
+  account: true,
+  contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+  deal: { select: { id: true, reference: true, name: true } },
+  preparedBy: { select: { id: true, name: true, email: true, phone: true } },
+  lines: { orderBy: { order: 'asc' as const } },
+};
+
+/** Recompute every derived money field from the lines. Never trust client totals. */
+async function recalcQuote(quoteId: string): Promise<void> {
+  const quote = await prisma.quote.findUnique({ where: { id: quoteId }, include: { lines: true } });
+  if (!quote) return;
+
+  // Same per-line rounding as invoices and purchase orders, so an accepted quote
+  // and the invoice raised from it can never differ by a fil.
+  const totals = taxDocumentTotals(
+    quote.lines.map((l) => ({
+      quantity: num(l.quantity),
+      unitPrice: num(l.unitPrice),
+      unitCost: num(l.unitCost),
+      discountPct: num(l.discountPct),
+      taxable: l.taxable,
+    })),
+    { headerDiscountPct: num(quote.discountPct), defaultVatRate: num(quote.vatRate) },
+  );
+
+  await prisma.quote.update({
+    where: { id: quoteId },
+    data: {
+      subtotal: totals.subtotal,
+      discountAmt: totals.discountAmt,
+      vatAmount: totals.vatAmount,
+      total: totals.total,
+      totalCost: totals.totalCost,
+      marginAmount: totals.marginAmount,
+    },
+  });
+
+  // Keep the parent deal's headline figure in step with its accepted/latest quote.
+  if (quote.dealId) {
+    const net = totals.netAfterDiscount;
+    await prisma.deal.update({
+      where: { id: quote.dealId },
+      data: {
+        amount: net,
+        vatRate: quote.vatRate,
+        vatAmount: totals.vatAmount,
+        totalAmount: totals.total,
+        cost: totals.totalCost,
+      },
+    });
+  }
+}
+
+export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/quotes', { preHandler: requirePermission('quotes', 'read') }, async (request) => {
+    const params = listParams(request.query as Record<string, unknown>, 'createdAt');
+    const where: Record<string, unknown> = {};
+    if (params.filters.status) where.status = params.filters.status;
+    if (params.filters.accountId) where.accountId = params.filters.accountId;
+    if (params.filters.dealId) where.dealId = params.filters.dealId;
+    if (params.search) {
+      where.OR = [
+        { number: { contains: params.search, mode: 'insensitive' } },
+        { account: { name: { contains: params.search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.quote.findMany({
+        where,
+        include: {
+          account: { select: { id: true, name: true } },
+          deal: { select: { id: true, reference: true } },
+          preparedBy: { select: { id: true, name: true } },
+        },
+        orderBy: orderBy(params, ['number', 'createdAt', 'total', 'status', 'validUntil'], 'createdAt'),
+        skip: params.skip,
+        take: params.take,
+      }),
+      prisma.quote.count({ where }),
+    ]);
+    return paged(maskFields(request.user, 'quotes', data), total, params);
+  });
+
+  app.get('/api/quotes/:id', { preHandler: requirePermission('quotes', 'read') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
+    if (!quote) throw notFound('Quote not found.');
+    return maskFields(request.user, 'quotes', quote);
+  });
+
+  app.post('/api/quotes', { preHandler: requirePermission('quotes', 'create') }, async (request, reply) => {
+    const parsed = quoteSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
+    const body = parsed.data;
+
+    const [defaultVat, validDays, defaultTerms] = await Promise.all([
+      vatRate(),
+      getSetting<number>('finance.quoteValidDays', 30),
+      getSetting<string>('finance.quoteTerms', ''),
+    ]);
+
+    const quote = await prisma.quote.create({
+      data: {
+        number: await nextReference('quote'),
+        dealId: body.dealId ?? null,
+        accountId: body.accountId,
+        contactId: body.contactId ?? null,
+        status: body.status ?? 'DRAFT',
+        issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
+        validUntil: body.validUntil ? new Date(body.validUntil) : new Date(Date.now() + Number(validDays) * 86_400_000),
+        discountPct: body.discountPct ?? 0,
+        vatRate: body.vatRate ?? defaultVat,
+        terms: body.terms ?? defaultTerms,
+        notes: body.notes ?? null,
+        preparedById: request.user.id,
+        lines: {
+          create: body.lines.map((line, index) => {
+            const t = lineTotals(line);
+            return { ...line, id: undefined, order: index, lineTotal: t.lineTotal, lineCost: t.lineCost };
+          }),
+        },
+      },
+    });
+
+    await recalcQuote(quote.id);
+    await touch({ accountId: body.accountId, dealId: body.dealId });
+    await audit({ user: request.user, action: 'create', entity: 'Quote', entityId: quote.id, summary: quote.number, ip: clientIp(request) });
+
+    const full = await prisma.quote.findUnique({ where: { id: quote.id }, include: quoteInclude });
+    return reply.status(201).send(maskFields(request.user, 'quotes', full));
+  });
+
+  app.patch('/api/quotes/:id', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const existing = await prisma.quote.findUnique({ where: { id } });
+    if (!existing) throw notFound('Quote not found.');
+    if (existing.status === 'ACCEPTED') throw badRequest('An accepted quote is locked. Create a new version instead.');
+
+    const parsed = quoteSchema.partial().safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
+    const { lines, ...body } = parsed.data;
+
+    await prisma.quote.update({
+      where: { id },
+      data: {
+        ...body,
+        issueDate: body.issueDate ? new Date(body.issueDate) : undefined,
+        validUntil: body.validUntil !== undefined ? (body.validUntil ? new Date(body.validUntil) : null) : undefined,
+      } as never,
+    });
+
+    // Lines are replaced wholesale — simpler and safer than diffing an editable grid.
+    if (lines) {
+      await prisma.quoteLine.deleteMany({ where: { quoteId: id } });
+      await prisma.quoteLine.createMany({
+        data: lines.map((line, index) => {
+          const t = lineTotals(line);
+          return { ...line, id: undefined, quoteId: id, order: index, lineTotal: t.lineTotal, lineCost: t.lineCost };
+        }),
+      });
+    }
+
+    await recalcQuote(id);
+    await audit({ user: request.user, action: 'update', entity: 'Quote', entityId: id, summary: existing.number, ip: clientIp(request) });
+    const full = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
+    return maskFields(request.user, 'quotes', full);
+  });
+
+  /** New version of an existing quote — keeps the old one for the audit trail. */
+  app.post('/api/quotes/:id/revise', { preHandler: requirePermission('quotes', 'create') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const source = await prisma.quote.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
+    if (!source) throw notFound('Quote not found.');
+
+    const copy = await prisma.quote.create({
+      data: {
+        number: source.number,
+        version: source.version + 1,
+        dealId: source.dealId,
+        accountId: source.accountId,
+        contactId: source.contactId,
+        status: 'DRAFT',
+        validUntil: source.validUntil,
+        discountPct: source.discountPct,
+        vatRate: source.vatRate,
+        terms: source.terms,
+        notes: source.notes,
+        preparedById: request.user.id,
+        lines: {
+          create: source.lines.map((l) => ({
+            productId: l.productId, order: l.order, description: l.description, quantity: l.quantity,
+            unit: l.unit, unitPrice: l.unitPrice, unitCost: l.unitCost, discountPct: l.discountPct,
+            taxable: l.taxable, lineTotal: l.lineTotal, lineCost: l.lineCost, termMonths: l.termMonths,
+          })),
+        },
+      },
+    }).catch(async () => {
+      // `number` is unique — a revision gets its own number rather than colliding.
+      return prisma.quote.create({
+        data: {
+          number: await nextReference('quote'),
+          version: source.version + 1,
+          dealId: source.dealId,
+          accountId: source.accountId,
+          contactId: source.contactId,
+          status: 'DRAFT',
+          validUntil: source.validUntil,
+          discountPct: source.discountPct,
+          vatRate: source.vatRate,
+          terms: source.terms,
+          notes: source.notes,
+          preparedById: request.user.id,
+          lines: {
+            create: source.lines.map((l) => ({
+              productId: l.productId, order: l.order, description: l.description, quantity: l.quantity,
+              unit: l.unit, unitPrice: l.unitPrice, unitCost: l.unitCost, discountPct: l.discountPct,
+              taxable: l.taxable, lineTotal: l.lineTotal, lineCost: l.lineCost, termMonths: l.termMonths,
+            })),
+          },
+        },
+      });
+    });
+
+    await recalcQuote(copy.id);
+    await audit({ user: request.user, action: 'create', entity: 'Quote', entityId: copy.id, summary: `Revision of ${source.number}`, ip: clientIp(request) });
+    return reply.status(201).send(await prisma.quote.findUnique({ where: { id: copy.id }, include: quoteInclude }));
+  });
+
+  app.post('/api/quotes/:id/status', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const { status } = z.object({ status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']) }).parse(request.body);
+
+    const quote = await prisma.quote.update({
+      where: { id },
+      data: {
+        status,
+        sentAt: status === 'SENT' ? new Date() : undefined,
+        acceptedAt: status === 'ACCEPTED' ? new Date() : undefined,
+      },
+      include: { account: true, deal: true },
+    });
+
+    if (status === 'ACCEPTED') {
+      await notify({
+        event: 'quote_accepted',
+        title: `Quote accepted — ${quote.number}`,
+        body: `${quote.account.name} · ${formatAed(num(quote.total))} incl. VAT`,
+        link: quote.dealId ? `/deals/${quote.dealId}` : `/quotes/${quote.id}`,
+        ownerId: quote.deal?.ownerId ?? quote.preparedById,
+        facts: [
+          { title: 'Customer', value: quote.account.name },
+          { title: 'Total', value: formatAed(num(quote.total)) },
+        ],
+      });
+    }
+
+    await audit({ user: request.user, action: 'update', entity: 'Quote', entityId: id, summary: `${quote.number} → ${status}`, ip: clientIp(request) });
+    return maskFields(request.user, 'quotes', quote);
+  });
+
+  app.delete('/api/quotes/:id', { preHandler: requirePermission('quotes', 'delete') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const existing = await prisma.quote.findUnique({ where: { id }, include: { lines: true } });
+    if (!existing) throw notFound('Quote not found.');
+    if (existing.status === 'ACCEPTED') throw badRequest('An accepted quote cannot be deleted.');
+    await prisma.quote.delete({ where: { id } });
+    const undoId = await audit({
+      user: request.user, action: 'delete', entity: 'Quote', entityId: id, summary: existing.number,
+      // A quote without its lines is not a restored quote.
+      undo: undoHardDelete('quote', 'quotes', id, existing, { children: { lines: existing.lines } }),
+      ip: clientIp(request),
+    });
+    return { ok: true, undoId };
+  });
+
+  app.get('/api/quotes/:id/pdf', { preHandler: requirePermission('quotes', 'read') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
+    if (!quote) throw notFound('Quote not found.');
+
+    const pdf = await quotePdf(quote as unknown as QuotePdfData);
+    return reply
+      .header('content-type', 'application/pdf')
+      .header('content-disposition', `attachment; filename="${quote.number}.pdf"`)
+      .send(pdf);
+  });
+
+  /** Email the quote PDF from the shared mailbox and mark it sent. */
+  app.post('/api/quotes/:id/send', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const schema = z.object({
+      to: z.array(z.string().email()).min(1, 'Add at least one recipient.'),
+      cc: z.array(z.string().email()).optional(),
+      subject: z.string().optional(),
+      message: z.string().optional(),
+    });
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
+    if (!quote) throw notFound('Quote not found.');
+
+    const pdf = await quotePdf(quote as unknown as QuotePdfData);
+    const subject = parsed.data.subject ?? `Quotation ${quote.number} — ${quote.account.name}`;
+
+    await sendMail({
+      to: parsed.data.to,
+      cc: parsed.data.cc,
+      subject,
+      html: emailTemplate(
+        subject,
+        parsed.data.message ?? `Please find attached quotation ${quote.number} for ${formatAed(num(quote.total))} including VAT.`,
+        undefined,
+        [
+          { title: 'Quotation', value: quote.number },
+          { title: 'Total', value: formatAed(num(quote.total)) },
+          { title: 'Valid until', value: quote.validUntil ? new Date(quote.validUntil).toLocaleDateString('en-GB') : '—' },
+        ],
+      ),
+      attachments: [{ filename: `${quote.number}.pdf`, contentBytes: pdf.toString('base64'), contentType: 'application/pdf' }],
+    });
+
+    await prisma.quote.update({ where: { id }, data: { status: 'SENT', sentAt: new Date() } });
+    await prisma.activity.create({
+      data: {
+        type: 'EMAIL',
+        subject: `Sent quotation ${quote.number}`,
+        description: `To: ${parsed.data.to.join(', ')}`,
+        status: 'Completed',
+        completedAt: new Date(),
+        accountId: quote.accountId,
+        dealId: quote.dealId,
+        contactId: quote.contactId,
+        ownerId: request.user.id,
+        createdById: request.user.id,
+      },
+    });
+
+    await audit({ user: request.user, action: 'send', entity: 'Quote', entityId: id, summary: `${quote.number} emailed to ${parsed.data.to.join(', ')}`, ip: clientIp(request) });
+    return { ok: true };
+  });
+
+  /**
+   * Raise a tax invoice from an accepted quote.
+   * Lines are copied across so the invoice carries the per-line detail the FTA
+   * requires; they stay editable afterwards for partial delivery or staged billing.
+   */
+  app.post('/api/quotes/:id/invoice', { preHandler: requirePermission('invoices', 'create') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const quote = await prisma.quote.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
+    if (!quote) throw notFound('Quote not found.');
+    if (quote.status !== 'ACCEPTED') throw badRequest('Only an accepted quote can be invoiced.');
+
+    const [termsDays, invoiceTerms] = await Promise.all([
+      getSetting<number>('finance.paymentTermsDays', 30),
+      getSetting<string>('finance.invoiceTerms', ''),
+    ]);
+    const { poNumber, customerPoId } = z
+      .object({ poNumber: z.string().optional(), customerPoId: z.string().optional() })
+      .parse(request.body ?? {});
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        number: await nextReference('invoice'),
+        type: 'TAX_INVOICE',
+        quoteId: quote.id,
+        dealId: quote.dealId,
+        accountId: quote.accountId,
+        contactId: quote.contactId,
+        customerPoId: customerPoId ?? null,
+        status: 'DRAFT',
+        dueDate: new Date(Date.now() + Number(termsDays) * 86_400_000),
+        currency: quote.currency,
+        discountPct: quote.discountPct,
+        vatRate: quote.vatRate,
+        terms: invoiceTerms,
+        poNumber: poNumber ?? null,
+        createdById: request.user.id,
+        lines: {
+          create: quote.lines.map((l, index) => ({
+            productId: l.productId,
+            order: index,
+            description: l.description,
+            quantity: l.quantity,
+            unit: l.unit,
+            unitPrice: l.unitPrice,
+            unitCost: l.unitCost,
+            discountPct: l.discountPct,
+            taxable: l.taxable,
+            vatRate: l.taxable ? num(quote.vatRate) : 0,
+            termMonths: l.termMonths,
+          })),
+        },
+      },
+    });
+
+    await recalcInvoice(invoice.id);
+    await snapshotParties(invoice.id);
+
+    await audit({ user: request.user, action: 'create', entity: 'Invoice', entityId: invoice.id, summary: `${invoice.number} from ${quote.number}`, ip: clientIp(request) });
+    return reply.status(201).send(await prisma.invoice.findUnique({ where: { id: invoice.id }, include: { lines: { orderBy: { order: 'asc' } }, account: true } }));
+  });
+}

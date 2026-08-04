@@ -1,0 +1,1098 @@
+// Zeus CRM — data model
+// Conventions: money stored as Decimal(14,2) in AED unless a currency field says otherwise.
+// Soft delete via deletedAt on the core selling objects so a mis-click is recoverable.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- identity
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String? // null when the user is Entra-only
+  entraOid     String?   @unique // Entra ID object id, set on first SSO login
+  jobTitle     String?
+  phone        String?
+  /// E.164 number for WhatsApp alerts, e.g. +971501234567. Blank means no WhatsApp.
+  whatsappNumber String?
+  avatarColor  String    @default("#e11d2e")
+  isActive     Boolean   @default(true)
+  roleId       String
+  role         Role      @relation(fields: [roleId], references: [id])
+  teamId       String?
+  team         Team?     @relation(fields: [teamId], references: [id])
+  managerId    String?
+  manager      User?     @relation("UserManager", fields: [managerId], references: [id])
+  reports      User[]    @relation("UserManager")
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  ownedAccounts         Account[]       @relation("AccountOwner")
+  ownedContacts         Contact[]       @relation("ContactOwner")
+  ownedLeads            Lead[]          @relation("LeadOwner")
+  ownedDeals            Deal[]          @relation("DealOwner")
+  activities            Activity[]      @relation("ActivityOwner")
+  createdActivities     Activity[]      @relation("ActivityCreator")
+  auditLogs             AuditLog[]
+  undoneAuditLogs       AuditLog[]      @relation("AuditUndoer")
+  notifications         Notification[]
+  targets               Target[]
+  quotes                Quote[]
+  invoices              Invoice[]
+  ownedPurchaseOrders   PurchaseOrder[] @relation("PoOwner")
+  createdPurchaseOrders PurchaseOrder[] @relation("PoCreator")
+  dealApprovalsRequested    Deal[]          @relation("DealApprovalRequester")
+  dealApprovals             Deal[]          @relation("DealApprover")
+  poApprovalsRequested      PurchaseOrder[] @relation("PoApprovalRequester")
+  poApprovals               PurchaseOrder[] @relation("PoApprover")
+  invoiceApprovalsRequested Invoice[]       @relation("InvoiceApprovalRequester")
+  invoiceApprovals          Invoice[]       @relation("InvoiceApprover")
+  payments              Payment[]
+  attachments           Attachment[]
+  importJobs            ImportJob[]
+
+  @@index([teamId])
+  @@index([roleId])
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  // "product" = distribution/reselling, "service" = MSSP. Free text so it stays editable.
+  kind      String   @default("product")
+  createdAt DateTime @default(now())
+  users     User[]
+}
+
+/// Permissions are a JSON map: { "deals": { "read": "all|team|own|none", "create": true,
+/// "update": "all|team|own|none", "delete": bool, "fields": { "cost": "hidden|read|write" } }, ... }
+/// Editable from the UI — no code change needed to add a role.
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false) // system roles cannot be deleted, only edited
+  permissions Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+}
+
+// ---------------------------------------------------------------- companies & people
+
+enum AccountType {
+  CUSTOMER
+  PARTNER
+  VENDOR
+  PROSPECT
+}
+
+model Account {
+  id             String      @id @default(cuid())
+  name           String
+  type           AccountType @default(PROSPECT)
+  /// Primary web domain, lower-cased. Backbone of duplicate detection.
+  domain         String?
+  website        String?
+  industry       String?
+  employeeBand   String?
+  phone          String?
+  email          String?
+  /// UAE tax registration number (15 digits) — printed on quotes/invoices.
+  trn            String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  emirate        String?
+  country        String      @default("United Arab Emirates")
+  poBox          String?
+  linkedinUrl    String?
+  description    String?
+  ownerId        String?
+  owner          User?       @relation("AccountOwner", fields: [ownerId], references: [id])
+  /// Rolls forward on any activity, deal change or note. Drives the stale-account alert.
+  lastActivityAt DateTime?
+  customFields   Json        @default("{}")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  contacts           Contact[]
+  deals              Deal[]             @relation("DealCustomer")
+  partnerDeals       Deal[]             @relation("DealPartner")
+  products           Product[]          @relation("ProductVendor")
+  registrations      DealRegistration[] @relation("RegistrationVendor")
+  partnerRegistrations DealRegistration[] @relation("RegistrationPartner")
+  quotes             Quote[]
+  invoices           Invoice[]
+  purchaseOrders     PurchaseOrder[]
+  payments           Payment[]
+  activities         Activity[]
+  attachments        Attachment[]
+  convertedFromLeads Lead[]
+
+  @@index([domain])
+  @@index([type])
+  @@index([ownerId])
+  @@index([lastActivityAt])
+}
+
+model Contact {
+  id           String    @id @default(cuid())
+  firstName    String
+  lastName     String
+  email        String?
+  phone        String?
+  mobile       String?
+  jobTitle     String?
+  department   String?
+  linkedinUrl  String?
+  isPrimary    Boolean   @default(false)
+  accountId    String?
+  account      Account?  @relation(fields: [accountId], references: [id])
+  ownerId      String?
+  owner        User?     @relation("ContactOwner", fields: [ownerId], references: [id])
+  description  String?
+  customFields Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  deals          Deal[]
+  activities     Activity[]
+  quotes         Quote[]
+  invoices       Invoice[]
+  purchaseOrders PurchaseOrder[]
+  attachments    Attachment[]
+  registrations  DealRegistration[] @relation("RegistrationPartnerContact")
+
+  @@index([email])
+  @@index([accountId])
+  @@index([ownerId])
+}
+
+// ---------------------------------------------------------------- leads
+
+enum LeadStatus {
+  NEW
+  WORKING
+  NURTURING
+  QUALIFIED
+  DISQUALIFIED
+  CONVERTED
+}
+
+model Lead {
+  id              String     @id @default(cuid())
+  firstName       String
+  lastName        String
+  company         String
+  /// Derived from email or website; duplicate detection matches on this.
+  domain          String?
+  email           String?
+  phone           String?
+  jobTitle        String?
+  linkedinUrl     String?
+  /// Free-text so Settings can add sources without a migration. Seeded with
+  /// Database, LinkedIn, Partner Referral, Website, Event, Cold Call, Inbound Email.
+  source          String     @default("Database")
+  /// Which partner account referred it, when source is a partner.
+  sourcePartnerId String?
+  status          LeadStatus @default(NEW)
+  rating          String? // Hot / Warm / Cold — editable list
+  score           Int        @default(0)
+  interestArea    String? // e.g. "Endpoint & Detection", "Managed Detection & Response"
+  estimatedValue  Decimal?   @db.Decimal(14, 2)
+  description     String?
+  ownerId         String?
+  owner           User?      @relation("LeadOwner", fields: [ownerId], references: [id])
+  emirate         String?
+  country         String     @default("United Arab Emirates")
+
+  convertedAt        DateTime?
+  convertedAccountId String?
+  convertedAccount   Account?  @relation(fields: [convertedAccountId], references: [id])
+  convertedContactId String?
+  convertedDealId    String?
+  disqualifyReason   String?
+
+  lastActivityAt DateTime?
+  customFields   Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  activities  Activity[]
+  attachments Attachment[]
+
+  @@index([domain])
+  @@index([status])
+  @@index([ownerId])
+  @@index([email])
+}
+
+// ---------------------------------------------------------------- pipeline & deals
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  /// "product" (reselling) or "service" (MSSP) — used for the split forecast.
+  kind      String   @default("product")
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  stages    Stage[]
+  deals     Deal[]
+}
+
+model Stage {
+  id          String   @id @default(cuid())
+  pipelineId  String
+  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  name        String
+  order       Int
+  /// Default win probability for deals sitting in this stage (0-100).
+  probability Int      @default(0)
+  isWon       Boolean  @default(false)
+  isLost      Boolean  @default(false)
+  color       String   @default("#6b6b6b")
+  /// Days a deal may sit here before it is flagged as rotting on the board.
+  rotDays     Int      @default(14)
+  deals       Deal[]
+
+  @@unique([pipelineId, name])
+  @@index([pipelineId, order])
+}
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+}
+
+enum DealType {
+  PRODUCT
+  SERVICE
+  MIXED
+}
+
+/// Where a record sits in the sign-off queue. NOT_REQUIRED covers both "approvals are
+/// switched off for this module" and "this one is under the threshold" — either way
+/// nobody is waiting on a manager.
+enum ApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Deal {
+  id               String   @id @default(cuid())
+  /// Human readable reference, e.g. ZEU-D-000142
+  reference        String   @unique
+  name             String
+  /// End customer. Always the company that consumes the product/service.
+  accountId        String
+  account          Account  @relation("DealCustomer", fields: [accountId], references: [id])
+  /// Optional partner/reseller involved in an end-customer deal.
+  partnerAccountId String?
+  partnerAccount   Account? @relation("DealPartner", fields: [partnerAccountId], references: [id])
+  primaryContactId String?
+  primaryContact   Contact? @relation(fields: [primaryContactId], references: [id])
+
+  pipelineId String
+  pipeline   Pipeline   @relation(fields: [pipelineId], references: [id])
+  stageId    String
+  stage      Stage      @relation(fields: [stageId], references: [id])
+  status     DealStatus @default(OPEN)
+  type       DealType   @default(PRODUCT)
+
+  /// Net value excluding VAT.
+  amount      Decimal @default(0) @db.Decimal(14, 2)
+  currency    String  @default("AED")
+  vatRate     Decimal @default(5) @db.Decimal(5, 2)
+  vatAmount   Decimal @default(0) @db.Decimal(14, 2)
+  totalAmount Decimal @default(0) @db.Decimal(14, 2)
+  /// Landed cost across quote lines; used for margin reporting. Field-level RBAC hides it.
+  cost        Decimal @default(0) @db.Decimal(14, 2)
+
+  probability     Int       @default(0)
+  closeDate       DateTime
+  /// Set when status leaves OPEN.
+  closedAt        DateTime?
+  source          String    @default("Database")
+  sourcePartnerId String?
+  lostReason      String?
+  competitor      String?
+  nextStep        String?
+  description     String?
+
+  ownerId String?
+  owner   User?   @relation("DealOwner", fields: [ownerId], references: [id])
+
+  /// Manager sign-off. The record cannot take its next irreversible step — a deal
+  /// closing won, a PO going to the supplier, an invoice going to the customer —
+  /// while this is PENDING or REJECTED.
+  approvalStatus      ApprovalStatus @default(NOT_REQUIRED)
+  approvalRequestedAt DateTime?
+  approvalRequestedById String?
+  approvalRequestedBy User?          @relation("DealApprovalRequester", fields: [approvalRequestedById], references: [id])
+  approvalDecidedAt   DateTime?
+  approvalDecidedById String?
+  approvalDecidedBy   User?          @relation("DealApprover", fields: [approvalDecidedById], references: [id])
+  /// Why it was rejected, or a condition attached to the approval.
+  approvalNote        String?
+
+  stageChangedAt DateTime  @default(now())
+  lastActivityAt DateTime?
+  customFields   Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  registrations  DealRegistration[]
+  quotes         Quote[]
+  invoices       Invoice[]
+  purchaseOrders PurchaseOrder[]
+  activities     Activity[]
+  attachments    Attachment[]
+  stageHistory   StageHistory[]
+
+  @@index([accountId])
+  @@index([partnerAccountId])
+  @@index([stageId])
+  @@index([status])
+  @@index([ownerId])
+  @@index([closeDate])
+  @@index([approvalStatus])
+}
+
+/// Every stage move is written here so the funnel/velocity charts are real data, not guesses.
+model StageHistory {
+  id          String   @id @default(cuid())
+  dealId      String
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  fromStageId String?
+  toStageId   String
+  fromStatus  String?
+  toStatus    String
+  amount      Decimal  @db.Decimal(14, 2)
+  changedById String?
+  changedAt   DateTime @default(now())
+  /// Days the deal spent in the previous stage.
+  daysInStage Int      @default(0)
+
+  @@index([dealId])
+  @@index([changedAt])
+}
+
+enum RegistrationStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+/// Which way the registration points. VENDOR: we registered the opportunity with a
+/// vendor to lock our buy price. PARTNER: a partner registered this end customer with
+/// us, so the deal is theirs to work for the protection period. Both run for the same
+/// 90-day default and both need chasing before they lapse.
+enum RegistrationSide {
+  VENDOR
+  PARTNER
+}
+
+/// Deal registration, either side of the channel. A deal can carry several — one per
+/// vendor involved, plus the partner protection if the deal came through the channel.
+model DealRegistration {
+  id               String             @id @default(cuid())
+  dealId           String
+  deal             Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  side             RegistrationSide   @default(VENDOR)
+  /// Set when side = VENDOR.
+  vendorId         String?
+  vendor           Account?           @relation("RegistrationVendor", fields: [vendorId], references: [id])
+  /// Set when side = PARTNER — the partner holding the protection.
+  partnerId        String?
+  partner          Account?           @relation("RegistrationPartner", fields: [partnerId], references: [id])
+  /// Who at the partner gets the reminder mail.
+  partnerContactId String?
+  partnerContact   Contact?           @relation("RegistrationPartnerContact", fields: [partnerContactId], references: [id])
+  /// Last time Zeus mailed the partner about this registration, so a daily job cannot
+  /// turn one expiry into fourteen emails.
+  partnerNotifiedAt DateTime?
+  regNumber        String?
+  status           RegistrationStatus @default(DRAFT)
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  expiresAt        DateTime?
+  /// Discount/margin the vendor approved, as a percentage.
+  approvedDiscount Decimal?           @db.Decimal(5, 2)
+  notes            String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([dealId])
+  @@index([vendorId])
+  @@index([partnerId])
+  @@index([expiresAt])
+  @@index([side, status])
+}
+
+// ---------------------------------------------------------------- catalog & money
+
+enum ProductType {
+  PRODUCT
+  SERVICE
+}
+
+model Product {
+  id           String      @id @default(cuid())
+  sku          String      @unique
+  name         String
+  type         ProductType @default(PRODUCT)
+  /// Portfolio group, e.g. "Data & Email", "Endpoint & Detection", "Managed Security".
+  category     String?
+  vendorId     String?
+  vendor       Account?    @relation("ProductVendor", fields: [vendorId], references: [id])
+  description  String?
+  /// Billing unit: licence, user, endpoint, month, year, project, day.
+  unit         String      @default("licence")
+  listPrice    Decimal     @default(0) @db.Decimal(14, 2)
+  cost         Decimal     @default(0) @db.Decimal(14, 2)
+  currency     String      @default("AED")
+  taxable      Boolean     @default(true)
+  isActive     Boolean     @default(true)
+  customFields Json        @default("{}")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  quoteLines   QuoteLine[]
+  invoiceLines InvoiceLine[]
+  poLines      PurchaseOrderLine[]
+
+  @@index([category])
+  @@index([vendorId])
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Quote {
+  id         String      @id @default(cuid())
+  number     String      @unique // ZEU-Q-000123
+  version    Int         @default(1)
+  dealId     String?
+  deal       Deal?       @relation(fields: [dealId], references: [id])
+  accountId  String
+  account    Account     @relation(fields: [accountId], references: [id])
+  contactId  String?
+  contact    Contact?    @relation(fields: [contactId], references: [id])
+  status     QuoteStatus @default(DRAFT)
+  issueDate  DateTime    @default(now())
+  validUntil DateTime?
+  currency   String      @default("AED")
+
+  subtotal     Decimal @default(0) @db.Decimal(14, 2)
+  discountPct  Decimal @default(0) @db.Decimal(5, 2)
+  discountAmt  Decimal @default(0) @db.Decimal(14, 2)
+  vatRate      Decimal @default(5) @db.Decimal(5, 2)
+  vatAmount    Decimal @default(0) @db.Decimal(14, 2)
+  total        Decimal @default(0) @db.Decimal(14, 2)
+  totalCost    Decimal @default(0) @db.Decimal(14, 2)
+  marginAmount Decimal @default(0) @db.Decimal(14, 2)
+
+  terms        String?
+  notes        String?
+  preparedById String?
+  preparedBy   User?     @relation(fields: [preparedById], references: [id])
+  sentAt       DateTime?
+  acceptedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  lines          QuoteLine[]
+  invoices       Invoice[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([accountId])
+  @@index([dealId])
+  @@index([status])
+}
+
+model QuoteLine {
+  id          String   @id @default(cuid())
+  quoteId     String
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  order       Int      @default(0)
+  description String
+  quantity    Decimal  @default(1) @db.Decimal(12, 2)
+  unit        String   @default("licence")
+  unitPrice   Decimal  @default(0) @db.Decimal(14, 2)
+  unitCost    Decimal  @default(0) @db.Decimal(14, 2)
+  discountPct Decimal  @default(0) @db.Decimal(5, 2)
+  taxable     Boolean  @default(true)
+  lineTotal   Decimal  @default(0) @db.Decimal(14, 2)
+  lineCost    Decimal  @default(0) @db.Decimal(14, 2)
+  /// Term in months for subscriptions/services; null for one-off.
+  termMonths  Int?
+
+  @@index([quoteId])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+/// TAX_INVOICE and CREDIT_NOTE share this table — they carry identical fields and
+/// the only differences are the title, the numbering series and the sign applied in
+/// reporting. A separate model would have duplicated the whole line structure.
+enum InvoiceType {
+  TAX_INVOICE
+  CREDIT_NOTE
+}
+
+/**
+ * Customer-facing tax document.
+ * UAE compliance note: Article 59 of the Executive Regulations to Federal Decree-Law
+ * No. 8 of 2017 mandates the *content* of a Tax Invoice — there is no government-issued
+ * template to adopt. The supplier and recipient details are snapshotted onto the record
+ * at issue, because the law requires the invoice to show them as they were when issued;
+ * editing the account afterwards must not rewrite history on a filed document.
+ */
+model Invoice {
+  id     String      @id @default(cuid())
+  number String      @unique // ZEU-INV-000123 or ZEU-CN-000123
+  type   InvoiceType @default(TAX_INVOICE)
+
+  quoteId   String?
+  quote     Quote?   @relation(fields: [quoteId], references: [id])
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id])
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  /// The customer's own purchase order that authorised this invoice.
+  customerPoId String?
+  customerPo   PurchaseOrder? @relation("InvoiceCustomerPo", fields: [customerPoId], references: [id])
+
+  /// Set on a credit note: the tax invoice being corrected.
+  originalInvoiceId String?
+  originalInvoice   Invoice?  @relation("CreditNoteOf", fields: [originalInvoiceId], references: [id])
+  creditNotes       Invoice[] @relation("CreditNoteOf")
+  /// Why the credit note was raised — printed on the document, required in practice.
+  creditReason      String?
+
+  /// Manager sign-off. The record cannot take its next irreversible step — a deal
+  /// closing won, a PO going to the supplier, an invoice going to the customer —
+  /// while this is PENDING or REJECTED.
+  approvalStatus      ApprovalStatus @default(NOT_REQUIRED)
+  approvalRequestedAt DateTime?
+  approvalRequestedById String?
+  approvalRequestedBy User?          @relation("InvoiceApprovalRequester", fields: [approvalRequestedById], references: [id])
+  approvalDecidedAt   DateTime?
+  approvalDecidedById String?
+  approvalDecidedBy   User?          @relation("InvoiceApprover", fields: [approvalDecidedById], references: [id])
+  /// Why it was rejected, or a condition attached to the approval.
+  approvalNote        String?
+
+  status     InvoiceStatus @default(DRAFT)
+  issueDate  DateTime      @default(now())
+  /// Date of supply. Printed separately when it differs from the issue date.
+  supplyDate DateTime?
+  dueDate    DateTime?
+
+  currency     String   @default("AED")
+  /// Central Bank rate when currency is not AED; AED equivalents must appear on the face.
+  exchangeRate Decimal? @db.Decimal(14, 6)
+
+  subtotal    Decimal @default(0) @db.Decimal(14, 2)
+  discountPct Decimal @default(0) @db.Decimal(5, 2)
+  discountAmt Decimal @default(0) @db.Decimal(14, 2)
+  vatRate     Decimal @default(5) @db.Decimal(5, 2)
+  vatAmount   Decimal @default(0) @db.Decimal(14, 2)
+  total       Decimal @default(0) @db.Decimal(14, 2)
+  /// Derived from Payment rows — never typed directly.
+  amountPaid  Decimal @default(0) @db.Decimal(14, 2)
+
+  /// Snapshots taken at issue. Immutable thereafter.
+  supplierName     String?
+  supplierTrn      String?
+  supplierAddress  String?
+  recipientName    String?
+  recipientTrn     String?
+  recipientAddress String?
+  /// Emirate in which the supply took place.
+  placeOfSupply    String?
+  /// When true the document states that the recipient accounts for the VAT.
+  reverseCharge    Boolean @default(false)
+
+  poNumber String?
+  terms    String?
+  notes    String?
+  sentAt   DateTime?
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lines    InvoiceLine[]
+  payments Payment[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([type])
+  @@index([originalInvoiceId])
+  @@index([approvalStatus])
+}
+
+model InvoiceLine {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  order       Int      @default(0)
+  description String
+  quantity    Decimal  @default(1) @db.Decimal(12, 2)
+  unit        String   @default("licence")
+  unitPrice   Decimal  @default(0) @db.Decimal(14, 2)
+  unitCost    Decimal  @default(0) @db.Decimal(14, 2)
+  discountPct Decimal  @default(0) @db.Decimal(5, 2)
+  taxable     Boolean  @default(true)
+  /// Per-line rate: the FTA requires the tax rate to appear against each line.
+  vatRate     Decimal  @default(5) @db.Decimal(5, 2)
+  lineTotal   Decimal  @default(0) @db.Decimal(14, 2)
+  lineVat     Decimal  @default(0) @db.Decimal(14, 2)
+  lineCost    Decimal  @default(0) @db.Decimal(14, 2)
+  termMonths  Int?
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------- purchase orders
+
+/// CUSTOMER = a PO your client sent you, recorded as evidence of the order.
+/// SUPPLIER = a PO you issued to a vendor; this is what creates a payable.
+enum PoDirection {
+  CUSTOMER
+  SUPPLIER
+}
+
+enum PoStatus {
+  DRAFT
+  ISSUED
+  ACKNOWLEDGED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id        String      @id @default(cuid())
+  /// Ours for a supplier PO (ZEU-PO-000123); theirs for a customer PO.
+  number    String
+  direction PoDirection
+  status    PoStatus    @default(DRAFT)
+
+  /// The customer on a CUSTOMER order, the vendor on a SUPPLIER order.
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id])
+  quoteId   String?
+  quote     Quote?   @relation(fields: [quoteId], references: [id])
+
+  orderDate        DateTime  @default(now())
+  /// When the goods or services are expected.
+  expectedDate     DateTime?
+  /// Payment terms in days, and the resulting date money is due.
+  paymentTermsDays Int?
+  paymentDueDate   DateTime?
+
+  currency    String  @default("AED")
+  subtotal    Decimal @default(0) @db.Decimal(14, 2)
+  discountPct Decimal @default(0) @db.Decimal(5, 2)
+  discountAmt Decimal @default(0) @db.Decimal(14, 2)
+  vatRate     Decimal @default(5) @db.Decimal(5, 2)
+  vatAmount   Decimal @default(0) @db.Decimal(14, 2)
+  total       Decimal @default(0) @db.Decimal(14, 2)
+  /// Derived from Payment rows.
+  amountPaid  Decimal @default(0) @db.Decimal(14, 2)
+
+  /// Vendor's invoice against this PO, once it arrives.
+  supplierInvoiceNumber String?
+  supplierInvoiceDate   DateTime?
+
+  shipToAddress String?
+  terms         String?
+  notes         String?
+  issuedAt      DateTime?
+
+  ownerId     String?
+  owner       User?     @relation("PoOwner", fields: [ownerId], references: [id])
+  createdById String?
+  createdBy   User?     @relation("PoCreator", fields: [createdById], references: [id])
+
+  /// Manager sign-off. The record cannot take its next irreversible step — a deal
+  /// closing won, a PO going to the supplier, an invoice going to the customer —
+  /// while this is PENDING or REJECTED.
+  approvalStatus      ApprovalStatus @default(NOT_REQUIRED)
+  approvalRequestedAt DateTime?
+  approvalRequestedById String?
+  approvalRequestedBy User?          @relation("PoApprovalRequester", fields: [approvalRequestedById], references: [id])
+  approvalDecidedAt   DateTime?
+  approvalDecidedById String?
+  approvalDecidedBy   User?          @relation("PoApprover", fields: [approvalDecidedById], references: [id])
+  /// Why it was rejected, or a condition attached to the approval.
+  approvalNote        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  lines       PurchaseOrderLine[]
+  payments    Payment[]
+  attachments Attachment[]
+  invoices    Invoice[]           @relation("InvoiceCustomerPo")
+
+  @@unique([direction, number])
+  @@index([accountId])
+  @@index([direction, status])
+  @@index([paymentDueDate])
+  @@index([dealId])
+  @@index([approvalStatus])
+}
+
+model PurchaseOrderLine {
+  id               String        @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product?      @relation(fields: [productId], references: [id])
+  order            Int           @default(0)
+  description      String
+  quantity         Decimal       @default(1) @db.Decimal(12, 2)
+  /// How much has physically arrived, for partial receipts.
+  quantityReceived Decimal       @default(0) @db.Decimal(12, 2)
+  unit             String        @default("licence")
+  unitPrice        Decimal       @default(0) @db.Decimal(14, 2)
+  discountPct      Decimal       @default(0) @db.Decimal(5, 2)
+  taxable          Boolean       @default(true)
+  vatRate          Decimal       @default(5) @db.Decimal(5, 2)
+  lineTotal        Decimal       @default(0) @db.Decimal(14, 2)
+  lineVat          Decimal       @default(0) @db.Decimal(14, 2)
+
+  @@index([purchaseOrderId])
+}
+
+// ---------------------------------------------------------------- payments
+
+enum PaymentDirection {
+  INCOMING
+  OUTGOING
+}
+
+/// One row per movement of money. Balances are always derived by summing these,
+/// so a part-payment, an advance and a final settlement all reconcile on their own.
+model Payment {
+  id        String           @id @default(cuid())
+  direction PaymentDirection
+  reference String? // bank reference, cheque number, transaction id
+  /// Bank Transfer, Cheque, Cash, Card, Credit Note — editable list in Settings.
+  method    String           @default("Bank Transfer")
+  amount    Decimal          @db.Decimal(14, 2)
+  currency  String           @default("AED")
+  paidAt    DateTime         @default(now())
+  notes     String?
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id])
+
+  invoiceId       String?
+  invoice         Invoice?       @relation(fields: [invoiceId], references: [id])
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+
+  recordedById String?
+  recordedBy   User?    @relation(fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([direction, paidAt])
+  @@index([invoiceId])
+  @@index([purchaseOrderId])
+  @@index([accountId])
+}
+
+// ---------------------------------------------------------------- activity & audit
+
+enum ActivityType {
+  TASK
+  CALL
+  MEETING
+  EMAIL
+  NOTE
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType @default(TASK)
+  subject     String
+  description String?
+  /// Open / Completed / Cancelled — only meaningful for TASK, CALL, MEETING.
+  status      String       @default("Open")
+  priority    String       @default("Normal") // Low / Normal / High / Urgent
+  dueAt       DateTime?
+  completedAt DateTime?
+  durationMin Int?
+  outcome     String?
+
+  ownerId     String?
+  owner       User?   @relation("ActivityOwner", fields: [ownerId], references: [id])
+  createdById String?
+  createdBy   User?   @relation("ActivityCreator", fields: [createdById], references: [id])
+
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id])
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+  leadId    String?
+  lead      Lead?    @relation(fields: [leadId], references: [id])
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id])
+
+  /// Set once a reminder has gone out so the scheduler does not spam.
+  remindedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([ownerId, status])
+  @@index([dueAt])
+  @@index([dealId])
+  @@index([accountId])
+  @@index([leadId])
+}
+
+model Attachment {
+  id              String         @id @default(cuid())
+  filename        String
+  storedName      String
+  mimeType        String
+  sizeBytes       Int
+  uploadedById    String?
+  uploadedBy      User?          @relation(fields: [uploadedById], references: [id])
+  accountId       String?
+  account         Account?       @relation(fields: [accountId], references: [id])
+  contactId       String?
+  contact         Contact?       @relation(fields: [contactId], references: [id])
+  leadId          String?
+  lead            Lead?          @relation(fields: [leadId], references: [id])
+  dealId          String?
+  deal            Deal?          @relation(fields: [dealId], references: [id])
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@index([dealId])
+  @@index([accountId])
+  @@index([purchaseOrderId])
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  userId   String?
+  user     User?    @relation(fields: [userId], references: [id])
+  action   String // create | update | delete | login | export | import | integration
+  entity   String
+  entityId String?
+  summary  String?
+  changes  Json? // { field: { from, to } }
+  /// What it would take to put this back: { model, id, kind, before }. Null when the
+  /// action cannot be reversed — a login, an export, a sent tax invoice.
+  undo     Json?
+  undoneAt DateTime?
+  undoneById String?
+  undoneBy User?    @relation("AuditUndoer", fields: [undoneById], references: [id])
+  ip       String?
+  at       DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([at])
+  @@index([userId, undoneAt])
+}
+
+// ---------------------------------------------------------------- notifications
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// task_due | task_overdue | account_stale | deal_won | deal_lost | deal_assigned |
+  /// registration_expiring | quote_accepted | duplicate_found | mention
+  type      String
+  title     String
+  body      String?
+  link      String?
+  severity  String    @default("info") // info | warn | critical
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+/// One row per notification event type. Everything about when and where alerts fire
+/// is edited here from Settings — no redeploy.
+model NotificationRule {
+  id             String        @id @default(cuid())
+  event          String        @unique
+  label          String
+  enabled        Boolean       @default(true)
+  inApp          Boolean       @default(true)
+  email          Boolean       @default(false)
+  teams          Boolean       @default(false)
+  /// Business-initiated WhatsApp costs money per message outside a service window, so
+  /// this stays off until someone turns it on for the events that earn it.
+  whatsapp       Boolean       @default(false)
+  /// Threshold in days where the event needs one (stale account, registration expiry).
+  thresholdDays  Int?
+  /// Who gets it: owner | manager | admins | all | specific
+  audience       String        @default("owner")
+  /// Extra recipient user ids when audience = specific.
+  recipientIds   String[]      @default([])
+  teamsWebhookId String?
+  teamsWebhook   TeamsWebhook? @relation(fields: [teamsWebhookId], references: [id])
+  updatedAt      DateTime      @updatedAt
+}
+
+model TeamsWebhook {
+  id        String             @id @default(cuid())
+  name      String             @unique
+  url       String
+  isDefault Boolean            @default(false)
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  rules     NotificationRule[]
+}
+
+// ---------------------------------------------------------------- targets, views, config
+
+model Target {
+  id        String   @id @default(cuid())
+  /// null = company-wide target
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year      Int
+  /// 1-4 for quarters, 0 for the full year
+  quarter   Int
+  amount    Decimal  @db.Decimal(14, 2)
+  currency  String   @default("AED")
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, year, quarter])
+}
+
+
+/// Adds a field to any module without a migration. Values live in the entity's
+/// customFields JSON column.
+model CustomField {
+  id         String   @id @default(cuid())
+  module     String
+  key        String
+  label      String
+  /// text | textarea | number | currency | date | select | multiselect | checkbox | url | email
+  type       String   @default("text")
+  options    String[] @default([])
+  required   Boolean  @default(false)
+  order      Int      @default(0)
+  isActive   Boolean  @default(true)
+
+  @@unique([module, key])
+}
+
+/// Everything tweakable: VAT rate, currency, company details, lead sources, lost reasons,
+/// stale thresholds, quote terms, numbering prefixes. Read through a cached accessor.
+model Setting {
+  key       String   @id
+  value     Json
+  category  String   @default("general")
+  label     String?
+  updatedAt DateTime @updatedAt
+}
+
+/// External system credentials. `secrets` is encrypted at rest with APP_SECRET.
+model Integration {
+  id          String    @id @default(cuid())
+  provider    String    @unique // microsoft365 | whatsapp
+  isConnected Boolean   @default(false)
+  config      Json      @default("{}") // tenantId, clientId, senderUpn, backup drive/folder
+  secrets     String? // encrypted JSON blob
+  status      String    @default("disconnected")
+  lastError   String?
+  connectedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
+model ImportJob {
+  id          String    @id @default(cuid())
+  module      String
+  filename    String
+  status      String    @default("pending") // pending | mapping | running | done | failed
+  mapping     Json      @default("{}")
+  totalRows   Int       @default(0)
+  imported    Int       @default(0)
+  updated     Int       @default(0)
+  skipped     Int       @default(0)
+  errors      Json      @default("[]")
+  dryRun      Boolean   @default(true)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  finishedAt  DateTime?
+}
+
+model BackupRun {
+  id          String    @id @default(cuid())
+  status      String    @default("running") // running | success | failed
+  destination String    @default("onedrive")
+  filename    String?
+  sizeBytes   Int?
+  error       String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+}
+
+/// Monotonic counters behind ZEU-D-000001 style references.
+model Counter {
+  key   String @id
+  value Int    @default(0)
+}

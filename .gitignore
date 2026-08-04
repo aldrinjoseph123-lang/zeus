@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+apps/api/uploads/
+apps/api/backups/
+apps/web/dist/
+caddy_data/
+caddy_config/
+pgdata/
+
+# Generated import templates and scratch scripts — reproducible, not source.
+import-templates/
+*.tmp.ts
+
+# Agent/editor state.
+.claude/
+.impeccable/

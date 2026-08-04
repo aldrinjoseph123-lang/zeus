@@ -1,0 +1,38 @@
+# The Dockerfile installs dependencies inside the image and only then copies the
+# source. Without this file, `COPY . .` would drop the host's node_modules on top —
+# macOS binaries for Prisma's engines and esbuild landing in a Linux image, which
+# fails at build or, worse, at runtime.
+node_modules
+**/node_modules
+
+# Secrets never belong in an image layer.
+.env
+.env.*
+!.env.example
+
+# Build output is produced inside the image, not carried into it.
+dist
+**/dist
+apps/api/dist
+apps/web/dist
+
+# Local state that would bloat the layer or leak between installs.
+uploads
+backups
+import-templates
+*.log
+*.tmp.ts
+
+# Tooling and editor noise.
+.git
+.gitignore
+.claude
+.impeccable
+.vscode
+.idea
+.DS_Store
+**/.DS_Store
+
+# Docs and compose are not needed by the build.
+README.md
+docker-compose.yml

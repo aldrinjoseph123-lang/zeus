@@ -1,0 +1,30 @@
+# Set ZEUS_DOMAIN in .env — a hostname gets an automatic Let's Encrypt certificate,
+# ":80" serves plain HTTP for a LAN-only install.
+{$ZEUS_DOMAIN} {
+	encode zstd gzip
+
+	# Uploads and PDF generation can be slow on a big quote.
+	reverse_proxy app:4000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	request_body {
+		max_size 25MB
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 20MB
+			roll_keep 5
+		}
+	}
+}
