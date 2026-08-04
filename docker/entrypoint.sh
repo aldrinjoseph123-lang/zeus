@@ -16,9 +16,11 @@ new PrismaClient().\$queryRaw\`SELECT 1\`.then(() => process.exit(0)).catch(() =
   sleep 2
 done
 
-echo "[zeus] applying schema…"
-# db push keeps a single-node install upgradeable without a migration history to babysit.
-npx prisma db push --schema prisma/schema.prisma --skip-generate --accept-data-loss
+echo "[zeus] applying migrations…"
+# migrate deploy replays the versioned migrations in order and refuses anything it does
+# not recognise. db push would silently reshape a table around live data — fine while a
+# database is disposable, not once it holds customer records.
+npx prisma migrate deploy --schema prisma/schema.prisma
 
 echo "[zeus] seeding defaults (safe to re-run)…"
 node dist/seed.js

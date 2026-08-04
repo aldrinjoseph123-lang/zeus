@@ -14,7 +14,9 @@
     "db:push": "prisma db push",
     "db:seed": "tsx src/seed.ts",
     "db:studio": "prisma studio",
-    "test": "tsx src/selfcheck.ts"
+    "test": "npm run test:unit && npm run test:api",
+    "test:unit": "tsx src/selfcheck.ts",
+    "test:api": "tsx --test src/test/*.test.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

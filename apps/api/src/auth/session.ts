@@ -8,14 +8,25 @@ import type { PermissionMap, SessionUser } from './rbac.js';
 const COOKIE_NAME = 'zeus_session';
 const secret = new TextEncoder().encode(env.APP_SECRET);
 
-export async function issueSession(reply: FastifyReply, userId: string): Promise<void> {
-  const hours = Number(await getSetting<number>('auth.sessionHours', 12));
-  const token = await new SignJWT({ sub: userId })
+/**
+ * The signed session token. Exported so the integration suite can mint a cookie for a
+ * fixture user without driving the login endpoint — logging four users in per test
+ * would otherwise trip the login rate limit, which is a control worth keeping on.
+ */
+export async function signSessionToken(userId: string, hours: number): Promise<string> {
+  return new SignJWT({ sub: userId })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setIssuer('zeus')
     .setExpirationTime(`${hours}h`)
     .sign(secret);
+}
+
+export const SESSION_COOKIE = COOKIE_NAME;
+
+export async function issueSession(reply: FastifyReply, userId: string): Promise<void> {
+  const hours = Number(await getSetting<number>('auth.sessionHours', 12));
+  const token = await signSessionToken(userId, hours);
 
   reply.setCookie(COOKIE_NAME, token, {
     httpOnly: true,

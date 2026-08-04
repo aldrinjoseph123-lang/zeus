@@ -167,13 +167,43 @@ Needs Node 22+ and a PostgreSQL you can reach.
 ```bash
 npm install
 cp apps/api/.env.example apps/api/.env    # point DATABASE_URL at your database
-npm run db:push
+npm run db:migrate                        # applies prisma/migrations in order
 npm run db:seed
 npm run dev            # API on :4000, web on :5174
 ```
 
-`npm test` runs the self-check suite: VAT and margin arithmetic, domain and company-name
-normalisation, the CSV parser, and the RBAC masking rules. No database required.
+### Changing the schema
+
+The database is versioned by the migrations in `apps/api/prisma/migrations`. Edit
+`schema.prisma`, then:
+
+```bash
+npm run db:migrate:dev --workspace=apps/api -- --name what_you_changed
+```
+
+That writes a new migration, applies it locally and regenerates the client. Commit the
+migration alongside the schema change — deployments run `prisma migrate deploy`, which
+replays exactly those files and refuses anything it does not recognise.
+
+`db:push` still exists for throwaway experiments, but never point it at a database
+holding real records: it reshapes tables to match the schema and will drop a column
+without a way back.
+
+## Tests
+
+```bash
+npm test                 # unit self-checks, no database
+npm run test:api         # integration suite against a real database
+```
+
+The self-checks cover VAT and margin arithmetic, domain and company-name normalisation,
+the CSV parser, renewal term dates and the RBAC rules — all pure functions, no database.
+
+The integration suite drives the real Fastify app with a real PostgreSQL behind it and
+asserts what the HTTP layer actually does: that a rep cannot read another rep's deals,
+that an issued invoice refuses to change its figures, that approval gates hold when the
+endpoint is called directly, and that a renewal chain rolls forward correctly. It uses
+its own database (`zeus_test` by default) and never touches your development data.
 
 ```
 apps/
