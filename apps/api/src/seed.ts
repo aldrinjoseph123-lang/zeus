@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import 'dotenv/config';
 import { SYSTEM_ROLES } from './auth/rbac.js';
-import { NOTIFICATION_EVENTS } from './services/notify.js';
+import { ensureNotificationRules } from './services/notify.js';
 import { SETTING_DEFAULTS } from './lib/settings.js';
 
 /**
@@ -100,27 +100,9 @@ async function main(): Promise<void> {
   if (newSettings) console.log(`  + ${newSettings} default setting(s)`);
 
   // ── notification rules ────────────────────────────────────────────────────
-  let newRules = 0;
-  for (const event of NOTIFICATION_EVENTS) {
-    const existing = await prisma.notificationRule.findUnique({ where: { event: event.event } });
-    if (existing) continue;
-    await prisma.notificationRule.create({
-      data: {
-        event: event.event,
-        label: event.label,
-        enabled: true,
-        inApp: event.defaults.inApp,
-        email: event.defaults.email,
-        // Teams stays off until a webhook is added, so nothing errors on a fresh install.
-        teams: false,
-        thresholdDays: event.thresholdDays,
-        audience: ['deal_won', 'deal_lost', 'backup_failed', 'target_at_risk', 'invoice_overdue'].includes(event.event)
-          ? 'admins'
-          : 'owner',
-      },
-    });
-    newRules += 1;
-  }
+  // Same sync the API runs at boot, so there is one definition of what a new event
+  // gets rather than two that drift.
+  const newRules = await ensureNotificationRules();
   if (newRules) console.log(`  + ${newRules} notification rule(s)`);
 
   // ── service catalogue ─────────────────────────────────────────────────────

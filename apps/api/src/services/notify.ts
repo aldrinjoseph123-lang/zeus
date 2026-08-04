@@ -81,6 +81,39 @@ async function resolveRecipients(audience: string, ownerId?: string | null, reci
   return [...ids];
 }
 
+/**
+ * Makes sure every event in the list above has a rule row.
+ *
+ * Without a row, `notify()` falls back to in-app only and the event never appears on
+ * the Notifications screen to be configured — so a release that adds an event would
+ * silently ship it half-wired to every database seeded before it existed. Runs at
+ * boot; adding an event to NOTIFICATION_EVENTS is all that is ever needed.
+ */
+export async function ensureNotificationRules(): Promise<number> {
+  const existing = new Set((await prisma.notificationRule.findMany({ select: { event: true } })).map((r) => r.event));
+  const missing = NOTIFICATION_EVENTS.filter((e) => !existing.has(e.event));
+
+  for (const event of missing) {
+    await prisma.notificationRule.create({
+      data: {
+        event: event.event,
+        label: event.label,
+        enabled: true,
+        inApp: event.defaults.inApp,
+        email: event.defaults.email,
+        // Teams and WhatsApp stay off until a channel is actually connected.
+        teams: false,
+        whatsapp: false,
+        thresholdDays: event.thresholdDays,
+        audience: ['deal_won', 'deal_lost', 'backup_failed', 'target_at_risk', 'invoice_overdue'].includes(event.event)
+          ? 'admins'
+          : 'owner',
+      },
+    });
+  }
+  return missing.length;
+}
+
 export async function notify(input: NotifyInput): Promise<void> {
   try {
     const rule = await prisma.notificationRule.findUnique({ where: { event: input.event } });
