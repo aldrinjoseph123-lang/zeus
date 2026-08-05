@@ -12,6 +12,18 @@ import { api, qs } from '../lib/api';
  * the same document.
  */
 
+/** What the price book answered, including the vendor's own figure before conversion. */
+export interface ResolvedCost {
+  cost: number;
+  source: string;
+  reason: string;
+  currency: string;
+  sourceCost: number;
+  sourceCurrency: string;
+  rate: number | null;
+  rateMissing: boolean;
+}
+
 export interface EditableLine {
   key: string;
   productId: string | null;
@@ -21,7 +33,7 @@ export interface EditableLine {
   unitPrice: number;
   unitCost?: number;
   /** Where the cost came from — shown under the cost cell so a margin is explainable. */
-  costSource?: { source: string; reason: string } | null;
+  costSource?: ResolvedCost | null;
   discountPct: number;
   taxable: boolean;
   vatRate: number;
@@ -44,6 +56,7 @@ export const blankLine = (defaultVat = 5): EditableLine => ({
 export function LineEditor({
   lines, onChange, locked = false, showCost = false, priceLabel = 'Unit price', defaultVat = 5,
   costFromCatalog = false, showVat = true, headerDiscountPct = 0, dealId = null, vendorId = null,
+  currency = 'AED',
 }: {
   lines: EditableLine[];
   onChange: (lines: EditableLine[]) => void;
@@ -62,6 +75,8 @@ export function LineEditor({
   dealId?: string | null;
   /** Prefers one vendor's price when the same SKU is available from several. */
   vendorId?: string | null;
+  /** The document's currency. Vendor prices are converted into it before they land. */
+  currency?: string;
 }) {
   const update = (key: string, patch: Partial<EditableLine>) =>
     onChange(lines.map((line) => (line.key === key ? { ...line, ...patch } : line)));
@@ -79,8 +94,8 @@ export function LineEditor({
    */
   const vendorPrice = async (productId: string, quantity: number) => {
     try {
-      return await api.get<{ cost: number; source: string; reason: string }>(
-        `/price-book/resolve${qs({ productId, quantity, dealId, vendorId })}`,
+      return await api.get<ResolvedCost>(
+        `/price-book/resolve${qs({ productId, quantity, dealId, vendorId, currency })}`,
       );
     } catch {
       // A role without cost access gets a 403 here, and its cost column is hidden anyway.
@@ -93,11 +108,12 @@ export function LineEditor({
    *
    * The price a vendor charges depends on quantity and on which deal this is, so a cost
    * resolved at quantity 1 is simply wrong once the line says 800 — and a special price
-   * has to disappear the moment the deal it belonged to is unlinked. Only lines whose
-   * cost came from the price book are refreshed: typing a cost by hand clears
-   * `costSource`, and that is treated as an override worth respecting.
+   * has to disappear the moment the deal it belonged to is unlinked. The document's
+   * currency counts too: switching an invoice from AED to USD changes what a dollar
+   * price converts to. Only lines whose cost came from the price book are refreshed —
+   * typing a cost by hand clears `costSource`, and that is an override worth respecting.
    */
-  const conditions = `${dealId ?? ''}|${vendorId ?? ''}|${lines.map((l) => `${l.productId ?? ''}:${l.quantity}`).join(',')}`;
+  const conditions = `${dealId ?? ''}|${vendorId ?? ''}|${currency}|${lines.map((l) => `${l.productId ?? ''}:${l.quantity}`).join(',')}`;
   const settled = useDebounced(conditions, 400);
 
   useEffect(() => {
@@ -116,7 +132,7 @@ export function LineEditor({
         const priced = byKey.get(line.key);
         if (!priced || (priced.cost === line.unitCost && priced.source === line.costSource?.source)) return line;
         touched = true;
-        return { ...line, unitCost: priced.cost, costSource: { source: priced.source, reason: priced.reason } };
+        return { ...line, unitCost: priced.cost, costSource: priced };
       });
       if (touched) onChange(next);
     })();
@@ -168,7 +184,7 @@ export function LineEditor({
                         unitCost: priced ? priced.cost : Number(product.cost ?? 0),
                         taxable: product.taxable,
                         vatRate: product.taxable ? defaultVat : 0,
-                        costSource: priced ? { source: priced.source, reason: priced.reason } : null,
+                        costSource: priced,
                       });
                     }}
                     onDescription={(value) => update(line.key, { description: value, productId: null })}
@@ -190,22 +206,7 @@ export function LineEditor({
                   <td className="px-2 py-1.5">
                     <Input className="w-28 px-2 py-1 text-right" type="number" min="0" step="0.01" value={line.unitCost ?? 0} disabled={locked}
                       onChange={(e) => update(line.key, { unitCost: Number(e.target.value), costSource: null })} />
-                    {line.costSource ? (
-                      <span
-                        title={line.costSource.reason}
-                        className={cx(
-                          'mt-0.5 block max-w-28 truncate text-[10px]',
-                          line.costSource.source === 'special' ? 'font-semibold text-[var(--status-secure)]'
-                            : line.costSource.source === 'none' ? 'text-accent'
-                            : 'text-n400',
-                        )}
-                      >
-                        {line.costSource.source === 'special' ? 'Special price'
-                          : line.costSource.source === 'price-book' ? 'Price book'
-                          : line.costSource.source === 'catalogue' ? 'Catalogue'
-                          : 'No cost on file'}
-                      </span>
-                    ) : null}
+                    {line.costSource ? <CostSource source={line.costSource} /> : null}
                   </td>
                 ) : null}
                 <td className="px-2 py-1.5">
@@ -271,6 +272,40 @@ export function LineEditor({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Provenance under the cost cell. Where a rate was applied the vendor's own figure is
+ * printed too: someone checking a margin against a price list needs to see "USD 138",
+ * not only the dirhams it became. A currency with no rate is called out in red — that
+ * cost is not in the document's money and any margin beside it is wrong.
+ */
+function CostSource({ source }: { source: ResolvedCost }) {
+  const label =
+    source.rateMissing ? `No rate for ${source.sourceCurrency}`
+      : source.source === 'special' ? 'Special price'
+      : source.source === 'price-book' ? 'Price book'
+      : source.source === 'catalogue' ? 'Catalogue'
+      : 'No cost on file';
+
+  const converted = !source.rateMissing && source.rate !== null && source.rate !== 1;
+
+  return (
+    <span
+      title={source.reason}
+      className={cx(
+        'mt-0.5 block max-w-28 truncate text-[10px]',
+        source.rateMissing || source.source === 'none' ? 'font-semibold text-accent'
+          : source.source === 'special' ? 'font-semibold text-[var(--status-secure)]'
+          : 'text-n400',
+      )}
+    >
+      {label}
+      {converted ? (
+        <span className="block text-n400">{source.sourceCurrency} {source.sourceCost} @ {source.rate}</span>
+      ) : null}
+    </span>
   );
 }
 

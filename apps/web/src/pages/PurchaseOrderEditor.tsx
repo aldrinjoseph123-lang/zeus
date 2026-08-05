@@ -380,6 +380,7 @@ export default function PurchaseOrderEditor() {
               headerDiscountPct={form.discountPct}
               dealId={form.dealId || po?.deal?.id || null}
               vendorId={form.accountId || null}
+              currency={po?.currency ?? 'AED'}
             />
           </Card>
 

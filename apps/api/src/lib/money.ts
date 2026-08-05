@@ -134,6 +134,46 @@ export function stripVat(gross: number, vatRate = 5): { net: number; vatAmount: 
   return { net, vatAmount: round2(gross - net) };
 }
 
+export interface Converted {
+  amount: number;
+  /** AED per one unit of `from`. 1 when no conversion was needed. */
+  rate: number | null;
+}
+
+/**
+ * Convert between currencies using a table of rates expressed as base-currency units
+ * per one unit of the foreign currency (AED 3.6725 to the dollar).
+ *
+ * A missing rate returns `rate: null` and leaves the amount alone. Callers must treat
+ * that as "unknown", never as "no conversion needed" — a USD price silently passed
+ * through as dirhams understates the cost by nearly four times, and every margin
+ * computed from it is wrong in the direction that loses money.
+ */
+export function convert(
+  amount: number,
+  from: string,
+  to: string,
+  rates: Record<string, number>,
+  base = 'AED',
+): Converted {
+  if (from === to) return { amount: round2(amount), rate: 1 };
+
+  // Every rate in the table is quoted against the base currency, which is itself 1.
+  const rateOf = (code: string): number | null => {
+    if (code === base) return 1;
+    const value = Number(rates[code]);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+
+  const fromRate = rateOf(from);
+  const toRate = rateOf(to);
+  if (fromRate === null || toRate === null) return { amount: round2(amount), rate: null };
+
+  // USD to EUR goes through the dirham: 3.6725 / 4.0221.
+  const rate = fromRate / toRate;
+  return { amount: round2(amount * rate), rate };
+}
+
 export function formatAed(value: number): string {
   return new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED', minimumFractionDigits: 2 }).format(value);
 }

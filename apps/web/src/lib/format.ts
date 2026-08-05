@@ -10,6 +10,27 @@ export const money = (value: unknown, precise = false): string => {
   return precise ? aedPrecise.format(n) : aed.format(n);
 };
 
+/**
+ * Money in a stated currency. Vendors bill in dollars, so a price book row that says
+ * USD 138 must not print as AED 138 — the two differ by nearly four times.
+ */
+const formatters = new Map<string, Intl.NumberFormat>();
+export const moneyIn = (value: unknown, currency = 'AED'): string => {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return '—';
+  let format = formatters.get(currency);
+  if (!format) {
+    try {
+      format = new Intl.NumberFormat('en-AE', { style: 'currency', currency, minimumFractionDigits: 2 });
+    } catch {
+      // An unknown code is not worth throwing a table away for.
+      format = aedPrecise;
+    }
+    formatters.set(currency, format);
+  }
+  return format.format(n);
+};
+
 /** Compact figure for KPI tiles: AED 1.2M, AED 480K. */
 export function moneyShort(value: unknown): string {
   const n = Number(value ?? 0);

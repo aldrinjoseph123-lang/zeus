@@ -99,6 +99,8 @@ export default async function priceBookRoutes(app: FastifyInstance): Promise<voi
       quantity: q.quantity ? Number(q.quantity) : 1,
       dealId: q.dealId ?? null,
       vendorId: q.vendorId ?? null,
+      // The document's currency, so a dollar price lands on a dirham quote as dirhams.
+      currency: q.currency ?? null,
     });
   });
 

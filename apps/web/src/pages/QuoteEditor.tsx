@@ -275,6 +275,7 @@ export default function QuoteEditor() {
               showVat={false}
               headerDiscountPct={discountPct}
               dealId={dealId || quote?.deal?.id || null}
+              currency={String(settings?.['finance.currency'] ?? 'AED')}
             />
           </Card>
 

@@ -27,6 +27,11 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'company.bankSwift': '',
 
   'finance.currency': 'AED',
+  /// AED per one unit of the foreign currency. The dirham has been pegged to the dollar
+  /// at 3.6725 since 1997, so a vendor who bills in USD converts at a rate that does not
+  /// move — but it is a setting rather than a constant because EUR and GBP do move, and
+  /// a vendor sometimes fixes its own rate in the contract.
+  'finance.exchangeRates': { USD: 3.6725 },
   'finance.vatRate': 5,
   'finance.vatLabel': 'VAT (5%)',
   'finance.quoteValidDays': 30,

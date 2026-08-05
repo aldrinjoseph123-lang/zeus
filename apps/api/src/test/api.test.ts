@@ -396,6 +396,74 @@ describe('price book', () => {
     assert.equal(noDeal.body.cost, 80);
   });
 
+  it('converts a vendor price billed in dollars into the currency of the document', async () => {
+    const product = await makeProduct('SKU-USD', 100);
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 100, listPrice: 200, currency: 'USD',
+    });
+
+    const res = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    // The dirham is pegged at 3.6725; USD 100 is AED 367.25, not AED 100.
+    assert.equal(res.body.cost, 367.25);
+    assert.equal(res.body.currency, 'AED');
+    assert.equal(res.body.sourceCost, 100, 'the figure the vendor quoted has to survive');
+    assert.equal(res.body.sourceCurrency, 'USD');
+    assert.equal(res.body.rate, 3.6725);
+    assert.equal(res.body.rateMissing, false);
+    assert.equal(res.body.listPrice, 734.5, 'the list price converts too, or the discount is nonsense');
+  });
+
+  it('leaves a price alone when it is already in the document currency', async () => {
+    const product = await makeProduct('SKU-AED', 100);
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 80, currency: 'AED',
+    });
+
+    const res = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    assert.equal(res.body.cost, 80);
+    assert.equal(res.body.rate, 1);
+    assert.equal(res.body.sourceCost, 80);
+  });
+
+  it('gives a dollar order the dollar price, with no conversion', async () => {
+    const product = await makeProduct('SKU-USD-PO', 100);
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 100, currency: 'USD',
+    });
+
+    const res = await request(app, fx.manager)
+      .get(`/api/price-book/resolve?productId=${product.id}&quantity=1&currency=USD`);
+    assert.equal(res.body.cost, 100, 'a USD order pays the USD price');
+    assert.equal(res.body.currency, 'USD');
+    assert.equal(res.body.rate, 1);
+  });
+
+  it('refuses to pass an unconvertible price off as dirhams', async () => {
+    const product = await makeProduct('SKU-NORATE', 100);
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 90, currency: 'GBP',
+    });
+
+    const res = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    // The danger is a silent 90, which reads as AED 90 and overstates margin by ~4x.
+    assert.equal(res.body.rateMissing, true, 'a missing rate must be declared, not assumed to be 1');
+    assert.equal(res.body.rate, null);
+    assert.equal(res.body.currency, 'GBP', 'the figure is still the vendor’s, so it must say so');
+    assert.match(res.body.reason, /no AED rate on file for GBP/);
+  });
+
+  it('honours a rate that has been edited in settings', async () => {
+    const product = await makeProduct('SKU-EURO', 100);
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 100, currency: 'EUR',
+    });
+    await request(app, fx.admin).put('/api/settings', { 'finance.exchangeRates': { USD: 3.6725, EUR: 4 } });
+
+    const res = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    assert.equal(res.body.cost, 400);
+    assert.equal(res.body.rate, 4);
+  });
+
   it('keeps the price book away from a role that cannot see cost', async () => {
     const product = await makeProduct('SKU-RBAC', 100);
     assert.equal((await request(app, fx.rep).get(`/api/price-book?productId=${product.id}`)).status, 403);

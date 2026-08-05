@@ -1,5 +1,6 @@
 import { prisma, num } from '../db.js';
-import { round2 } from '../lib/money.js';
+import { convert, round2 } from '../lib/money.js';
+import { getSetting } from '../lib/settings.js';
 
 /**
  * Vendor price book.
@@ -17,18 +18,36 @@ import { round2 } from '../lib/money.js';
  *
  * The source comes back with the number so a screen can say where a cost came from.
  * A margin nobody can explain is a margin nobody trusts.
+ *
+ * Vendors in this market bill in dollars while the documents go out in dirhams, so the
+ * price is also converted into the currency of the document asking for it. The figure
+ * the vendor actually quoted travels alongside it — a cost of AED 506.81 means nothing
+ * to someone holding a price list that says USD 138.
  */
 
 export type PriceSource = 'special' | 'price-book' | 'catalogue' | 'none';
 
 export interface ResolvedPrice {
+  /** Cost in `currency` — already converted, ready to put on a line. */
   cost: number;
   source: PriceSource;
   /** Human sentence for the UI — "Special price on ZEU-D-000042". */
   reason: string;
+  /** The currency `cost` is expressed in: the document's, not the vendor's. */
   currency: string;
+  /** What the vendor quoted, before conversion. Same as `cost` when no rate was applied. */
+  sourceCost: number;
+  sourceCurrency: string;
+  /** Units of `currency` per one unit of `sourceCurrency`. 1 when they match. */
+  rate: number | null;
+  /**
+   * True when the vendor's currency has no rate configured. The cost is then the
+   * vendor's own figure and is NOT comparable to the document — the UI must say so
+   * rather than let someone quote against a number that is out by the exchange rate.
+   */
+  rateMissing: boolean;
   vendorSku: string | null;
-  /** The vendor's list price when known, so a discount can be shown. */
+  /** The vendor's list price when known, so a discount can be shown. Converted too. */
   listPrice: number | null;
   entryId: string | null;
   validTo: Date | null;
@@ -43,6 +62,8 @@ export interface PriceQuery {
   vendorId?: string | null;
   /** Date the price has to be valid on. Defaults to today. */
   on?: Date;
+  /** Currency of the document asking. Defaults to the configured base currency. */
+  currency?: string | null;
 }
 
 /**
@@ -60,7 +81,9 @@ export async function resolvePrice(query: PriceQuery): Promise<ResolvedPrice> {
   const quantity = query.quantity && query.quantity > 0 ? query.quantity : 1;
   const on = query.on ?? new Date();
 
-  const [product, entries] = await Promise.all([
+  const [base, rates, product, entries] = await Promise.all([
+    getSetting<string>('finance.currency', 'AED'),
+    getSetting<Record<string, number>>('finance.exchangeRates', {}),
     prisma.product.findUnique({
       where: { id: query.productId },
       select: { cost: true, currency: true, sku: true },
@@ -92,40 +115,67 @@ export async function resolvePrice(query: PriceQuery): Promise<ResolvedPrice> {
 
   const chosen = best(special) ?? best(standing);
 
+  /** Put a vendor's figure into the document's money, and keep the original visible. */
+  const target = query.currency || base;
+  const priced = (
+    amount: number,
+    from: string,
+    rest: Omit<ResolvedPrice, 'cost' | 'currency' | 'sourceCost' | 'sourceCurrency' | 'rate' | 'rateMissing' | 'reason'>
+      & { reason: string; listPrice: number | null },
+  ): ResolvedPrice => {
+    const { amount: converted, rate } = convert(amount, from, target, rates, base);
+    const list = rest.listPrice === null ? null : convert(rest.listPrice, from, target, rates, base).amount;
+    return {
+      ...rest,
+      cost: converted,
+      currency: rate === null ? from : target,
+      sourceCost: round2(amount),
+      sourceCurrency: from,
+      rate,
+      rateMissing: rate === null,
+      listPrice: rate === null ? rest.listPrice : list,
+      reason: rate === null
+        ? `${rest.reason} — no ${target} rate on file for ${from}, so this figure is still in ${from}`
+        : rate === 1
+          ? rest.reason
+          : `${rest.reason} — ${from} ${round2(amount)} at ${rate}`,
+    };
+  };
+
   if (chosen) {
     const isSpecial = Boolean(chosen.dealId);
-    return {
-      cost: round2(num(chosen.cost)),
+    return priced(num(chosen.cost), chosen.currency, {
       source: isSpecial ? 'special' : 'price-book',
       reason: isSpecial
         ? `Special price approved on ${chosen.deal?.reference ?? 'this deal'}`
         : `${chosen.vendor?.name ?? 'Price book'}${num(chosen.minQuantity) > 1 ? ` from ${num(chosen.minQuantity)} units` : ''}`,
-      currency: chosen.currency,
       vendorSku: chosen.vendorSku,
       listPrice: chosen.listPrice === null ? null : round2(num(chosen.listPrice)),
       entryId: chosen.id,
       validTo: chosen.validTo,
-    };
+    });
   }
 
   if (product && num(product.cost) > 0) {
-    return {
-      cost: round2(num(product.cost)),
+    return priced(num(product.cost), product.currency, {
       source: 'catalogue',
       reason: 'Catalogue cost — no vendor price loaded for this SKU',
-      currency: product.currency,
       vendorSku: null,
       listPrice: null,
       entryId: null,
       validTo: null,
-    };
+    });
   }
 
   return {
     cost: 0,
     source: 'none',
     reason: 'No cost on file — margin cannot be trusted until one is added',
-    currency: 'AED',
+    currency: target,
+    sourceCost: 0,
+    sourceCurrency: target,
+    rate: 1,
+    rateMissing: false,
     vendorSku: null,
     listPrice: null,
     entryId: null,
@@ -136,7 +186,7 @@ export async function resolvePrice(query: PriceQuery): Promise<ResolvedPrice> {
 /** Resolve several lines in one round trip, for a whole quote or PO. */
 export async function resolvePrices(
   lines: Array<{ productId?: string | null; quantity?: number }>,
-  context: { dealId?: string | null; vendorId?: string | null } = {},
+  context: { dealId?: string | null; vendorId?: string | null; currency?: string | null } = {},
 ): Promise<Array<ResolvedPrice | null>> {
   return Promise.all(
     lines.map((line) =>

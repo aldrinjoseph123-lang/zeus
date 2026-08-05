@@ -405,7 +405,7 @@ export default function InvoiceEditor() {
 
           <Card>
             <CardHeader title="Line items" subtitle="Each line carries its own VAT rate, as the FTA requires" />
-            <LineEditor lines={lines} onChange={setLines} locked={locked} showCost={showCost} defaultVat={defaultVat} headerDiscountPct={form.discountPct} dealId={form.dealId || null} />
+            <LineEditor lines={lines} onChange={setLines} locked={locked} showCost={showCost} defaultVat={defaultVat} headerDiscountPct={form.discountPct} dealId={form.dealId || null} currency={form.currency} />
           </Card>
 
           <Card>

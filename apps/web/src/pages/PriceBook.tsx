@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, Plus, Tags, Upload } from 'lucide-react';
 import { api, ApiError, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { date, daysBetween, money, percent } from '../lib/format';
+import { date, daysBetween, moneyIn, percent } from '../lib/format';
 import {
   Badge, Button, Card, ConfirmDialog, DataTable, EmptyState, ErrorNote, Field, Input,
   Loading, Modal, PageHeader, Pagination, SearchInput, Textarea, cx, useDebounced, useToast,
@@ -161,7 +161,7 @@ export default function PriceBook() {
                     const off = list && list > 0 ? ((list - Number(row.cost)) / list) * 100 : null;
                     return (
                       <span className="tabular">
-                        <span className="block font-semibold">{money(row.cost)}</span>
+                        <span className="block font-semibold">{moneyIn(row.cost, row.currency)}</span>
                         {off !== null ? <span className="block text-[10px] text-n400">{percent(off, 0)} off list</span> : null}
                       </span>
                     );
@@ -217,7 +217,7 @@ export default function PriceBook() {
         <ConfirmDialog
           open
           title="Remove this price?"
-          message={`${deleting.product.sku} at ${money(deleting.cost)}. Lines already saved keep the cost they were given; new ones will fall back to the next best price.`}
+          message={`${deleting.product.sku} at ${moneyIn(deleting.cost, deleting.currency)}. Lines already saved keep the cost they were given; new ones will fall back to the next best price.`}
           confirmLabel="Remove"
           danger
           loading={remove.isPending}
