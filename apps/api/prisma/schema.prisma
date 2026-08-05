@@ -142,6 +142,7 @@ model Account {
   convertedFromLeads Lead[]
   subscriptions      Subscription[]
   vendorSubscriptions Subscription[] @relation("SubscriptionVendor")
+  priceEntries       PriceEntry[]   @relation("PriceEntryVendor")
 
   @@index([domain])
   @@index([type])
@@ -343,6 +344,7 @@ model Deal {
   ownerId String?
   owner   User?   @relation("DealOwner", fields: [ownerId], references: [id])
   soldSubscriptions    Subscription[] @relation("SubscriptionSourceDeal")
+  specialPrices        PriceEntry[]
   renewingSubscriptions Subscription[] @relation("SubscriptionRenewalDeal")
 
   /// Manager sign-off. The record cannot take its next irreversible step — a deal
@@ -447,6 +449,8 @@ model DealRegistration {
   notes            String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+
+  specialPrices PriceEntry[]
 
   @@index([dealId])
   @@index([vendorId])
@@ -571,6 +575,7 @@ model Product {
   invoiceLines InvoiceLine[]
   poLines      PurchaseOrderLine[]
   subscriptions Subscription[]
+  priceEntries PriceEntry[]
 
   @@index([category])
   @@index([vendorId])
@@ -788,6 +793,51 @@ model InvoiceLine {
 
   @@index([invoiceId])
 }
+
+/// A price we can buy at.
+///
+/// Vendor pricing in this market is not one number per SKU: it moves with quantity,
+/// it expires, and a registered deal often carries a special price the vendor approved
+/// for that opportunity alone. All of those are the same shape — a cost that applies
+/// under conditions — so they live in one table and one resolver picks the most
+/// specific match rather than three tables disagreeing about which wins.
+model PriceEntry {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendorId  String?
+  vendor    Account? @relation("PriceEntryVendor", fields: [vendorId], references: [id])
+
+  /// What we pay, per unit, under these conditions.
+  cost      Decimal  @db.Decimal(14, 2)
+  /// The vendor's own list price, when they publish one — useful for showing discount.
+  listPrice Decimal? @db.Decimal(14, 2)
+  currency  String   @default("AED")
+  /// The vendor's part number, which is rarely our SKU.
+  vendorSku String?
+
+  /// Quantity break: this price applies from this quantity upward.
+  minQuantity Decimal   @default(1) @db.Decimal(12, 2)
+  validFrom   DateTime?
+  validTo     DateTime?
+
+  /// Set for a special price (SPA) the vendor approved for one opportunity. A
+  /// deal-scoped entry always beats a standing one, and never leaks to another deal.
+  dealId         String?
+  deal           Deal?             @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  registrationId String?
+  registration   DealRegistration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId, dealId])
+  @@index([vendorId])
+  @@index([validTo])
+}
+
 
 // ---------------------------------------------------------------- purchase orders
 

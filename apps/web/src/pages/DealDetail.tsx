@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, FileText, Mail, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileText, Mail, Pencil, Plus, ShieldCheck, Tags, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, dateInput, daysBetween, money, percent, relative } from '../lib/format';
@@ -15,6 +15,7 @@ import { AttachmentPanel } from '../components/attachments';
 import { CustomFieldInputs, CustomFieldValues, type CustomValues } from '../components/customFields';
 import { LifecycleRail, dealHint, dealJourney } from '../components/lifecycle';
 import { ApprovalBar, type ApprovalState } from '../components/approvals';
+import { PriceModal } from './PriceBook';
 import { useUndo } from '../lib/undo';
 
 interface Registration {
@@ -62,6 +63,7 @@ export default function DealDetail() {
 
   const [editing, setEditing] = useState(false);
   const [addingReg, setAddingReg] = useState(false);
+  const [addingPrice, setAddingPrice] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [lostFor, setLostFor] = useState<string | null>(null);
 
@@ -91,6 +93,15 @@ export default function DealDetail() {
     mutationFn: () => api.del<{ undoId?: string }>(`/deals/${id}`),
     onSuccess: (res) => { undo.toast('Deal deleted.', res.undoId); navigate('/deals'); },
     onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not delete.', 'error'),
+  });
+
+  // Special prices agreed for this opportunity. Kept beside the registrations, because
+  // an SPA is what a registration is *for* — the approval is only the paperwork.
+  const { data: specialPrices } = useQuery({
+    queryKey: ['deal-prices', id],
+    queryFn: () => api.get<{ data: Array<{ id: string; cost: string | number; minQuantity: string | number; validTo: string | null; vendor: { name: string } | null; product: { sku: string; name: string; listPrice: string | number } }> }>(`/price-book?dealId=${id}&pageSize=50`),
+    enabled: sees('products', 'cost'),
+    retry: false,
   });
 
   const notifyPartner = useMutation({
@@ -330,6 +341,60 @@ export default function DealDetail() {
             )}
           </Card>
 
+          {sees('products', 'cost') ? (
+            <Card>
+              <CardHeader
+                title="Special pricing"
+                subtitle="Vendor prices approved for this deal only — quote lines pick these up automatically"
+                actions={can('products', 'create') ? (
+                  <Button size="sm" icon={<Plus size={13} />} onClick={() => setAddingPrice(true)}>Add price</Button>
+                ) : undefined}
+              />
+              {!specialPrices?.data.length ? (
+                <EmptyState
+                  title="No special price on this deal"
+                  message="Quote lines will use the standing vendor price. Add one here when the vendor approves an SPA."
+                  icon={<Tags size={22} />}
+                />
+              ) : (
+                <DataTable
+                  dense
+                  rows={specialPrices.data}
+                  rowKey={(row) => row.id}
+                  columns={[
+                    {
+                      key: 'product', header: 'Item',
+                      render: (row) => (
+                        <span>
+                          <span className="block font-semibold">{row.product.sku}</span>
+                          <span className="block text-[11px] text-muted">{row.vendor?.name ?? 'No vendor'}</span>
+                        </span>
+                      ),
+                    },
+                    { key: 'minQuantity', header: 'From', align: 'right', width: '64px', render: (row) => <span className="tabular text-[12px]">{Number(row.minQuantity)}</span> },
+                    {
+                      key: 'cost', header: 'Special buy', align: 'right', width: '120px',
+                      render: (row) => {
+                        const list = Number(row.product.listPrice);
+                        const off = list > 0 ? ((list - Number(row.cost)) / list) * 100 : null;
+                        return (
+                          <span className="tabular">
+                            <span className="block font-semibold">{money(row.cost)}</span>
+                            {off !== null ? <span className="block text-[10px] text-n400">{percent(off, 0)} off list</span> : null}
+                          </span>
+                        );
+                      },
+                    },
+                    {
+                      key: 'validTo', header: 'Valid to', align: 'right', width: '100px',
+                      render: (row) => <span className="tabular text-[12px] text-muted">{row.validTo ? date(row.validTo) : 'Open'}</span>,
+                    },
+                  ]}
+                />
+              )}
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader title="Files" subtitle="Purchase orders, signed quotes, vendor confirmations" />
             <AttachmentPanel parent="deal" parentId={deal.id} />
@@ -398,6 +463,14 @@ export default function DealDetail() {
       </div>
 
       {editing ? <EditDealModal deal={deal} onClose={() => setEditing(false)} onSaved={invalidate} /> : null}
+      {addingPrice ? (
+        <PriceModal
+          dealId={deal.id}
+          registrationId={deal.registrations.find((r) => r.side === 'VENDOR' && r.status === 'APPROVED')?.id ?? null}
+          onClose={() => { setAddingPrice(false); void queryClient.invalidateQueries({ queryKey: ['deal-prices', id] }); }}
+        />
+      ) : null}
+
       {addingReg ? (
         <RegistrationModal
           dealId={deal.id}

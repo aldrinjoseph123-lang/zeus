@@ -30,6 +30,7 @@ import paymentRoutes from './routes/payments.js';
 import approvalRoutes from './routes/approvals.js';
 import undoRoutes from './routes/undo.js';
 import renewalRoutes from './routes/renewals.js';
+import priceBookRoutes from './routes/priceBook.js';
 import adminRoutes from './routes/admin.js';
 import integrationRoutes from './routes/integrations.js';
 
@@ -116,6 +117,7 @@ export async function buildApp() {
   await app.register(approvalRoutes);
   await app.register(undoRoutes);
   await app.register(renewalRoutes);
+  await app.register(priceBookRoutes);
   await app.register(adminRoutes);
   await app.register(integrationRoutes);
 

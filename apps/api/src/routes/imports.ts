@@ -103,6 +103,18 @@ export const MODULE_FIELDS: Record<string, FieldDef[]> = {
     { key: 'closeDate', label: 'Close date', type: 'date', aliases: ['close date', 'expected close', 'closing date', 'date'], example: '2026-09-30', example2: '2026-11-15' },
     { key: 'description', label: 'Notes', aliases: ['notes', 'description', 'comments'], example: '3-year licence, phased rollout', example2: '' },
   ],
+  priceBook: [
+    { key: 'sku', label: 'SKU', required: true, aliases: ['sku', 'part number', 'item code', 'part no', 'product code'], example: 'CRWD-FLC-PRO', example2: 'P24-SOC-MDR' },
+    { key: 'cost', label: 'Buy price', required: true, type: 'number', aliases: ['cost', 'buy', 'buy price', 'dealer price', 'partner price', 'net price'], example: '138', example2: '9000' },
+    { key: 'vendorName', label: 'Vendor', aliases: ['vendor', 'manufacturer', 'brand', 'oem', 'supplier'], example: 'CrowdStrike', example2: 'Protect24x7' },
+    { key: 'vendorSku', label: 'Vendor part number', aliases: ['vendor sku', 'vendor part', 'mpn', 'manufacturer part number'], example: 'CS-FAL-PRO-1Y', example2: '' },
+    { key: 'listPrice', label: 'Vendor list price', type: 'number', aliases: ['list price', 'msrp', 'srp', 'rrp'], example: '210', example2: '15000' },
+    { key: 'minQuantity', label: 'From quantity', type: 'number', aliases: ['min qty', 'from qty', 'quantity break', 'tier', 'min quantity'], example: '1', example2: '50' },
+    { key: 'currency', label: 'Currency', aliases: ['currency', 'ccy'], values: ['AED', 'USD', 'EUR', 'GBP'], example: 'AED', example2: 'USD' },
+    { key: 'validFrom', label: 'Valid from', type: 'date', aliases: ['valid from', 'start date', 'effective from'], example: '2026-01-01', example2: '' },
+    { key: 'validTo', label: 'Valid to', type: 'date', aliases: ['valid to', 'end date', 'expiry', 'expires', 'valid until'], example: '2026-12-31', example2: '2026-12-31' },
+    { key: 'notes', label: 'Notes', aliases: ['notes', 'comments', 'remarks'], example: 'Q1 promo pricing', example2: '' },
+  ],
 };
 
 const norm = (s: string) => s.toLowerCase().replace(/[_\-.]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -428,6 +440,56 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
           } else {
             preview.push({ row: rowNo, action: 'create', label: `${record.sku} ${record.name}` });
             if (!dryRun) await prisma.product.create({ data });
+            imported += 1;
+          }
+        }
+
+        else if (job.module === 'priceBook') {
+          const product = await prisma.product.findFirst({ where: { sku: { equals: String(record.sku), mode: 'insensitive' } } });
+          if (!product) {
+            // A price for a SKU Zeus does not stock is not usable, and silently creating
+            // the product would import a catalogue nobody reviewed.
+            throw new Error(`No catalogue item with SKU "${record.sku}" — add it first, or import the catalogue.`);
+          }
+
+          const vendorId = record.vendorName
+            ? await resolveAccount(String(record.vendorName), 'VENDOR')
+            : product.vendorId;
+          const minQuantity = (record.minQuantity as number) ?? 1;
+
+          // A vendor's refreshed list replaces the same tier rather than stacking a
+          // second price beside it — otherwise every import doubles the rows and the
+          // resolver starts choosing between yesterday's price and today's.
+          const existing = await prisma.priceEntry.findFirst({
+            where: { productId: product.id, vendorId: vendorId ?? null, minQuantity, dealId: null },
+          });
+
+          const data = {
+            productId: product.id,
+            vendorId: vendorId ?? null,
+            cost: (record.cost as number) ?? 0,
+            listPrice: (record.listPrice as number) ?? null,
+            currency: (record.currency as string) || 'AED',
+            vendorSku: (record.vendorSku as string) || null,
+            minQuantity,
+            validFrom: (record.validFrom as Date) ?? null,
+            validTo: (record.validTo as Date) ?? null,
+            notes: (record.notes as string) || null,
+            isActive: true,
+          };
+
+          if (existing && onDuplicate === 'skip') {
+            skipped += 1;
+            preview.push({ row: rowNo, action: 'skip', label: String(record.sku), note: 'A price for this SKU, vendor and tier already exists' });
+            continue;
+          }
+          if (existing) {
+            preview.push({ row: rowNo, action: 'update', label: `${record.sku} → ${data.cost}`, note: minQuantity > 1 ? `from ${minQuantity} units` : undefined });
+            if (!dryRun) await prisma.priceEntry.update({ where: { id: existing.id }, data });
+            updated += 1;
+          } else {
+            preview.push({ row: rowNo, action: 'create', label: `${record.sku} → ${data.cost}`, note: minQuantity > 1 ? `from ${minQuantity} units` : undefined });
+            if (!dryRun) await prisma.priceEntry.create({ data });
             imported += 1;
           }
         }

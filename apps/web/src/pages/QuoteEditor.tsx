@@ -274,6 +274,7 @@ export default function QuoteEditor() {
               defaultVat={vatRate}
               showVat={false}
               headerDiscountPct={discountPct}
+              dealId={dealId || quote?.deal?.id || null}
             />
           </Card>
 

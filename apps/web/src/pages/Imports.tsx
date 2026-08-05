@@ -25,6 +25,7 @@ const MODULES = [
   { value: 'contacts', label: 'Contacts' },
   { value: 'products', label: 'Catalog items' },
   { value: 'deals', label: 'Deals' },
+  { value: 'priceBook', label: 'Vendor price list' },
 ];
 
 export default function Imports() {

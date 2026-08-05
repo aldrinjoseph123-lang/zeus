@@ -378,6 +378,8 @@ export default function PurchaseOrderEditor() {
               costFromCatalog={isSupplier}
               priceLabel={isSupplier ? 'Buy price' : 'Unit price'}
               headerDiscountPct={form.discountPct}
+              dealId={form.dealId || po?.deal?.id || null}
+              vendorId={form.accountId || null}
             />
           </Card>
 

@@ -751,6 +751,60 @@ export const REPORTS: ReportDef[] = [
       };
     },
   },
+  {
+    key: 'price-book',
+    name: 'Vendor price book',
+    description: 'Buy prices by SKU and vendor, with quantity breaks and what is about to expire.',
+    module: 'products',
+    columns: [
+      { key: 'sku', label: 'SKU', width: 110 },
+      { key: 'product', label: 'Item' },
+      { key: 'vendor', label: 'Vendor', width: 110 },
+      { key: 'vendorSku', label: 'Their part no.', width: 110 },
+      { key: 'minQuantity', label: 'From qty', width: 60, align: 'right' },
+      { key: 'cost', label: 'Buy price', width: 95, align: 'right', format: 'money' },
+      { key: 'listPrice', label: 'Their list', width: 95, align: 'right', format: 'money' },
+      { key: 'discountPct', label: 'Off list %', width: 70, align: 'right' },
+      { key: 'scope', label: 'Applies to', width: 120 },
+      { key: 'validTo', label: 'Valid to', width: 80, format: 'date' },
+    ],
+    run: async () => {
+      const entries = await prisma.priceEntry.findMany({
+        where: { isActive: true },
+        include: { product: true, vendor: true, deal: { select: { reference: true } } },
+        orderBy: [{ product: { sku: 'asc' } }, { minQuantity: 'asc' }],
+      });
+      const expiring = entries.filter((e) => {
+        if (!e.validTo) return false;
+        const left = e.validTo.getTime() - Date.now();
+        return left > 0 && left < 30 * 86_400_000;
+      });
+      const expired = entries.filter((e) => e.validTo && e.validTo.getTime() < Date.now());
+      return {
+        rows: entries.map((e) => {
+          const list = e.listPrice === null ? null : num(e.listPrice);
+          return {
+            sku: e.product.sku,
+            product: e.product.name,
+            vendor: e.vendor?.name ?? '',
+            vendorSku: e.vendorSku ?? '',
+            minQuantity: num(e.minQuantity),
+            cost: num(e.cost),
+            listPrice: list,
+            discountPct: list && list > 0 ? Number((((list - num(e.cost)) / list) * 100).toFixed(1)) : null,
+            scope: e.deal ? `Special · ${e.deal.reference}` : 'All deals',
+            validTo: e.validTo,
+          };
+        }),
+        summary: [
+          ['Prices on file', String(entries.length)],
+          ['SKUs covered', String(new Set(entries.map((e) => e.productId)).size)],
+          ['Expiring in 30d', String(expiring.length)],
+          ['Already expired', String(expired.length)],
+        ],
+      };
+    },
+  },
 ];
 
 async function buildContext(request: FastifyRequest): Promise<ReportContext> {

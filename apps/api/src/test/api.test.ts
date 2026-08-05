@@ -322,6 +322,87 @@ describe('undo', () => {
   });
 });
 
+// ── vendor price book ─────────────────────────────────────────────────────────
+
+describe('price book', () => {
+  async function makeProduct(sku: string, cost: number) {
+    return prisma.product.create({
+      data: { sku, name: `Product ${sku}`, unit: 'licence', listPrice: cost * 2, cost, vendorId: fx.vendor.id },
+    });
+  }
+
+  it('falls back to the catalogue cost when no vendor price is loaded', async () => {
+    const product = await makeProduct('SKU-FALLBACK', 100);
+    const res = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.cost, 100);
+    assert.equal(res.body.source, 'catalogue');
+  });
+
+  it('prefers the vendor price over the catalogue cost', async () => {
+    const product = await makeProduct('SKU-VENDOR', 100);
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 80,
+    });
+    const res = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    assert.equal(res.body.cost, 80);
+    assert.equal(res.body.source, 'price-book');
+  });
+
+  it('takes the quantity break that applies, not the cheapest on file', async () => {
+    const product = await makeProduct('SKU-TIERS', 100);
+    for (const [minQuantity, cost] of [[1, 90], [50, 75], [500, 60]] as const) {
+      await request(app, fx.manager).post('/api/price-book', { productId: product.id, vendorId: fx.vendor.id, cost, minQuantity });
+    }
+
+    const one = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    const fifty = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=60`);
+    const bulk = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1000`);
+
+    assert.equal(one.body.cost, 90, 'a single unit must not get the bulk price');
+    assert.equal(fifty.body.cost, 75);
+    assert.equal(bulk.body.cost, 60);
+  });
+
+  it('ignores a price list that has expired', async () => {
+    const product = await makeProduct('SKU-EXPIRED', 100);
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 40,
+      validTo: new Date(Date.now() - 86_400_000).toISOString(),
+    });
+    const res = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    assert.equal(res.body.cost, 100, 'an expired price must not be used');
+    assert.equal(res.body.source, 'catalogue');
+  });
+
+  it('gives a deal its special price, and never leaks it to another deal', async () => {
+    const product = await makeProduct('SKU-SPA', 100);
+    const registered = await makeDeal(fx.rep, { name: 'Registered deal' });
+    const other = await makeDeal(fx.rep, { name: 'Someone else' });
+
+    await request(app, fx.manager).post('/api/price-book', { productId: product.id, vendorId: fx.vendor.id, cost: 80 });
+    await request(app, fx.manager).post('/api/price-book', {
+      productId: product.id, vendorId: fx.vendor.id, cost: 55, dealId: registered.id,
+    });
+
+    const onDeal = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1&dealId=${registered.id}`);
+    assert.equal(onDeal.body.cost, 55);
+    assert.equal(onDeal.body.source, 'special');
+
+    const elsewhere = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1&dealId=${other.id}`);
+    assert.equal(elsewhere.body.cost, 80, 'a special price must not reach a different deal');
+
+    const noDeal = await request(app, fx.manager).get(`/api/price-book/resolve?productId=${product.id}&quantity=1`);
+    assert.equal(noDeal.body.cost, 80);
+  });
+
+  it('keeps the price book away from a role that cannot see cost', async () => {
+    const product = await makeProduct('SKU-RBAC', 100);
+    assert.equal((await request(app, fx.rep).get(`/api/price-book?productId=${product.id}`)).status, 403);
+    assert.equal((await request(app, fx.rep).post('/api/price-book', { productId: product.id, cost: 1 })).status, 403);
+  });
+});
+
 // ── duplicate detection ───────────────────────────────────────────────────────
 
 describe('duplicate detection', () => {
