@@ -27,11 +27,15 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'company.bankSwift': '',
 
   'finance.currency': 'AED',
-  /// AED per one unit of the foreign currency. The dirham has been pegged to the dollar
-  /// at 3.6725 since 1997, so a vendor who bills in USD converts at a rate that does not
-  /// move — but it is a setting rather than a constant because EUR and GBP do move, and
-  /// a vendor sometimes fixes its own rate in the contract.
+  /// AED per one unit of the foreign currency, refreshed daily from the feed below.
+  /// Seeded with the dirham's dollar peg so a fresh install can price a USD SKU before
+  /// the first fetch, and so an unreachable feed always has something sane to fall back on.
   'finance.exchangeRates': { USD: 3.6725 },
+  /// Public rates feed. `{from}` is the vendor's currency, `{base}` ours; the response
+  /// must carry `rates[base]`. Swap the host here if this one ever goes away — no redeploy.
+  'finance.exchangeRateApi': 'https://open.er-api.com/v6/latest/{from}',
+  /// When the stored rates were last fetched. Written by the job, not by hand.
+  'finance.exchangeRatesUpdatedAt': '',
   'finance.vatRate': 5,
   'finance.vatLabel': 'VAT (5%)',
   'finance.quoteValidDays': 30,

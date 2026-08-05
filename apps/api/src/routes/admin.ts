@@ -9,6 +9,7 @@ import { getSettings, invalidateSettings, setSetting, SETTING_DEFAULTS } from '.
 import { invalidateCustomFields } from '../lib/customFields.js';
 import { NOTIFICATION_EVENTS } from '../services/notify.js';
 import { postToWebhook } from '../services/teams.js';
+import { refreshRates } from '../services/fx.js';
 
 export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── users ───────────────────────────────────────────────────────────────────
@@ -316,6 +317,23 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
     invalidateSettings();
     await audit({ user: request.user, action: 'update', entity: 'Setting', summary: `Updated ${Object.keys(body).join(', ')}`, ip: clientIp(request) });
     return { ok: true, values: await getSettings() };
+  });
+
+  /**
+   * Pull the rates now rather than waiting for tomorrow's job. Useful the first time
+   * a currency appears in the price book, and when someone wants to see for themselves
+   * that the feed is answering.
+   */
+  app.post('/api/settings/exchange-rates/refresh', { preHandler: requirePermission('settings', 'update') }, async (request) => {
+    const result = await refreshRates();
+    if (result.updated.length > 0) {
+      await audit({
+        user: request.user, action: 'update', entity: 'Setting',
+        summary: `Fetched exchange rates: ${result.updated.map((c) => `${c}=${result.rates[c]}`).join(', ')}`,
+        ip: clientIp(request),
+      });
+    }
+    return result;
   });
 
   // ── custom fields ───────────────────────────────────────────────────────────

@@ -235,61 +235,56 @@ function SettingsGroup({ prefix, title, description, extraPrefixes = [] }: {
 // ── exchange rates ────────────────────────────────────────────────────────────
 
 /**
- * Rates for the currencies vendors bill in, quoted as base-currency units per one unit
- * of the foreign currency. The dirham's dollar peg has not moved since 1997, so USD is
- * seeded at 3.6725 — but it stays editable, because a vendor contract sometimes fixes
- * its own rate and currencies that float need maintaining.
+ * Exchange rates, fetched rather than typed.
  *
- * A currency with no rate here is not silently assumed to be one-to-one: the price book
- * refuses to convert it and says so on the line.
+ * These are read-only on purpose. They refresh from a public feed every morning and at
+ * boot, so there is nothing here to keep up to date by hand — and a number someone
+ * typed six months ago is exactly the failure this replaced. What the screen owes the
+ * reader is the rate, when it was last confirmed, and where it came from.
+ *
+ * Only the currencies Zeus actually prices in appear: the ones its price book and
+ * catalogue use, plus the dollar. There is no list of currencies nobody trades in.
  */
 function ExchangeRatesSection() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
-  const editable = can('settings', 'update');
-
-  const [draft, setDraft] = useState<Record<string, number> | null>(null);
-  const [code, setCode] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings'],
     queryFn: () => api.get<{ values: Record<string, unknown> }>('/settings'),
   });
 
-  const save = useMutation({
-    mutationFn: (rates: Record<string, number>) => api.put('/settings', { 'finance.exchangeRates': rates }),
-    onSuccess: () => {
+  const refresh = useMutation({
+    mutationFn: () => api.post<{ ok: boolean; updated: string[]; skipped: Record<string, string> }>(
+      '/settings/exchange-rates/refresh', {},
+    ),
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['settings'] });
-      setDraft(null);
-      toast.push('Exchange rates saved.');
+      const refused = Object.values(result.skipped ?? {});
+      if (result.updated?.length) toast.push(`Rates updated: ${result.updated.join(', ')}.`);
+      else toast.push(refused[0] ?? 'The rates feed had nothing new. The stored rate stands.', 'error');
     },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not reach the rates feed.', 'error'),
   });
 
   if (isLoading) return <Loading />;
 
   const base = String(data?.values['finance.currency'] ?? 'AED');
-  const saved = (data?.values['finance.exchangeRates'] ?? {}) as Record<string, number>;
-  const rates = draft ?? saved;
+  const rates = (data?.values['finance.exchangeRates'] ?? {}) as Record<string, number>;
   const codes = Object.keys(rates).sort();
-
-  const set = (next: Record<string, number>) => setDraft(next);
-  const addCode = () => {
-    const clean = code.trim().toUpperCase();
-    if (!clean || clean === base || clean in rates) return;
-    set({ ...rates, [clean]: 0 });
-    setCode('');
-  };
+  const updatedAt = String(data?.values['finance.exchangeRatesUpdatedAt'] ?? '');
+  const feed = String(data?.values['finance.exchangeRateApi'] ?? '');
+  const host = feed ? feed.replace(/^https?:\/\//, '').split('/')[0] : null;
 
   return (
     <Card>
       <CardHeader
         title="Exchange rates"
-        subtitle={`${base} per one unit of the vendor's currency. Used to convert vendor prices onto quotes and orders.`}
-        actions={editable ? (
-          <Button variant="accent" size="sm" disabled={draft === null} loading={save.isPending} onClick={() => save.mutate(rates)}>
-            Save
+        subtitle={`${base} per one unit of the vendor's currency. Fetched daily and applied to vendor costs on quotes and orders.`}
+        actions={can('settings', 'update') ? (
+          <Button size="sm" icon={<RefreshCw size={13} />} loading={refresh.isPending} onClick={() => refresh.mutate()}>
+            Refresh now
           </Button>
         ) : undefined}
       />
@@ -297,51 +292,21 @@ function ExchangeRatesSection() {
       <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
         {codes.length === 0 ? (
           <p className="text-[12px] text-muted sm:col-span-2">
-            No rates set. Vendor prices in another currency will be flagged rather than converted.
+            No rates yet. Vendor prices in another currency are flagged on the line rather than converted.
           </p>
         ) : codes.map((currency) => (
-          <Field key={currency} label={`1 ${currency} = ? ${base}`}>
-            <span className="flex items-center gap-1.5">
-              <Input
-                type="number" min="0" step="0.0001"
-                value={String(rates[currency] ?? '')}
-                disabled={!editable}
-                onChange={(e) => set({ ...rates, [currency]: Number(e.target.value) })}
-              />
-              {editable ? (
-                <button
-                  type="button"
-                  aria-label={`Remove ${currency}`}
-                  onClick={() => {
-                    const next = { ...rates };
-                    delete next[currency];
-                    set(next);
-                  }}
-                  className="shrink-0 rounded-sharp border border-line px-2 py-2 text-n400 hover:border-accent hover:text-accent"
-                >
-                  <Trash2 size={13} />
-                </button>
-              ) : null}
-            </span>
-          </Field>
+          <div key={currency} className="rounded-sharp border border-line px-3 py-2.5">
+            <span className="eyebrow">1 {currency}</span>
+            <span className="mt-0.5 block tabular text-[18px] font-semibold">{rates[currency]} {base}</span>
+          </div>
         ))}
       </div>
 
-      {editable ? (
-        <div className="flex items-center gap-2 border-t border-line px-4 py-3">
-          <Input
-            className="w-32"
-            placeholder="EUR"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCode(); } }}
-          />
-          <Button size="sm" icon={<Plus size={13} />} onClick={addCode}>Add currency</Button>
-        </div>
-      ) : null}
-
       <div className="border-t border-line bg-sunken px-4 py-3 text-[12px] text-muted">
-        Changing a rate affects costs resolved from now on. Lines already saved keep the figure they were given.
+        {updatedAt ? `Last fetched ${relative(updatedAt)}` : 'Not fetched yet — showing the seeded rate'}
+        {host ? ` from ${host}` : null}. Refreshes every morning and at start-up.
+        {' '}A rate that arrives more than 25% away from the stored one is refused rather than applied, and someone is told.
+        {' '}Lines already saved keep the figure they were given.
       </div>
     </Card>
   );

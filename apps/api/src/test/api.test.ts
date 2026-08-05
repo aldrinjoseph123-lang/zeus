@@ -495,3 +495,77 @@ describe('duplicate detection', () => {
     assert.equal(res.status, 201);
   });
 });
+
+// ── exchange rates ────────────────────────────────────────────────────────────
+
+/**
+ * The fetcher is pointed at a stub server rather than the real feed: a test that needs
+ * the internet fails for reasons that have nothing to do with the code.
+ */
+describe('exchange rates', () => {
+  let server: import('node:http').Server;
+  let feed: string;
+  let reply: { status: number; body: unknown } = { status: 200, body: { rates: { AED: 3.6725 } } };
+
+  before(async () => {
+    const { createServer } = await import('node:http');
+    server = createServer((_req, res) => {
+      res.writeHead(reply.status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(reply.body));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    feed = `http://127.0.0.1:${port}/{from}`;
+  });
+
+  after(() => server.close());
+
+  const setRates = async (rates: Record<string, number>) =>
+    request(app, fx.admin).put('/api/settings', {
+      'finance.exchangeRates': rates,
+      'finance.exchangeRateApi': feed,
+    });
+
+  it('stores the rate the feed answers with', async () => {
+    await setRates({ USD: 3.5 });
+    reply = { status: 200, body: { rates: { AED: 3.6725 } } };
+
+    const res = await request(app, fx.admin).post('/api/settings/exchange-rates/refresh', {});
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.updated, ['USD']);
+    assert.equal(res.body.rates.USD, 3.6725);
+  });
+
+  it('refuses a rate that is nowhere near the stored one', async () => {
+    await setRates({ USD: 3.6725 });
+    // What an inverted feed looks like: dollars per dirham, not dirhams per dollar.
+    reply = { status: 200, body: { rates: { AED: 0.2723 } } };
+
+    const res = await request(app, fx.admin).post('/api/settings/exchange-rates/refresh', {});
+    assert.equal(res.body.updated.length, 0);
+    assert.equal(res.body.rates.USD, 3.6725, 'the good rate must survive a bad answer');
+    assert.match(res.body.skipped.USD, /Refused/);
+  });
+
+  it('keeps the stored rate when the feed is unreachable', async () => {
+    await setRates({ USD: 3.6725 });
+    reply = { status: 500, body: { error: 'nope' } };
+
+    const res = await request(app, fx.admin).post('/api/settings/exchange-rates/refresh', {});
+    assert.equal(res.body.ok, false);
+    assert.equal(res.body.rates.USD, 3.6725);
+  });
+
+  it('discards a reply that carries no usable rate', async () => {
+    await setRates({ USD: 3.6725 });
+    reply = { status: 200, body: { rates: { EUR: 4 } } };
+
+    const res = await request(app, fx.admin).post('/api/settings/exchange-rates/refresh', {});
+    assert.equal(res.body.updated.length, 0);
+    assert.equal(res.body.rates.USD, 3.6725);
+  });
+
+  it('will not let a rep refresh the rates', async () => {
+    assert.equal((await request(app, fx.rep).post('/api/settings/exchange-rates/refresh', {})).status, 403);
+  });
+});

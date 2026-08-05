@@ -5,6 +5,7 @@ import { notify } from '../services/notify.js';
 import { runBackup } from '../services/backup.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
 import { sweepRenewals } from '../services/renewals.js';
+import { ratesAreStale, refreshRates } from '../services/fx.js';
 import { formatAed } from '../lib/money.js';
 
 /**
@@ -390,6 +391,31 @@ async function targetCheck(): Promise<void> {
   });
 }
 
+/**
+ * Keep the exchange rates current. Vendor costs are converted with these, so a stale
+ * rate quietly misprices every quote built that day.
+ */
+async function exchangeRates(): Promise<void> {
+  const result = await refreshRates();
+  if (result.updated.length > 0) {
+    console.log(`[scheduler] rates updated: ${result.updated.map((c) => `${c}=${result.rates[c]}`).join(', ')}`);
+  }
+
+  // A refusal is worth a person's attention: it means the feed disagrees with the stored
+  // rate by more than a market move explains, and nothing was written.
+  for (const [currency, reason] of Object.entries(result.skipped)) {
+    if (!reason.startsWith('Refused')) continue;
+    await notify({
+      event: 'fx_rate_suspect',
+      title: `Exchange rate for ${currency} was refused`,
+      body: reason,
+      link: '/settings/finance',
+      severity: 'warn',
+      facts: [{ title: 'Currency', value: currency }],
+    });
+  }
+}
+
 async function safely(name: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
@@ -401,6 +427,16 @@ async function safely(name: string, fn: () => Promise<void>): Promise<void> {
 export function startScheduler(): void {
   // Task reminders: often enough to be useful, rare enough to stay quiet.
   tasks.push(cron.schedule('*/15 * * * *', () => void safely('taskReminders', taskReminders), { timezone: TZ }));
+
+  // Rates before the working day, every day — a weekend quote needs a rate too.
+  tasks.push(cron.schedule('0 7 * * *', () => void safely('exchangeRates', exchangeRates), { timezone: TZ }));
+
+  // And once at boot if they are stale, so a machine that was off over a long weekend
+  // is not pricing quotes off last week's rate. Deliberately not awaited: the API must
+  // come up whether or not a third-party feed is reachable.
+  void safely('exchangeRates', async () => {
+    if (await ratesAreStale()) await exchangeRates();
+  });
 
   // Morning digest, 08:30 GST on working days (Mon-Fri in the UAE).
   tasks.push(cron.schedule('30 8 * * 1-5', async () => {
@@ -448,4 +484,4 @@ export function stopScheduler(): void {
 }
 
 /** Exposed so an admin can fire the digest manually from Settings. */
-export const JOBS = { taskReminders, staleAccounts, stuckDeals, expiringRegistrations, overdueInvoices, paymentsDueSoon, overduePayables, targetCheck };
+export const JOBS = { taskReminders, staleAccounts, stuckDeals, expiringRegistrations, overdueInvoices, paymentsDueSoon, overduePayables, targetCheck, exchangeRates };

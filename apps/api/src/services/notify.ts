@@ -34,6 +34,7 @@ export const NOTIFICATION_EVENTS = [
   { event: 'invoice_paid', label: 'Invoice paid in full', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
   { event: 'duplicate_found', label: 'Possible duplicate created', thresholdDays: null, defaults: { inApp: true, email: false, teams: false } },
   { event: 'backup_failed', label: 'Backup failed', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
+  { event: 'fx_rate_suspect', label: 'Exchange rate looked wrong and was refused', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
   { event: 'target_at_risk', label: 'Quarterly target at risk', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
 ] as const;
 
