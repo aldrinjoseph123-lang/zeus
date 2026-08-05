@@ -99,11 +99,20 @@ export default async function productRoutes(app: FastifyInstance): Promise<void>
 
   app.delete('/api/products/:id', { preHandler: requirePermission('products', 'delete') }, async (request) => {
     const { id } = request.params as { id: string };
-    const used = await prisma.quoteLine.count({ where: { productId: id } });
-    // Deactivate rather than delete once it has been quoted — the quote history must stay intact.
+    // Deactivate rather than delete once it has been used — the paperwork must stay intact.
+    // Every relation counts, not just quotes: an invoice line's product link is nulled on
+    // delete, and a product's price book rows are cascaded away with it.
+    const [quoted, invoiced, ordered, subscribed, priced] = await Promise.all([
+      prisma.quoteLine.count({ where: { productId: id } }),
+      prisma.invoiceLine.count({ where: { productId: id } }),
+      prisma.purchaseOrderLine.count({ where: { productId: id } }),
+      prisma.subscription.count({ where: { productId: id } }),
+      prisma.priceEntry.count({ where: { productId: id } }),
+    ]);
+    const used = quoted + invoiced + ordered + subscribed + priced;
     if (used > 0) {
       await prisma.product.update({ where: { id }, data: { isActive: false } });
-      await audit({ user: request.user, action: 'update', entity: 'Product', entityId: id, summary: 'Deactivated (used on quotes)', ip: clientIp(request) });
+      await audit({ user: request.user, action: 'update', entity: 'Product', entityId: id, summary: 'Deactivated (in use)', ip: clientIp(request) });
       return { ok: true, deactivated: true };
     }
     const existing = await prisma.product.findUnique({ where: { id } });
