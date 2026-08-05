@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { money } from '../lib/format';
-import { Button, EmptyState, Input, cx } from './ui';
+import { Button, EmptyState, Input, cx, useDebounced } from './ui';
 import { Lookup } from './pickers';
 import { api, qs } from '../lib/api';
 
@@ -87,6 +87,44 @@ export function LineEditor({
       return null;
     }
   };
+
+  /**
+   * Keep the cost honest when the conditions behind it change.
+   *
+   * The price a vendor charges depends on quantity and on which deal this is, so a cost
+   * resolved at quantity 1 is simply wrong once the line says 800 — and a special price
+   * has to disappear the moment the deal it belonged to is unlinked. Only lines whose
+   * cost came from the price book are refreshed: typing a cost by hand clears
+   * `costSource`, and that is treated as an override worth respecting.
+   */
+  const conditions = `${dealId ?? ''}|${vendorId ?? ''}|${lines.map((l) => `${l.productId ?? ''}:${l.quantity}`).join(',')}`;
+  const settled = useDebounced(conditions, 400);
+
+  useEffect(() => {
+    if (!showCost || locked) return;
+    const targets = lines.filter((line) => line.productId && line.costSource);
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      const resolved = await Promise.all(targets.map((line) => vendorPrice(line.productId!, line.quantity)));
+      if (cancelled) return;
+
+      const byKey = new Map(targets.map((line, i) => [line.key, resolved[i]]));
+      let touched = false;
+      const next = lines.map((line) => {
+        const priced = byKey.get(line.key);
+        if (!priced || (priced.cost === line.unitCost && priced.source === line.costSource?.source)) return line;
+        touched = true;
+        return { ...line, unitCost: priced.cost, costSource: { source: priced.source, reason: priced.reason } };
+      });
+      if (touched) onChange(next);
+    })();
+
+    return () => { cancelled = true; };
+    // `conditions` is the whole dependency: it changes exactly when a price could.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled, showCost, locked]);
 
   const lineNet = (line: EditableLine) => {
     const gross = line.quantity * line.unitPrice;

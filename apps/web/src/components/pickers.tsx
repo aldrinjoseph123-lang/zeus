@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ChevronDown, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -27,13 +28,40 @@ export function Lookup<T extends { id: string }>({
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState<string | null>(selectedLabel ?? null);
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const debounced = useDebounced(term, 250);
 
   useEffect(() => setLabel(selectedLabel ?? null), [selectedLabel]);
 
+  /**
+   * The menu is portalled to the body and positioned by hand. An absolutely positioned
+   * menu is clipped by any scrolling ancestor, and the quote line editor puts this
+   * picker inside a horizontally scrolling table — so the results rendered, sized
+   * correctly and were entirely invisible.
+   */
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const box = inputRef.current?.getBoundingClientRect();
+      if (box) setRect({ top: box.bottom + 2, left: box.left, width: box.width });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open]);
+
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // The menu lives in a portal, so "outside" has to mean outside both nodes.
+      const inside = ref.current?.contains(target) || menuRef.current?.contains(target);
+      if (!inside) setOpen(false);
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -68,6 +96,7 @@ export function Lookup<T extends { id: string }>({
   return (
     <div className="relative" ref={ref}>
       <input
+        ref={inputRef}
         value={term}
         disabled={disabled}
         onChange={(e) => { setTerm(e.target.value); setOpen(true); }}
@@ -77,8 +106,12 @@ export function Lookup<T extends { id: string }>({
       />
       {isFetching ? <span className="absolute right-2.5 top-1/2 -translate-y-1/2"><Spinner size={13} /></span> : null}
 
-      {open ? (
-        <div className="absolute left-0 top-[38px] z-30 max-h-64 w-full overflow-y-auto border border-line bg-white shadow-[var(--shadow-lg)]">
+      {open && rect ? createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
+          className="z-50 max-h-64 overflow-y-auto border border-line bg-white shadow-[var(--shadow-lg)]"
+        >
           {(data?.data ?? []).length === 0 ? (
             <p className="px-3 py-3 text-center text-xs text-muted">{isFetching ? 'Searching…' : 'No matches.'}</p>
           ) : (
@@ -97,7 +130,8 @@ export function Lookup<T extends { id: string }>({
               );
             })
           )}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
