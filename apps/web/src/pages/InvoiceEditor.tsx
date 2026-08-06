@@ -524,7 +524,8 @@ function CreditNoteModal({ invoice, onClose }: { invoice: InvoiceFull; onClose: 
   );
   const [error, setError] = useState<string | null>(null);
 
-  const totals = useMemo(() => previewTotals(lines, Number(invoice.discountPct)), [lines, invoice.discountPct]);
+  const inheritedDiscount = Number(invoice.discountPct);
+  const totals = useMemo(() => previewTotals(lines, inheritedDiscount), [lines, inheritedDiscount]);
 
   const create = useMutation({
     mutationFn: () =>
@@ -571,6 +572,14 @@ function CreditNoteModal({ invoice, onClose }: { invoice: InvoiceFull; onClose: 
           cancellation or a post-invoice discount. It gets its own number and references {invoice.number}.
         </p>
 
+        {inheritedDiscount > 0 ? (
+          <p className="border-l-2 border-accent bg-sunken px-3 py-2 text-[12px] leading-relaxed text-n600">
+            {invoice.number} carried a {percent(inheritedDiscount, 0)} discount, so a credit takes the
+            same reduction — crediting a line at its list value returns {percent(100 - inheritedDiscount, 0)} of it,
+            which is what the customer actually paid.
+          </p>
+        ) : null}
+
         <Field label="Reason" required hint="Printed on the document.">
           <Input value={reason} autoFocus onChange={(e) => setReason(e.target.value)} placeholder="e.g. 200 endpoints returned unused" />
         </Field>
@@ -595,9 +604,26 @@ function CreditNoteModal({ invoice, onClose }: { invoice: InvoiceFull; onClose: 
         {!full ? (
           <div className="border border-line">
             <LineEditor lines={lines} onChange={setLines} defaultVat={Number(invoice.vatRate)} />
-            <div className="flex items-center justify-between border-t border-line bg-sunken px-4 py-2.5">
-              <span className="text-[12px] text-muted">Credit total</span>
-              <span className="tabular text-[15px] font-bold">{money(totals.total, true)}</span>
+            <div className="space-y-1 border-t border-line bg-sunken px-4 py-2.5 text-[12px]">
+              {/*
+                The credit inherits the invoice's header discount, because the customer was
+                charged the line less that discount. Correct, and startling if you typed a
+                round number and got something else back — so the arithmetic is shown.
+              */}
+              {inheritedDiscount > 0 ? (
+                <>
+                  <Row label="Lines" value={money(totals.subtotal, true)} />
+                  <Row
+                    label={`Discount carried from ${invoice.number} (${percent(inheritedDiscount, 0)})`}
+                    value={`− ${money(totals.discountAmt, true)}`}
+                  />
+                  <Row label="VAT" value={money(totals.vatAmount, true)} />
+                </>
+              ) : null}
+              <div className="flex items-center justify-between pt-1">
+                <span className="font-semibold">Credit total</span>
+                <span className="tabular text-[15px] font-bold">{money(totals.total, true)}</span>
+              </div>
             </div>
           </div>
         ) : null}
