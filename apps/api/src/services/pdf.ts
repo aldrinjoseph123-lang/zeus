@@ -201,7 +201,7 @@ export async function quotePdf(quote: QuotePdfData): Promise<Buffer> {
   const rows: Array<[string, string, boolean]> = [
     ['Subtotal', `${quote.currency} ${money(num(quote.subtotal))}`, false],
     ...(num(quote.discountAmt) > 0
-      ? [[`Discount (${num(quote.discountPct)}%)`, `− ${quote.currency} ${money(num(quote.discountAmt))}`, false] as [string, string, boolean]]
+      ? [[`Discount (${num(quote.discountPct)}%)`, `-${quote.currency} ${money(num(quote.discountAmt))}`, false] as [string, string, boolean]]
       : []),
     [String(finance['finance.vatLabel'] ?? `VAT (${num(quote.vatRate)}%)`), `${quote.currency} ${money(num(quote.vatAmount))}`, false],
     ['Total', `${quote.currency} ${money(num(quote.total))}`, true],
@@ -504,12 +504,14 @@ export async function invoicePdf(doc: InvoicePdfData): Promise<Buffer> {
   // ── line items, tax rate per line ──────────────────────────────────────────
   const cols = [
     { key: 'no', label: '#', w: 20, align: 'left' as const },
-    { key: 'description', label: 'Description', w: CONTENT_WIDTH - 20 - 44 - 58 - 34 - 46 - 62, align: 'left' as const },
-    { key: 'qty', label: 'Qty', w: 44, align: 'right' as const },
-    { key: 'price', label: 'Unit price', w: 58, align: 'right' as const },
-    { key: 'rate', label: 'VAT', w: 34, align: 'right' as const },
-    { key: 'vat', label: 'VAT amt', w: 46, align: 'right' as const },
-    { key: 'total', label: 'Amount', w: 62, align: 'right' as const },
+    // Widths sized for six-figure money at 8.5pt. Too narrow and PDFKit wraps the number
+    // itself — a total printed as "151,248.0" over "0" on a tax invoice.
+    { key: 'description', label: 'Description', w: CONTENT_WIDTH - 20 - 56 - 64 - 30 - 68 - 74, align: 'left' as const },
+    { key: 'qty', label: 'Qty', w: 56, align: 'right' as const },
+    { key: 'price', label: 'Unit price', w: 64, align: 'right' as const },
+    { key: 'rate', label: 'VAT', w: 30, align: 'right' as const },
+    { key: 'vat', label: 'VAT amt', w: 68, align: 'right' as const },
+    { key: 'total', label: 'Amount', w: 74, align: 'right' as const },
   ];
 
   const drawHeader = () => {
@@ -562,7 +564,7 @@ export async function invoicePdf(doc: InvoicePdfData): Promise<Buffer> {
   const totalRows: Array<[string, string, boolean]> = [
     ['Subtotal', `${doc.currency} ${money(num(doc.subtotal))}`, false],
     ...(num(doc.discountAmt) > 0
-      ? [[`Discount (${num(doc.discountPct)}%)`, `− ${doc.currency} ${money(num(doc.discountAmt))}`, false] as [string, string, boolean]]
+      ? [[`Discount (${num(doc.discountPct)}%)`, `-${doc.currency} ${money(num(doc.discountAmt))}`, false] as [string, string, boolean]]
       : []),
     ['Taxable amount', `${doc.currency} ${money(netAfterDiscount)}`, false],
     ['Total VAT', `${doc.currency} ${money(num(doc.vatAmount))}`, false],
@@ -585,14 +587,21 @@ export async function invoicePdf(doc: InvoicePdfData): Promise<Buffer> {
 
   if (!isCredit && num(doc.amountPaid) > 0) {
     const owed = num(doc.total) - num(doc.amountPaid);
-    pdf.fillColor(GREY).font('Helvetica').fontSize(9).text('Received', totalsX + 10, pdf.y + 4);
-    pdf.fillColor(BLACK).font('Helvetica').fontSize(9).text(`− ${doc.currency} ${money(num(doc.amountPaid))}`, totalsX + 10, pdf.y + 4, { width: 210, align: 'right' });
-    pdf.y += 17;
-    pdf.fillColor(owed > 0 ? RED : '#1f8a4c').font('Helvetica-Bold').fontSize(9.5)
-      .text(owed > 0 ? 'Balance due' : 'Paid in full', totalsX + 10, pdf.y + 3);
-    pdf.fillColor(owed > 0 ? RED : '#1f8a4c').font('Helvetica-Bold').fontSize(9.5)
-      .text(`${doc.currency} ${money(Math.max(0, owed))}`, totalsX + 10, pdf.y + 3, { width: 210, align: 'right' });
-    pdf.y += 18;
+    // Capture y first: text() moves the cursor, so reading pdf.y again for the value
+    // put the figure on the line below its own label.
+    const receivedY = pdf.y + 4;
+    pdf.fillColor(GREY).font('Helvetica').fontSize(9).text('Received', totalsX + 10, receivedY);
+    pdf.fillColor(BLACK).font('Helvetica').fontSize(9)
+      .text(`-${doc.currency} ${money(num(doc.amountPaid))}`, totalsX + 10, receivedY, { width: 210, align: 'right' });
+    pdf.y = receivedY + 13;
+
+    const balanceY = pdf.y + 3;
+    const tone = owed > 0 ? RED : '#1f8a4c';
+    pdf.fillColor(tone).font('Helvetica-Bold').fontSize(9.5)
+      .text(owed > 0 ? 'Balance due' : 'Paid in full', totalsX + 10, balanceY);
+    pdf.fillColor(tone).font('Helvetica-Bold').fontSize(9.5)
+      .text(`${doc.currency} ${money(Math.max(0, owed))}`, totalsX + 10, balanceY, { width: 210, align: 'right' });
+    pdf.y = balanceY + 15;
   }
 
   // AED equivalents are required on the face when billing in another currency.
