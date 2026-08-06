@@ -569,3 +569,50 @@ describe('exchange rates', () => {
     assert.equal((await request(app, fx.rep).post('/api/settings/exchange-rates/refresh', {})).status, 403);
   });
 });
+
+// ── dashboard scoping ─────────────────────────────────────────────────────────
+
+describe('dashboard', () => {
+  /**
+   * Half this endpoint is built with Prisma and half is raw SQL. The two halves have to
+   * agree about who the reader is allowed to see, or the tiles are scoped and the charts
+   * beside them are not.
+   */
+  it('keeps a team-scoped dashboard inside the team, in the charts as well as the tiles', async () => {
+    const teamRole = await prisma.role.create({
+      data: {
+        name: 'Team Lead',
+        description: 'Sees their own team.',
+        permissions: {
+          dashboard: { read: 'team', create: false, update: 'none', delete: 'none', export: true },
+          deals: { read: 'team', create: true, update: 'team', delete: 'none', export: true },
+        } as never,
+      },
+    });
+    const { SESSION_COOKIE, signSessionToken } = await import('../auth/session.js');
+    const teamUser = await prisma.user.create({
+      data: {
+        email: 'teamlead@test.local', name: 'teamlead',
+        passwordHash: 'x', roleId: teamRole.id,
+        teamId: (await prisma.user.findUniqueOrThrow({ where: { id: fx.rep.id }, select: { teamId: true } })).teamId,
+      },
+    });
+    const lead = {
+      id: teamUser.id, email: teamUser.email, name: 'teamlead', roleName: 'Team Lead',
+      cookie: `${SESSION_COOKIE}=${await signSessionToken(teamUser.id, 12)}`,
+    };
+
+    // One deal inside the team, one owned by a rep on no team at all.
+    await makeDeal(fx.rep, { name: 'Inside the team', amount: 50_000 });
+    await makeDeal(fx.otherRep, { name: 'Someone else entirely', amount: 900_000 });
+
+    const res = await request(app, lead).get('/api/dashboard/overview');
+    assert.equal(res.status, 200);
+
+    const sourceTotal = (res.body.bySource as Array<{ net: number }>).reduce((sum, row) => sum + row.net, 0);
+    assert.equal(sourceTotal, 50_000, 'the source chart must not count a deal outside the team');
+
+    const channelTotal = (res.body.byChannel as Array<{ net: number }>).reduce((sum, row) => sum + row.net, 0);
+    assert.equal(channelTotal, 50_000, 'the channel chart must not count a deal outside the team');
+  });
+});

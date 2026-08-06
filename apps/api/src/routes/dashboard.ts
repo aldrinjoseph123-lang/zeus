@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { listParams, requirePermission } from '../lib/http.js';
-import { scopeWhere, permissionFor } from '../auth/rbac.js';
+import { scopeWhere, permissionFor, teamMemberIds } from '../auth/rbac.js';
 import { getSetting } from '../lib/settings.js';
 
 /**
@@ -27,6 +27,22 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
     const dashScope = permissionFor(request.user, 'dashboard').read;
     const dealScope =
       dashScope === 'own' ? { ownerId: request.user.id } : await scopeWhere(request.user, 'deals', 'read');
+
+    /**
+     * The same scope as a SQL fragment, for the aggregates below that are raw queries.
+     *
+     * These used to test only for 'own', which meant a role scoped to its *team* fell
+     * through to every deal in the company — the Prisma-built figures on this page were
+     * scoped and the raw ones beside them were not.
+     */
+    const ownerSql =
+      dashScope === 'own'
+        ? Prisma.sql`AND d."ownerId" = ${request.user.id}`
+        : dashScope === 'team'
+          ? Prisma.sql`AND d."ownerId" IN (${Prisma.join(await teamMemberIds(request.user))})`
+          : dashScope === 'none'
+            ? Prisma.sql`AND FALSE`
+            : Prisma.empty;
 
     const from = f.from ? new Date(f.from) : new Date(Date.now() - 365 * 86_400_000);
     const to = f.to ? new Date(f.to) : new Date(Date.now() + 365 * 86_400_000);
@@ -125,7 +141,7 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
       WHERE d."deletedAt" IS NULL
         AND COALESCE(d."closedAt", d."closeDate") BETWEEN ${from} AND ${to}
         ${f.ownerId ? Prisma.sql`AND d."ownerId" = ${f.ownerId}` : Prisma.empty}
-        ${dashScope === 'own' ? Prisma.sql`AND d."ownerId" = ${request.user.id}` : Prisma.empty}
+        ${ownerSql}
         ${f.pipelineId ? Prisma.sql`AND d."pipelineId" = ${f.pipelineId}` : Prisma.empty}
       GROUP BY 1 ORDER BY 1
     `;
@@ -139,7 +155,7 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
              COUNT(*) FILTER (WHERE d.status = 'WON')::bigint AS won_count
       FROM "Deal" d
       WHERE d."deletedAt" IS NULL
-        ${dashScope === 'own' ? Prisma.sql`AND d."ownerId" = ${request.user.id}` : Prisma.empty}
+        ${ownerSql}
         ${f.ownerId ? Prisma.sql`AND d."ownerId" = ${f.ownerId}` : Prisma.empty}
       GROUP BY 1 ORDER BY net DESC
     `;
@@ -153,7 +169,7 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
                COALESCE(SUM(CASE WHEN d.status = 'WON' THEN d.amount ELSE 0 END), 0)::float8 AS won
         FROM "Deal" d
         WHERE d."deletedAt" IS NULL
-          ${dashScope === 'own' ? Prisma.sql`AND d."ownerId" = ${request.user.id}` : Prisma.empty}
+          ${ownerSql}
         GROUP BY 1
       `,
       prisma.deal.groupBy({ by: ['type'], where: base, _sum: { amount: true }, _count: true }),
@@ -221,7 +237,7 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
       SELECT AVG(EXTRACT(EPOCH FROM (d."closedAt" - d."createdAt")) / 86400)::float8 AS avg_days
       FROM "Deal" d
       WHERE d."deletedAt" IS NULL AND d.status = 'WON' AND d."closedAt" BETWEEN ${from} AND ${to}
-        ${dashScope === 'own' ? Prisma.sql`AND d."ownerId" = ${request.user.id}` : Prisma.empty}
+        ${ownerSql}
     `;
 
     const topDeals = await prisma.deal.findMany({
