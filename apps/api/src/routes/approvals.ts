@@ -78,7 +78,7 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
   app.post('/api/approvals/:entity/:id/submit', async (request) => {
     const { entity, id } = request.params as { entity: string; id: string };
     if (!isEntity(entity)) throw badRequest(`Nothing to approve on "${entity}".`);
-    const { module, label } = ENTITIES[entity];
+    const { module, label, auditEntity } = ENTITIES[entity];
     if (!can(request.user, module, 'update')) throw forbidden(`Your role (${request.user.roleName}) cannot submit a ${label.toLowerCase()} for approval.`);
 
     const record = await load(entity, id);
@@ -112,7 +112,7 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
       requestedBy: request.user.name,
       note: note.success ? note.data.note : undefined,
     });
-    await audit({ user: request.user, action: 'update', entity: label, entityId: id, summary: `${described.reference} submitted for approval`, ip: clientIp(request) });
+    await audit({ user: request.user, action: 'update', entity: auditEntity, entityId: id, summary: `${described.reference} submitted for approval`, ip: clientIp(request) });
     return { ok: true, approvalStatus: 'PENDING', reason: requirement.reason ?? null };
   });
 
@@ -121,7 +121,7 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
     app.post(`/api/approvals/:entity/:id/${action}`, async (request) => {
       const { entity, id } = request.params as { entity: string; id: string };
       if (!isEntity(entity)) throw badRequest(`Nothing to approve on "${entity}".`);
-      const { module, label } = ENTITIES[entity];
+      const { module, label, auditEntity } = ENTITIES[entity];
       if (!can(request.user, module, 'approve')) {
         throw forbidden(`Your role (${request.user.roleName}) cannot approve a ${label.toLowerCase()}. Ask a sales manager.`);
       }
@@ -157,7 +157,7 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
         note,
       });
       await audit({
-        user: request.user, action: 'update', entity: label, entityId: id,
+        user: request.user, action: 'update', entity: auditEntity, entityId: id,
         summary: `${described.reference} ${approved ? 'approved' : `rejected — ${note}`}`, ip: clientIp(request),
       });
       return { ok: true, approvalStatus: approved ? 'APPROVED' : 'REJECTED' };

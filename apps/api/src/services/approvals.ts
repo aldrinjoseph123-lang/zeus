@@ -17,10 +17,24 @@ import { notify } from './notify.js';
 
 export type Entity = 'deals' | 'purchase-orders' | 'invoices';
 
-export const ENTITIES: Record<Entity, { module: 'deals' | 'invoices'; label: string; step: string }> = {
-  deals: { module: 'deals', label: 'Deal', step: 'closing it won' },
-  'purchase-orders': { module: 'invoices', label: 'Purchase order', step: 'issuing it to the supplier' },
-  invoices: { module: 'invoices', label: 'Invoice', step: 'sending it to the customer' },
+export const ENTITIES: Record<
+  Entity,
+  {
+    module: 'deals' | 'invoices';
+    /** For people: headings, notification titles, refusal messages. */
+    label: string;
+    /**
+     * For the audit log. It has to match what the record's own routes write, or the
+     * history of one purchase order lands under two different names and filtering by
+     * either shows half of it.
+     */
+    auditEntity: string;
+    step: string;
+  }
+> = {
+  deals: { module: 'deals', label: 'Deal', auditEntity: 'Deal', step: 'closing it won' },
+  'purchase-orders': { module: 'invoices', label: 'Purchase order', auditEntity: 'PurchaseOrder', step: 'issuing it to the supplier' },
+  invoices: { module: 'invoices', label: 'Invoice', auditEntity: 'Invoice', step: 'sending it to the customer' },
 };
 
 export interface Requirement {
