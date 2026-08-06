@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, forbidden, listParams, notFound, requirePermission } from '../lib/http.js';
-import { permissionFor, scopeWhere, type SessionUser } from '../auth/rbac.js';
+import { permissionFor, scopeWhere, teamMemberIds, type SessionUser } from '../auth/rbac.js';
 import { tablePdf, type TableColumn } from '../services/pdf.js';
 import { tableXlsx } from '../services/xlsx.js';
 import { getSetting } from '../lib/settings.js';
@@ -21,6 +21,21 @@ interface ReportContext {
   to: Date;
   /** Scope clause already resolved for deals. */
   dealScope: Record<string, unknown>;
+  /** The same, for the other modules reports are built on. */
+  invoiceScope: Record<string, unknown>;
+  quoteScope: Record<string, unknown>;
+  /**
+   * The deal scope as a SQL fragment against the alias `d`, for the reports that are
+   * raw queries. Prisma.empty when the reader may see everything.
+   */
+  ownerSql: Prisma.Sql;
+  /** The same for invoices, against the alias `i`. */
+  invoiceSql: Prisma.Sql;
+  /**
+   * Whose records this reader may see, or null for everyone. The leaderboard filters
+   * *people* rather than records, so it needs the list rather than a where clause.
+   */
+  visibleOwnerIds: string[] | null;
 }
 
 interface ReportResult {
@@ -174,6 +189,7 @@ export const REPORTS: ReportDef[] = [
                COALESCE(SUM(CASE WHEN d.status = 'WON' THEN d.amount ELSE 0 END), 0)::float8 AS won
         FROM "Deal" d
         WHERE d."deletedAt" IS NULL AND COALESCE(d."closedAt", d."closeDate") BETWEEN ${ctx.from} AND ${ctx.to}
+          ${ctx.ownerSql}
           ${ctx.filters.ownerId ? Prisma.sql`AND d."ownerId" = ${ctx.filters.ownerId}` : Prisma.empty}
         GROUP BY 1 ORDER BY 1
       `;
@@ -218,6 +234,7 @@ export const REPORTS: ReportDef[] = [
                COALESCE(SUM(CASE WHEN d.status = 'WON' THEN d.amount ELSE 0 END), 0)::float8 AS won
         FROM "Deal" d
         WHERE d."deletedAt" IS NULL AND d."createdAt" BETWEEN ${ctx.from} AND ${ctx.to}
+          ${ctx.ownerSql}
         GROUP BY 1 ORDER BY net DESC
       `;
       return {
@@ -258,6 +275,7 @@ export const REPORTS: ReportDef[] = [
         FROM "Deal" d
         JOIN "Account" a ON a.id = d."partnerAccountId"
         WHERE d."deletedAt" IS NULL AND d."createdAt" BETWEEN ${ctx.from} AND ${ctx.to}
+          ${ctx.ownerSql}
         GROUP BY 1 ORDER BY net DESC
       `;
       return {
@@ -289,17 +307,27 @@ export const REPORTS: ReportDef[] = [
       { key: 'target', label: 'Target', width: 95, align: 'right', format: 'money' },
       { key: 'attainment', label: 'Attainment', width: 80, align: 'right', format: 'percent' },
     ],
-    run: async () => {
+    run: async (ctx) => {
       const now = new Date();
       const quarter = Math.floor(now.getMonth() / 3) + 1;
       const qStart = new Date(Date.UTC(now.getFullYear(), (quarter - 1) * 3, 1));
       const qEnd = new Date(Date.UTC(now.getFullYear(), quarter * 3, 1));
 
-      const users = await prisma.user.findMany({ where: { isActive: true }, include: { team: true } });
+      // The leaderboard is a list of people, so the scope filters people rather than
+      // records: a reader who may only see their own deals sees only their own line.
+      const users = await prisma.user.findMany({
+        where: { isActive: true, ...(ctx.visibleOwnerIds ? { id: { in: ctx.visibleOwnerIds } } : {}) },
+        include: { team: true },
+      });
       const [open, won, targets] = await Promise.all([
-        prisma.deal.findMany({ where: { deletedAt: null, status: 'OPEN' }, select: { ownerId: true, amount: true, probability: true } }),
-        prisma.deal.groupBy({ by: ['ownerId'], where: { deletedAt: null, status: 'WON', closedAt: { gte: qStart, lt: qEnd } }, _sum: { amount: true }, _count: true }),
-        prisma.target.findMany({ where: { year: now.getFullYear(), quarter, userId: { not: null } } }),
+        prisma.deal.findMany({ where: { deletedAt: null, status: 'OPEN', ...ctx.dealScope }, select: { ownerId: true, amount: true, probability: true } }),
+        prisma.deal.groupBy({ by: ['ownerId'], where: { deletedAt: null, status: 'WON', closedAt: { gte: qStart, lt: qEnd }, ...ctx.dealScope }, _sum: { amount: true }, _count: true }),
+        prisma.target.findMany({
+          where: {
+            year: now.getFullYear(), quarter,
+            userId: ctx.visibleOwnerIds ? { in: ctx.visibleOwnerIds } : { not: null },
+          },
+        }),
       ]);
 
       const rows = users.map((u) => {
@@ -534,7 +562,11 @@ export const REPORTS: ReportDef[] = [
     ],
     run: async (ctx) => {
       const quotes = await prisma.quote.findMany({
-        where: { issueDate: { gte: ctx.from, lte: ctx.to }, ...(ctx.filters.status ? { status: ctx.filters.status as never } : {}) },
+        where: {
+          issueDate: { gte: ctx.from, lte: ctx.to },
+          ...ctx.quoteScope,
+          ...(ctx.filters.status ? { status: ctx.filters.status as never } : {}),
+        },
         include: { account: true, deal: true, preparedBy: true },
         orderBy: { issueDate: 'desc' },
       });
@@ -585,6 +617,7 @@ export const REPORTS: ReportDef[] = [
                COALESCE(SUM(i.total), 0)::float8 AS gross
         FROM "Invoice" i
         WHERE i.status NOT IN ('DRAFT', 'CANCELLED') AND i."issueDate" BETWEEN ${ctx.from} AND ${ctx.to}
+          ${ctx.invoiceSql}
         GROUP BY 1 ORDER BY 1
       `;
       const mapped = rows.map((r) => ({
@@ -619,9 +652,9 @@ export const REPORTS: ReportDef[] = [
       { key: 'amountPaid', label: 'Paid', width: 90, align: 'right', format: 'money' },
       { key: 'outstanding', label: 'Outstanding', width: 100, align: 'right', format: 'money' },
     ],
-    run: async () => {
+    run: async (ctx) => {
       const invoices = await prisma.invoice.findMany({
-        where: { status: { in: ['SENT', 'PARTIAL', 'OVERDUE'] } },
+        where: { status: { in: ['SENT', 'PARTIAL', 'OVERDUE'] }, ...ctx.invoiceScope },
         include: { account: true },
         orderBy: { dueDate: 'asc' },
       });
@@ -672,8 +705,10 @@ export const REPORTS: ReportDef[] = [
       { key: 'daysLeft', label: 'Days left', width: 65, align: 'right' },
       { key: 'amount', label: 'Deal value', width: 95, align: 'right', format: 'money' },
     ],
-    run: async () => {
+    run: async (ctx) => {
       const registrations = await prisma.dealRegistration.findMany({
+        // A registration has no owner of its own; it belongs to whoever owns the deal.
+        where: { deal: ctx.dealScope },
         include: { vendor: true, partner: true, deal: { include: { account: true } } },
         orderBy: { expiresAt: 'asc' },
       });
@@ -717,9 +752,12 @@ export const REPORTS: ReportDef[] = [
       { key: 'renewal', label: 'Renewal deal', width: 110 },
       { key: 'owner', label: 'Owner', width: 110 },
     ],
-    run: async () => {
+    run: async (ctx) => {
       const subs = await prisma.subscription.findMany({
-        where: { deletedAt: null, status: { not: 'CANCELLED' } },
+        where: {
+          deletedAt: null, status: { not: 'CANCELLED' },
+          ...(ctx.visibleOwnerIds ? { ownerId: { in: ctx.visibleOwnerIds } } : {}),
+        },
         include: { account: true, vendor: true, owner: true, renewalDeal: { select: { reference: true, status: true } } },
         orderBy: { endDate: 'asc' },
       });
@@ -810,12 +848,61 @@ export const REPORTS: ReportDef[] = [
 async function buildContext(request: FastifyRequest): Promise<ReportContext> {
   const params = listParams(request.query as Record<string, unknown>);
   const f = params.filters;
+
+  /**
+   * A report is another way to ask a question the screens already answer, so it has to
+   * answer it for the same audience. Every scope is resolved once here rather than
+   * per report, because several reports query more than one module.
+   */
+  const [dealScope, quoteScope] = await Promise.all([
+    scopeWhere(request.user, 'deals', 'read'),
+    scopeWhere(request.user, 'quotes', 'read'),
+  ]);
+
+  const dealRead = permissionFor(request.user, 'deals').read;
+  const visibleOwnerIds =
+    dealRead === 'all' ? null
+      : dealRead === 'own' ? [request.user.id]
+      : dealRead === 'team' ? await teamMemberIds(request.user)
+      : [];
+
+  /**
+   * An invoice has no owner column — it belongs to whoever owns the deal behind it, and
+   * failing that to whoever raised it. `scopeWhere` cannot express that, and asking it to
+   * would produce a `where: { ownerId }` Prisma rejects on this model.
+   */
+  const invoiceRead = permissionFor(request.user, 'invoices').read;
+  const invoiceOwners =
+    invoiceRead === 'all' ? null
+      : invoiceRead === 'own' ? [request.user.id]
+      : invoiceRead === 'team' ? await teamMemberIds(request.user)
+      : [];
+  const invoiceScope: Record<string, unknown> =
+    invoiceOwners === null ? {}
+      : invoiceOwners.length === 0 ? { id: '__no_access__' }
+      : { OR: [{ deal: { ownerId: { in: invoiceOwners } } }, { createdById: { in: invoiceOwners } }] };
+
   return {
     user: request.user,
     filters: f,
     from: f.from ? new Date(f.from) : new Date(Date.now() - 365 * 86_400_000),
     to: f.to ? new Date(f.to) : new Date(Date.now() + 365 * 86_400_000),
-    dealScope: await scopeWhere(request.user, 'deals', 'read'),
+    dealScope,
+    invoiceScope,
+    quoteScope,
+    // `AND FALSE` rather than an empty IN (), which Postgres will not parse.
+    ownerSql:
+      visibleOwnerIds === null ? Prisma.empty
+        : visibleOwnerIds.length === 0 ? Prisma.sql`AND FALSE`
+        : Prisma.sql`AND d."ownerId" IN (${Prisma.join(visibleOwnerIds)})`,
+    invoiceSql:
+      invoiceOwners === null ? Prisma.empty
+        : invoiceOwners.length === 0 ? Prisma.sql`AND FALSE`
+        : Prisma.sql`AND (
+            i."createdById" IN (${Prisma.join(invoiceOwners)})
+            OR EXISTS (SELECT 1 FROM "Deal" dd WHERE dd.id = i."dealId" AND dd."ownerId" IN (${Prisma.join(invoiceOwners)}))
+          )`,
+    visibleOwnerIds,
   };
 }
 

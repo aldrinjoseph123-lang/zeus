@@ -679,6 +679,50 @@ describe('quote cost', () => {
   });
 });
 
+// ── report scoping ────────────────────────────────────────────────────────────
+
+describe('reports', () => {
+  /**
+   * A report is another way to ask a question the screens already answer, so it has to
+   * answer it for the same audience. Nine of sixteen used to return the whole company
+   * to a rep — their own pipeline beside every colleague's win rate.
+   */
+  it('shows a rep their own numbers and a manager everyone\'s', async () => {
+    await makeDeal(fx.rep, { name: 'Mine', amount: 50_000 });
+    await makeDeal(fx.otherRep, { name: 'Not mine', amount: 900_000 });
+
+    const rows = async (user: typeof fx.rep, key: string) => {
+      const res = await request(app, user).get(`/api/reports/${key}`);
+      assert.equal(res.status, 200, `${key} failed for ${user.roleName}: ${JSON.stringify(res.body).slice(0, 120)}`);
+      return res.body.rows as Array<Record<string, unknown>>;
+    };
+
+    // A rep is scoped to their team; otherRep is deliberately on no team.
+    for (const key of ['forecast', 'source-performance', 'rep-performance']) {
+      const mine = await rows(fx.rep, key);
+      const all = await rows(fx.manager, key);
+      assert.ok(mine.length < all.length || JSON.stringify(mine) !== JSON.stringify(all),
+        `${key} still returns the manager's view to a rep`);
+    }
+
+    const leaderboard = await rows(fx.rep, 'rep-performance');
+    assert.ok(!leaderboard.some((r) => r.owner === 'otherrep'), 'a rep must not see a colleague outside their team on the leaderboard');
+  });
+
+  it('still gives a manager every invoice on the VAT summary', async () => {
+    // Scoping must not quietly narrow a filing document for the person who files it.
+    const invoice = await makeInvoice([{ description: 'Licence', quantity: 1, unitPrice: 1000 }]);
+    await request(app, fx.admin).post(`/api/approvals/invoices/${invoice.id}/submit`);
+    await request(app, fx.manager).post(`/api/approvals/invoices/${invoice.id}/approve`);
+    await request(app, fx.admin).post(`/api/invoices/${invoice.id}/status`, { status: 'SENT' });
+
+    const res = await request(app, fx.manager).get('/api/reports/vat-summary');
+    assert.equal(res.status, 200);
+    const vat = (res.body.rows as Array<{ vat: number }>).reduce((sum, r) => sum + r.vat, 0);
+    assert.equal(vat.toFixed(2), '50.00', 'the manager must see the full output VAT');
+  });
+});
+
 // ── dashboard scoping ─────────────────────────────────────────────────────────
 
 describe('dashboard', () => {

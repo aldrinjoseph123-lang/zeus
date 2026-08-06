@@ -3,7 +3,6 @@ import 'dotenv/config';
 import { prisma } from './db.js';
 import { nextReference } from './lib/counters.js';
 import { round2, taxDocumentTotals } from './lib/money.js';
-import { MODULES, type PermissionMap } from './auth/rbac.js';
 
 /**
  * A company that already exists.
@@ -39,28 +38,6 @@ const DAY = 86_400_000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
 const ahead = (days: number) => new Date(Date.now() + days * DAY);
 
-/** Sales Executive with the money columns unlocked — the shape a finance hire needs. */
-function financePermissions(): PermissionMap {
-  const nothing = { read: 'none', create: false, update: 'none', delete: 'none', export: false, approve: false } as const;
-  const none = Object.fromEntries(MODULES.map((m) => [m, nothing])) as PermissionMap;
-  const full = { read: 'all', create: true, update: 'all', delete: 'all', export: true, approve: false } as const;
-  const readOnly = { read: 'all', create: false, update: 'none', delete: 'none', export: true, approve: false } as const;
-  return {
-    ...none,
-    dashboard: readOnly,
-    accounts: readOnly,
-    contacts: readOnly,
-    deals: readOnly,
-    quotes: readOnly,
-    invoices: full,
-    purchaseOrders: full,
-    payments: full,
-    products: readOnly,
-    reports: readOnly,
-    activities: full,
-  } as PermissionMap;
-}
-
 async function main(): Promise<void> {
   console.log('▸ Simulating a working company…');
 
@@ -71,17 +48,6 @@ async function main(): Promise<void> {
     prisma.role.findUniqueOrThrow({ where: { name: 'Sales Executive' } }),
   ]);
 
-  const finance = await prisma.role.upsert({
-    where: { name: 'Finance' },
-    create: {
-      name: 'Finance',
-      description: 'Raises and issues invoices, runs purchase orders, records payments. Reads the rest.',
-      isSystem: false,
-      permissions: financePermissions() as never,
-    },
-    update: {},
-  });
-
   const productTeam = await prisma.team.findFirstOrThrow({ where: { name: 'Product Team' } });
   const serviceTeam = await prisma.team.findFirstOrThrow({ where: { name: 'Service Team' } });
 
@@ -90,7 +56,9 @@ async function main(): Promise<void> {
     { email: 'layla.mansouri@protect24x7.ae', name: 'Layla Al Mansouri', jobTitle: 'Sales Manager', roleId: manager.id, teamId: productTeam.id },
     { email: 'omar.haddad@protect24x7.ae', name: 'Omar Haddad', jobTitle: 'Account Executive', roleId: exec.id, teamId: productTeam.id },
     { email: 'fatima.rashed@protect24x7.ae', name: 'Fatima Al Rashed', jobTitle: 'Account Executive', roleId: exec.id, teamId: serviceTeam.id },
-    { email: 'rashid.noor@protect24x7.ae', name: 'Rashid Noor', jobTitle: 'Finance Officer', roleId: finance.id, teamId: null },
+    // No Finance role: one person maintains everything here, so the money work belongs to
+    // an administrator. The approval separation still holds — the sales manager signs off.
+    { email: 'rashid.noor@protect24x7.ae', name: 'Rashid Noor', jobTitle: 'Operations & Finance', roleId: admin.id, teamId: null },
   ];
 
   const users: Record<string, { id: string; name: string; email: string }> = {};
@@ -104,7 +72,7 @@ async function main(): Promise<void> {
   }
   const bootAdmin = await prisma.user.findFirstOrThrow({ where: { roleId: admin.id }, select: { id: true, name: true, email: true } });
   users.admin = bootAdmin;
-  console.log(`  + ${staff.length} staff (password ${PASSWORD}) and a Finance role`);
+  console.log(`  + ${staff.length} staff (password ${PASSWORD})`);
 
   // ── who we buy from and sell to ─────────────────────────────────────────────
   const account = async (
