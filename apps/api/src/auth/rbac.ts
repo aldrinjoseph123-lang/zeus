@@ -230,22 +230,38 @@ function hiddenFields(user: SessionUser, module: Module | string): Set<string> {
   return set;
 }
 
+/**
+ * A plain `{}` — something safe to rebuild key by key.
+ *
+ * Anything with a class behind it is not: a Prisma `Decimal`, a `Date`, a `Buffer` all
+ * carry behaviour that copying their enumerable properties destroys. A Decimal rebuilt
+ * this way becomes `{s, e, d}` — its internal sign, exponent and digits — and serialises
+ * as that object instead of the number, so every money figure on the record arrives as
+ * something the UI cannot read.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 /** Strip field-level-hidden keys from a record or array of records before it leaves the API. */
 export function maskFields<T>(user: SessionUser, module: Module | string, data: T): T {
   const hidden = hiddenFields(user, module);
   if (hidden.size === 0) return data;
 
-  const strip = (obj: unknown): unknown => {
-    if (Array.isArray(obj)) return obj.map(strip);
-    if (obj && typeof obj === 'object' && !(obj instanceof Date)) {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-        if (hidden.has(k)) continue;
-        out[k] = v && typeof v === 'object' ? strip(v) : v;
-      }
-      return out;
+  const strip = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(strip);
+    // Leave class instances exactly as they are — masking hides fields, it does not
+    // get to change what the surviving ones are.
+    if (!isPlainObject(value)) return value;
+
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (hidden.has(key)) continue;
+      out[key] = strip(child);
     }
-    return obj;
+    return out;
   };
   return strip(data) as T;
 }

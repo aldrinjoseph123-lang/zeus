@@ -130,6 +130,19 @@ describe('permissions', () => {
     assert.equal(Number(managerView.body.data[0].cost), 60_000);
   });
 
+  it('leaves the money it is not hiding readable', async () => {
+    // Masking rebuilt every object it walked, which turned a Prisma Decimal into its
+    // internal {s, e, d} — so a rep's own deal arrived with an unreadable amount and
+    // every money figure on the screen rendered blank.
+    await makeDeal(fx.rep, { amount: 888_000, cost: 60_000 });
+
+    const res = await request(app, fx.rep).get('/api/deals');
+    const deal = res.body.data[0];
+    assert.equal(deal.cost, undefined, 'cost is hidden from this role');
+    assert.equal(Number(deal.amount), 888_000, `amount must survive masking, got ${JSON.stringify(deal.amount)}`);
+    assert.equal(Number(deal.totalAmount).toFixed(2), '932400.00');
+  });
+
   it('refuses a write to a field the role cannot see, even when posted directly', async () => {
     const deal = await makeDeal(fx.rep, { cost: 60_000 });
     const res = await request(app, fx.rep).patch(`/api/deals/${deal.id}`, { cost: 1 });
