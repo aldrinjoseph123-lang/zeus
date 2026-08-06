@@ -186,6 +186,25 @@ describe('invoices', () => {
     assert.equal(Number(after?.total).toFixed(2), '1050.00', 'an issued invoice changed its total');
   });
 
+  it('will not issue a tax invoice without our own TRN on it', async () => {
+    // Article 59 requires the supplier's TRN on the face of a tax invoice. It is our own
+    // data, always fixable, so issuing without it is never the better option.
+    await request(app, fx.admin).put('/api/settings', { 'company.trn': '' });
+    const invoice = await makeInvoice([{ description: 'Licence', quantity: 1, unitPrice: 1000 }]);
+    await request(app, fx.admin).post(`/api/approvals/invoices/${invoice.id}/submit`);
+    await request(app, fx.manager).post(`/api/approvals/invoices/${invoice.id}/approve`);
+
+    const blocked = await request(app, fx.admin).post(`/api/invoices/${invoice.id}/status`, { status: 'SENT' });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.body.error, /TRN/i);
+
+    await request(app, fx.admin).put('/api/settings', { 'company.trn': '100123456700003' });
+    const issued = await request(app, fx.admin).post(`/api/invoices/${invoice.id}/status`, { status: 'SENT' });
+    assert.equal(issued.status, 200);
+    const stored = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    assert.equal(stored.supplierTrn, '100123456700003', 'the TRN must be snapshotted at issue');
+  });
+
   it('refuses to delete an issued invoice so the number stays in the sequence', async () => {
     const invoice = await makeInvoice([{ description: 'Licence', quantity: 1, unitPrice: 500 }]);
     await request(app, fx.admin).post(`/api/approvals/invoices/${invoice.id}/submit`);

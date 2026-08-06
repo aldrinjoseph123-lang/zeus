@@ -250,9 +250,8 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
         );
       }
 
-      const gaps = await complianceGaps(id);
-      const blocking = gaps.filter((g) => g.includes('no line items') || g.includes('must reference'));
-      if (blocking.length) throw badRequest(blocking[0]);
+      const blocking = (await complianceGaps(id)).filter((gap) => gap.blocking);
+      if (blocking.length) throw badRequest(blocking[0].message);
       await snapshotParties(id);
     }
 

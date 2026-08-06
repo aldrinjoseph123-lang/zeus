@@ -35,7 +35,7 @@ interface InvoiceFull extends ApprovalState {
   creditNotes: Array<{ id: string; number: string; total: string | number; status: string }>;
   lines: Array<{ id: string; productId: string | null; description: string; quantity: string | number; unit: string; unitPrice: string | number; unitCost: string | number; discountPct: string | number; taxable: boolean; vatRate: string | number; termMonths: number | null }>;
   payments: PaymentRecord[];
-  complianceGaps?: string[];
+  complianceGaps?: Array<{ message: string; blocking: boolean }>;
 }
 
 const POSTED = new Set(['SENT', 'PARTIAL', 'PAID', 'OVERDUE']);
@@ -237,7 +237,7 @@ export default function InvoiceEditor() {
             <div>
               <p className="text-[13px] font-semibold text-[var(--red-700)]">Before you send this</p>
               <ul className="mt-1 space-y-0.5 text-[12px] text-[var(--red-700)]">
-                {invoice.complianceGaps.map((gap) => <li key={gap}>· {gap}</li>)}
+                {invoice.complianceGaps.map((gap) => <li key={gap.message}>· {gap.message}{gap.blocking ? ' (must be fixed before issuing)' : ''}</li>)}
               </ul>
             </div>
           </div>

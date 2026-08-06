@@ -174,27 +174,51 @@ export async function snapshotParties(invoiceId: string): Promise<void> {
   });
 }
 
+export interface ComplianceGap {
+  message: string;
+  /**
+   * True when the document must not be issued in this state.
+   *
+   * The line is drawn at whose data is missing. Our own TRN, the lines themselves and a
+   * credit note's parent are all things Protect24x7 controls — there is no situation
+   * where issuing without them is better than fixing them first, and an invoice with no
+   * supplier TRN is not a tax invoice under Article 59 at all. The recipient's TRN and
+   * an exchange rate depend on someone else, so they warn rather than block.
+   */
+  blocking: boolean;
+}
+
 /** Warn the caller about anything the FTA expects that is missing before issue. */
-export async function complianceGaps(invoiceId: string): Promise<string[]> {
+export async function complianceGaps(invoiceId: string): Promise<ComplianceGap[]> {
   const invoice = await prisma.invoice.findUnique({
     where: { id: invoiceId },
     include: { account: true, lines: true },
   });
   if (!invoice) return [];
 
-  const gaps: string[] = [];
+  const gaps: ComplianceGap[] = [];
   const companyTrn = invoice.supplierTrn ?? (await getSetting<string>('company.trn', ''));
 
-  if (!companyTrn) gaps.push('Your own TRN is not set — add it in Settings → Company.');
-  if (invoice.lines.length === 0) gaps.push('The document has no line items.');
+  if (!companyTrn) {
+    gaps.push({ message: 'Your own TRN is not set — add it in Settings → Company.', blocking: true });
+  }
+  if (invoice.lines.length === 0) {
+    gaps.push({ message: 'The document has no line items.', blocking: true });
+  }
   if (!invoice.account.trn && num(invoice.total) >= 10_000) {
-    gaps.push(`${invoice.account.name} has no TRN on file. A full tax invoice above AED 10,000 must show the recipient's TRN.`);
+    gaps.push({
+      message: `${invoice.account.name} has no TRN on file. A full tax invoice above AED 10,000 must show the recipient's TRN.`,
+      blocking: false,
+    });
   }
   if (invoice.currency !== 'AED' && !invoice.exchangeRate) {
-    gaps.push(`Currency is ${invoice.currency} but no exchange rate is set — AED equivalents are required on the face of the invoice.`);
+    gaps.push({
+      message: `Currency is ${invoice.currency} but no exchange rate is set — AED equivalents are required on the face of the invoice.`,
+      blocking: false,
+    });
   }
   if (invoice.type === 'CREDIT_NOTE' && !invoice.originalInvoiceId) {
-    gaps.push('A credit note must reference the tax invoice it corrects.');
+    gaps.push({ message: 'A credit note must reference the tax invoice it corrects.', blocking: true });
   }
   return gaps;
 }

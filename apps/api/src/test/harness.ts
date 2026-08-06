@@ -86,6 +86,7 @@ export interface Fixtures {
  */
 export async function seedFixtures(app: FastifyInstance): Promise<Fixtures> {
   const { SYSTEM_ROLES } = await import('../auth/rbac.js');
+  const { invalidateSettings } = await import('../lib/settings.js');
 
   const roles = new Map<string, string>();
   for (const preset of SYSTEM_ROLES) {
@@ -94,6 +95,16 @@ export async function seedFixtures(app: FastifyInstance): Promise<Fixtures> {
     });
     roles.set(preset.name, role.id);
   }
+
+  // A VAT-registered supplier is the realistic starting state, and issuing a tax invoice
+  // now refuses without it — the suite should not be quietly producing invalid documents.
+  await prisma.setting.upsert({
+    where: { key: 'company.trn' },
+    create: { key: 'company.trn', value: '100123456700003' as never, category: 'company' },
+    update: { value: '100123456700003' as never },
+  });
+
+  invalidateSettings();
 
   const team = await prisma.team.create({ data: { name: 'Test Team', kind: 'product' } });
   const passwordHash = await bcrypt.hash('Passw0rd!Test', 10);
