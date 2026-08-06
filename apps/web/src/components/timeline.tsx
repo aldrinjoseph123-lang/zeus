@@ -29,6 +29,9 @@ export interface TimelineLinks {
 }
 
 /** Log-a-thing composer plus the record's history. Same component on every detail page. */
+/** A subject is a headline. Anything longer belongs in the detail. */
+const SUBJECT_LIMIT = 120;
+
 export function ActivityPanel({ activities, links, invalidate }: {
   activities: ActivityRecord[];
   links: TimelineLinks;
@@ -75,6 +78,8 @@ export function ActivityPanel({ activities, links, invalidate }: {
   });
 
   const needsDate = type === 'TASK' || type === 'MEETING' || type === 'CALL';
+  const alreadyHappened =
+    type !== 'TASK' && (!dueAt || new Date(dueAt).getTime() <= Date.now());
 
   return (
     <div>
@@ -97,9 +102,26 @@ export function ActivityPanel({ activities, links, invalidate }: {
 
           <Input
             value={subject}
-            onChange={(e) => setSubject(e.target.value)}
+            maxLength={SUBJECT_LIMIT}
+            onChange={(e) => setSubject(e.target.value.slice(0, SUBJECT_LIMIT))}
+            onPaste={(e) => {
+              // Pasting a paragraph used to fill the one-line subject with all of it and
+              // leave the detail box empty. Keep the first line, put the rest where it
+              // belongs, and lose none of it.
+              const pasted = e.clipboardData.getData('text');
+              if (pasted.length <= SUBJECT_LIMIT && !pasted.includes('\n')) return;
+              e.preventDefault();
+              const [head, ...rest] = pasted.split('\n');
+              const headline = head.length > SUBJECT_LIMIT ? head.slice(0, SUBJECT_LIMIT) : head;
+              const overflow = [head.slice(headline.length), ...rest].join('\n').trim();
+              setSubject(headline.trim());
+              setDescription((d) => [d, overflow].filter(Boolean).join('\n\n'));
+            }}
             placeholder={type === 'TASK' ? 'What needs doing?' : type === 'NOTE' ? 'What happened?' : `Subject of this ${type.toLowerCase()}`}
           />
+          {subject.length > SUBJECT_LIMIT - 20 ? (
+            <p className="mt-1 text-right text-[11px] text-muted">{SUBJECT_LIMIT - subject.length} left — the rest goes in the detail below</p>
+          ) : null}
 
           {subject.trim() ? (
             <div className="mt-2 space-y-2">
@@ -117,7 +139,7 @@ export function ActivityPanel({ activities, links, invalidate }: {
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={() => { setSubject(''); setDescription(''); }}>Cancel</Button>
                 <Button variant="accent" size="sm" loading={create.isPending} onClick={() => create.mutate()}>
-                  {type === 'TASK' ? 'Add task' : 'Log it'}
+                  {type === 'TASK' ? 'Add task' : alreadyHappened ? 'Log it' : 'Schedule it'}
                 </Button>
               </div>
             </div>

@@ -71,8 +71,16 @@ export default async function activityRoutes(app: FastifyInstance): Promise<void
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const body = parsed.data;
 
-    // Notes are always already done; tasks default to open.
-    const isLogged = body.type === 'NOTE' || body.type === 'EMAIL';
+    /**
+     * Whether this is a record of something that happened, or a thing still to do.
+     *
+     * A note or an email is always already done. A call or a meeting being written up
+     * has happened too — it only stays open if it carries a date still ahead of it. A
+     * task is the one thing that defaults to open, because a task is by definition
+     * something nobody has done yet.
+     */
+    const scheduled = body.dueAt ? new Date(body.dueAt).getTime() > Date.now() : false;
+    const isLogged = body.type !== 'TASK' && !scheduled;
     const activity = await prisma.activity.create({
       data: {
         ...body,

@@ -695,6 +695,34 @@ describe('quote cost', () => {
   });
 });
 
+// ── logging what already happened ─────────────────────────────────────────────
+
+describe('activities', () => {
+  /**
+   * A call you are writing up has happened. Creating it as Open put it on the overdue
+   * pile and asked the person who just made it to tick it off.
+   */
+  it('logs a call as done, and keeps a scheduled one open', async () => {
+    const logged = await request(app, fx.rep).post('/api/activities', {
+      type: 'CALL', subject: 'Spoke to the CIO', accountId: fx.customer.id,
+    });
+    assert.equal(logged.status, 201, JSON.stringify(logged.body));
+    assert.equal(logged.body.status, 'Completed');
+    assert.ok(logged.body.completedAt, 'a logged call needs the time it happened');
+
+    const booked = await request(app, fx.rep).post('/api/activities', {
+      type: 'MEETING', subject: 'Technical workshop', accountId: fx.customer.id,
+      dueAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+    });
+    assert.equal(booked.body.status, 'Open', 'a meeting still ahead of us is not done');
+
+    const task = await request(app, fx.rep).post('/api/activities', {
+      type: 'TASK', subject: 'Send the revised pricing', accountId: fx.customer.id,
+    });
+    assert.equal(task.body.status, 'Open', 'a task is by definition not done yet');
+  });
+});
+
 // ── margin warnings ───────────────────────────────────────────────────────────
 
 describe('margin warnings', () => {
