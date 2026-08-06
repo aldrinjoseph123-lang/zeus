@@ -583,6 +583,61 @@ describe('exchange rates', () => {
   });
 });
 
+// ── quote cost integrity ──────────────────────────────────────────────────────
+
+describe('quote cost', () => {
+  /**
+   * A rep cannot see unitCost, so their browser never has it and posts zero. Believing
+   * that turns every quote a rep saves into 100% margin, and overwrites a cost that was
+   * previously right.
+   */
+  it('does not let a rep zero the cost by saving a quote', async () => {
+    const product = await prisma.product.create({
+      data: { sku: 'SKU-COST', name: 'Costed thing', unit: 'licence', listPrice: 380, cost: 200, vendorId: fx.vendor.id },
+    });
+    await request(app, fx.manager).post('/api/price-book', { productId: product.id, vendorId: fx.vendor.id, cost: 249 });
+
+    const created = await request(app, fx.rep).post('/api/quotes', {
+      accountId: fx.customer.id,
+      lines: [{ productId: product.id, description: 'Costed thing', quantity: 10, unitPrice: 380, unitCost: 0, discountPct: 0, taxable: true }],
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+
+    const stored = await prisma.quote.findUniqueOrThrow({ where: { id: created.body.id }, include: { lines: true } });
+    assert.equal(Number(stored.lines[0].unitCost), 249, 'the price book cost must be used, not the zero the client sent');
+    assert.equal(Number(stored.totalCost), 2490);
+    assert.equal(Number(stored.marginAmount), 3800 - 2490);
+  });
+
+  it('keeps the cost a manager set when a rep edits the same quote', async () => {
+    const created = await request(app, fx.manager).post('/api/quotes', {
+      accountId: fx.customer.id,
+      lines: [{ description: 'Consulting', quantity: 1, unitPrice: 1000, unitCost: 600, discountPct: 0, taxable: true }],
+    });
+    assert.equal(created.status, 201);
+
+    // The rep changes the price. Their payload carries unitCost: 0 because they cannot see it.
+    const edited = await request(app, fx.rep).patch(`/api/quotes/${created.body.id}`, {
+      accountId: fx.customer.id,
+      lines: [{ description: 'Consulting', quantity: 1, unitPrice: 1200, unitCost: 0, discountPct: 0, taxable: true }],
+    });
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+
+    const stored = await prisma.quote.findUniqueOrThrow({ where: { id: created.body.id }, include: { lines: true } });
+    assert.equal(Number(stored.lines[0].unitPrice), 1200, 'the price change must stick');
+    assert.equal(Number(stored.lines[0].unitCost), 600, 'the cost must survive an edit by someone who cannot see it');
+  });
+
+  it('still lets a manager set the cost by hand', async () => {
+    const created = await request(app, fx.manager).post('/api/quotes', {
+      accountId: fx.customer.id,
+      lines: [{ description: 'Hardware', quantity: 2, unitPrice: 500, unitCost: 310, discountPct: 0, taxable: true }],
+    });
+    const stored = await prisma.quote.findUniqueOrThrow({ where: { id: created.body.id }, include: { lines: true } });
+    assert.equal(Number(stored.lines[0].unitCost), 310);
+  });
+});
+
 // ── dashboard scoping ─────────────────────────────────────────────────────────
 
 describe('dashboard', () => {

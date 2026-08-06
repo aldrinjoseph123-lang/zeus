@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, undoHardDelete } from '../lib/audit.js';
 import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
-import { maskFields } from '../auth/rbac.js';
+import { maskFields, permissionFor } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
 import { formatAed, lineTotals, taxDocumentTotals } from '../lib/money.js';
 import { getSetting, vatRate } from '../lib/settings.js';
@@ -12,6 +12,7 @@ import { quotePdf, type QuotePdfData } from '../services/pdf.js';
 import { sendMail } from '../services/graph.js';
 import { notify, emailTemplate } from '../services/notify.js';
 import { touch } from '../lib/touch.js';
+import { resolvePrice } from '../services/priceBook.js';
 
 const lineSchema = z.object({
   id: z.string().optional(),
@@ -47,6 +48,54 @@ const quoteInclude = {
   preparedBy: { select: { id: true, name: true, email: true, phone: true } },
   lines: { orderBy: { order: 'asc' as const } },
 };
+
+type IncomingLine = z.infer<typeof lineSchema>;
+
+/**
+ * Supply the cost of each line when the caller is not allowed to set it.
+ *
+ * A Sales Executive cannot see `unitCost`, so it never reaches their browser — and the
+ * quote editor duly posts zero for it. Taking that at face value wrote a cost of nothing
+ * and a margin of everything: the quote read as 100% margin, and the manager approving it
+ * was signing off a number the system had invented. On an edit it was worse, because the
+ * zero overwrote a cost that had been right.
+ *
+ * `stripUnwritableFields` does not help here: it drops top-level keys, and this one lives
+ * inside the lines array. So instead of trusting the client, the cost is taken from the
+ * line as it was already stored, and failing that from the price book.
+ */
+async function costedLines(
+  user: Parameters<typeof permissionFor>[0],
+  lines: IncomingLine[],
+  context: { quoteId?: string; dealId?: string | null },
+): Promise<IncomingLine[]> {
+  const fields = permissionFor(user, 'quotes').fields ?? {};
+  if (fields.unitCost === 'write' || fields.unitCost === undefined) return lines;
+
+  const previous = context.quoteId
+    ? await prisma.quoteLine.findMany({ where: { quoteId: context.quoteId } })
+    : [];
+  // A stored zero is not a cost worth protecting — it means nobody ever knew one, so it
+  // is better to ask the price book again than to preserve the absence for ever.
+  const known = previous.filter((l) => num(l.unitCost) > 0);
+  const byProduct = new Map(known.filter((l) => l.productId).map((l) => [l.productId, num(l.unitCost)]));
+  const byDescription = new Map(known.map((l) => [l.description, num(l.unitCost)]));
+
+  return Promise.all(
+    lines.map(async (line) => {
+      const kept = (line.productId ? byProduct.get(line.productId) : undefined) ?? byDescription.get(line.description);
+      if (kept !== undefined) return { ...line, unitCost: kept };
+      if (!line.productId) return { ...line, unitCost: 0 };
+
+      const priced = await resolvePrice({
+        productId: line.productId,
+        quantity: line.quantity,
+        dealId: context.dealId ?? null,
+      });
+      return { ...line, unitCost: priced.rateMissing ? 0 : priced.cost };
+    }),
+  );
+}
 
 /** Recompute every derived money field from the lines. Never trust client totals. */
 async function recalcQuote(quoteId: string): Promise<void> {
@@ -158,7 +207,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
         notes: body.notes ?? null,
         preparedById: request.user.id,
         lines: {
-          create: body.lines.map((line, index) => {
+          create: (await costedLines(request.user, body.lines, { dealId: body.dealId })).map((line, index) => {
             const t = lineTotals(line);
             return { ...line, id: undefined, order: index, lineTotal: t.lineTotal, lineCost: t.lineCost };
           }),
@@ -195,9 +244,10 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
     // Lines are replaced wholesale — simpler and safer than diffing an editable grid.
     if (lines) {
+      const priced = await costedLines(request.user, lines, { quoteId: id, dealId: body.dealId ?? existing.dealId });
       await prisma.quoteLine.deleteMany({ where: { quoteId: id } });
       await prisma.quoteLine.createMany({
-        data: lines.map((line, index) => {
+        data: priced.map((line, index) => {
           const t = lineTotals(line);
           return { ...line, id: undefined, quoteId: id, order: index, lineTotal: t.lineTotal, lineCost: t.lineCost };
         }),

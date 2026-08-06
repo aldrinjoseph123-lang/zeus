@@ -169,11 +169,13 @@ async function main(): Promise<void> {
   console.log(`  + ${contacts.length} contacts`);
 
   // ── what we resell, and what it costs us ────────────────────────────────────
+  // The catalogue sells in dirhams while these vendors bill in dollars, so a list price
+  // has to clear the *converted* cost — USD 249 is AED 914, not AED 249.
   const vendorProducts = [
-    { sku: 'CS-FALCON-GO', name: 'CrowdStrike Falcon Go', unit: 'endpoint', listPrice: 210, cost: 138, vendorId: crowdstrike.id, category: 'Endpoint & Detection', currency: 'USD' },
-    { sku: 'CS-FALCON-PRO', name: 'CrowdStrike Falcon Pro', unit: 'endpoint', listPrice: 380, cost: 249, vendorId: crowdstrike.id, category: 'Endpoint & Detection', currency: 'USD' },
-    { sku: 'MC-EMAIL-SEC', name: 'Mimecast Email Security', unit: 'user', listPrice: 96, cost: 61, vendorId: mimecast.id, category: 'Data & Email', currency: 'USD' },
-    { sku: 'MC-AWARENESS', name: 'Mimecast Awareness Training', unit: 'user', listPrice: 44, cost: 27, vendorId: mimecast.id, category: 'Data & Email', currency: 'USD' },
+    { sku: 'CS-FALCON-GO', name: 'CrowdStrike Falcon Go', unit: 'endpoint', listPrice: 760, cost: 138, vendorId: crowdstrike.id, category: 'Endpoint & Detection', currency: 'USD' },
+    { sku: 'CS-FALCON-PRO', name: 'CrowdStrike Falcon Pro', unit: 'endpoint', listPrice: 1370, cost: 249, vendorId: crowdstrike.id, category: 'Endpoint & Detection', currency: 'USD' },
+    { sku: 'MC-EMAIL-SEC', name: 'Mimecast Email Security', unit: 'user', listPrice: 335, cost: 61, vendorId: mimecast.id, category: 'Data & Email', currency: 'USD' },
+    { sku: 'MC-AWARENESS', name: 'Mimecast Awareness Training', unit: 'user', listPrice: 150, cost: 27, vendorId: mimecast.id, category: 'Data & Email', currency: 'USD' },
     { sku: 'RG-FW-APPLIANCE', name: 'Perimeter Firewall Appliance', unit: 'unit', listPrice: 18500, cost: 12900, vendorId: redington.id, category: 'Network', currency: 'AED' },
   ];
   const products: Record<string, { id: string; listPrice: unknown; cost: unknown; unit: string; currency: string }> = {};

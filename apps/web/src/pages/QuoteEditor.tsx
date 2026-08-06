@@ -58,6 +58,26 @@ export default function QuoteEditor() {
     staleTime: 300_000,
   });
 
+  /**
+   * "Build quote" on a deal arrives here with the customer and the deal already chosen,
+   * as query parameters. The ids were being held in state but nothing knew their names,
+   * so both pickers rendered their empty search boxes — the quote was correctly addressed
+   * and the screen said otherwise, which sends the rep off to pick the customer they had
+   * just come from. Fetch the names so the form shows what it is actually going to save.
+   */
+  const preselectedAccount = params.get('accountId');
+  const preselectedDeal = params.get('dealId');
+
+  const { data: fromLink } = useQuery({
+    queryKey: ['quote-preselect', preselectedAccount, preselectedDeal],
+    enabled: isNew && Boolean(preselectedAccount || preselectedDeal),
+    staleTime: 300_000,
+    queryFn: async () => ({
+      account: preselectedAccount ? await api.get<{ name: string }>(`/accounts/${preselectedAccount}`) : null,
+      deal: preselectedDeal ? await api.get<{ reference: string; name: string }>(`/deals/${preselectedDeal}`) : null,
+    }),
+  });
+
   // Hydrate the form once the quote (or the defaults) arrive.
   useEffect(() => {
     if (quote) {
@@ -226,7 +246,7 @@ export default function QuoteEditor() {
               <Field label="Bill to" required>
                 <AccountPicker
                   value={accountId || null}
-                  selectedLabel={accountLabel}
+                  selectedLabel={accountLabel ?? fromLink?.account?.name ?? null}
                   onChange={(id, row) => { setAccountId(id ?? ''); setAccountLabel(row?.name ?? null); setContactId(''); }}
                 />
               </Field>
@@ -249,6 +269,7 @@ export default function QuoteEditor() {
                 ) : (
                   <Lookup<{ id: string; reference: string; name: string; account: { name: string } }>
                     value={dealId || null}
+                    selectedLabel={fromLink?.deal ? `${fromLink.deal.reference} · ${fromLink.deal.name}` : null}
                     onChange={(id) => setDealId(id ?? '')}
                     endpoint="/deals"
                     placeholder="Search deals…"
