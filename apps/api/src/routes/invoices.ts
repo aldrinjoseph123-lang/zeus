@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
-import { audit, undoHardDelete } from '../lib/audit.js';
+import { audit, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
 import { maskFields } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
@@ -182,7 +182,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
 
   app.patch('/api/invoices/:id', { preHandler: requirePermission('invoices', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
-    const existing = await prisma.invoice.findUnique({ where: { id } });
+    const existing = await prisma.invoice.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!existing) throw notFound('Invoice not found.');
 
     const parsed = invoiceSchema.partial().safeParse(request.body);
@@ -224,7 +224,17 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
     }
 
     await recalcInvoice(id);
-    await audit({ user: request.user, action: 'update', entity: 'Invoice', entityId: id, summary: existing.number, ip: clientIp(request) });
+
+    const after = await prisma.invoice.findUniqueOrThrow({ where: { id } });
+    const changes = diff(existing as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>);
+    await audit({
+      user: request.user, action: 'update', entity: 'Invoice', entityId: id, summary: existing.number,
+      changes,
+      undo: lines
+        ? undoLineEdit('invoice', 'invoices', id, existing as unknown as Record<string, unknown>, changes, existing.lines as unknown as Array<Record<string, unknown>>)
+        : undoUpdate('invoice', 'invoices', id, existing as unknown as Record<string, unknown>, changes),
+      ip: clientIp(request),
+    });
     return prisma.invoice.findUnique({ where: { id }, include });
   });
 

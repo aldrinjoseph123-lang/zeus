@@ -695,6 +695,75 @@ describe('quote cost', () => {
   });
 });
 
+// ── undo of a line edit ───────────────────────────────────────────────────────
+
+describe('undo line edits', () => {
+  /**
+   * Rewriting a document's lines is the most destructive routine action there is — the
+   * old rows are deleted outright — and it was the one thing undo could not reach.
+   */
+  it('puts a quote\'s lines back, with their costs and totals', async () => {
+    const created = await request(app, fx.manager).post('/api/quotes', {
+      accountId: fx.customer.id,
+      lines: [
+        { description: 'Licences', quantity: 10, unitPrice: 500, unitCost: 300, discountPct: 0, taxable: true },
+        { description: 'Onboarding', quantity: 1, unitPrice: 2000, unitCost: 900, discountPct: 0, taxable: true },
+      ],
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const quoteId = created.body.id as string;
+
+    const before = await prisma.quote.findUniqueOrThrow({ where: { id: quoteId } });
+    assert.equal(Number(before.total).toFixed(2), '7350.00');
+
+    // Somebody replaces both lines with one cheaper one.
+    const edited = await request(app, fx.manager).patch(`/api/quotes/${quoteId}`, {
+      accountId: fx.customer.id,
+      lines: [{ description: 'Licences', quantity: 1, unitPrice: 100, unitCost: 60, discountPct: 0, taxable: true }],
+    });
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+    assert.equal((await prisma.quoteLine.count({ where: { quoteId } })), 1);
+
+    const recent = await request(app, fx.manager).get('/api/undo/recent');
+    const entry = (recent.body as Array<{ id: string; entity: string }>).find((e) => e.entity === 'Quote');
+    assert.ok(entry, `no undoable quote edit: ${JSON.stringify(recent.body).slice(0, 200)}`);
+
+    const undone = await request(app, fx.manager).post(`/api/undo/${entry.id}`);
+    assert.equal(undone.status, 200, JSON.stringify(undone.body));
+
+    const lines = await prisma.quoteLine.findMany({ where: { quoteId }, orderBy: { order: 'asc' } });
+    assert.equal(lines.length, 2, 'both lines must come back');
+    assert.equal(lines[0].description, 'Licences');
+    assert.equal(Number(lines[0].unitCost), 300, 'the cost must come back with the line');
+    assert.equal(Number(lines[1].unitPrice), 2000);
+
+    const after = await prisma.quote.findUniqueOrThrow({ where: { id: quoteId } });
+    assert.equal(Number(after.total).toFixed(2), '7350.00', 'the totals must describe the restored lines');
+    assert.equal(Number(after.totalCost).toFixed(2), '3900.00');
+  });
+
+  it('still refuses to touch an issued invoice', async () => {
+    const invoice = await makeInvoice([{ description: 'Licence', quantity: 1, unitPrice: 1000 }]);
+    await request(app, fx.admin).patch(`/api/invoices/${invoice.id}`, {
+      accountId: fx.customer.id,
+      lines: [{ description: 'Changed', quantity: 1, unitPrice: 1500, unitCost: 0, discountPct: 0, taxable: true, vatRate: 5 }],
+    });
+    await request(app, fx.admin).post(`/api/approvals/invoices/${invoice.id}/submit`);
+    await request(app, fx.manager).post(`/api/approvals/invoices/${invoice.id}/approve`);
+    await request(app, fx.admin).post(`/api/invoices/${invoice.id}/status`, { status: 'SENT' });
+
+    const recent = await request(app, fx.admin).get('/api/undo/recent');
+    const entry = (recent.body as Array<{ id: string; entity: string; refuseReason?: string }>).find((e) => e.entity === 'Invoice');
+    if (entry) {
+      const res = await request(app, fx.admin).post(`/api/undo/${entry.id}`);
+      assert.equal(res.status, 400, 'an issued invoice must not be rolled back by undo');
+    }
+    const stored = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { lines: true } });
+    assert.equal(stored.lines.length, 1);
+    assert.equal(Number(stored.lines[0].unitPrice), 1500, 'the issued figures must stand');
+  });
+});
+
 // ── report scoping ────────────────────────────────────────────────────────────
 
 describe('reports', () => {

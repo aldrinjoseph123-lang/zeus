@@ -76,6 +76,26 @@ export const undoHardDelete = (
 ): UndoPayload => ({ kind: 'hard-delete', model, module, id, before: row, ...extra });
 
 /** An edit: keep only what changed, in the values the row actually held. */
+/**
+ * An edit that replaced a document's lines.
+ *
+ * Line edits are wholesale — the old rows are deleted and new ones written — so a diff
+ * of scalar fields says nothing about what was lost. The previous lines travel in the
+ * payload instead, and undo puts the whole set back.
+ */
+export function undoLineEdit(
+  model: string,
+  module: string,
+  id: string,
+  before: Record<string, unknown>,
+  changes: Diff,
+  lines: Array<Record<string, unknown>>,
+): UndoPayload {
+  const snapshot: Record<string, unknown> = {};
+  for (const key of Object.keys(changes)) snapshot[key] = before[key] ?? null;
+  return { kind: 'update', model, module, id, before: snapshot, children: { lines } };
+}
+
 export function undoUpdate(
   model: string,
   module: string,

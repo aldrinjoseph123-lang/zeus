@@ -1,13 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
-import { audit, undoHardDelete } from '../lib/audit.js';
+import { audit, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
 import { maskFields, permissionFor } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
-import { formatAed, lineTotals, taxDocumentTotals } from '../lib/money.js';
+import { formatAed, lineTotals } from '../lib/money.js';
 import { getSetting, vatRate } from '../lib/settings.js';
-import { recalcInvoice, snapshotParties } from '../lib/commercial.js';
+import { recalcInvoice, recalcQuote, snapshotParties } from '../lib/commercial.js';
 import { quotePdf, type QuotePdfData } from '../services/pdf.js';
 import { sendMail } from '../services/graph.js';
 import { notify, emailTemplate } from '../services/notify.js';
@@ -97,51 +97,6 @@ async function costedLines(
   );
 }
 
-/** Recompute every derived money field from the lines. Never trust client totals. */
-async function recalcQuote(quoteId: string): Promise<void> {
-  const quote = await prisma.quote.findUnique({ where: { id: quoteId }, include: { lines: true } });
-  if (!quote) return;
-
-  // Same per-line rounding as invoices and purchase orders, so an accepted quote
-  // and the invoice raised from it can never differ by a fil.
-  const totals = taxDocumentTotals(
-    quote.lines.map((l) => ({
-      quantity: num(l.quantity),
-      unitPrice: num(l.unitPrice),
-      unitCost: num(l.unitCost),
-      discountPct: num(l.discountPct),
-      taxable: l.taxable,
-    })),
-    { headerDiscountPct: num(quote.discountPct), defaultVatRate: num(quote.vatRate) },
-  );
-
-  await prisma.quote.update({
-    where: { id: quoteId },
-    data: {
-      subtotal: totals.subtotal,
-      discountAmt: totals.discountAmt,
-      vatAmount: totals.vatAmount,
-      total: totals.total,
-      totalCost: totals.totalCost,
-      marginAmount: totals.marginAmount,
-    },
-  });
-
-  // Keep the parent deal's headline figure in step with its accepted/latest quote.
-  if (quote.dealId) {
-    const net = totals.netAfterDiscount;
-    await prisma.deal.update({
-      where: { id: quote.dealId },
-      data: {
-        amount: net,
-        vatRate: quote.vatRate,
-        vatAmount: totals.vatAmount,
-        totalAmount: totals.total,
-        cost: totals.totalCost,
-      },
-    });
-  }
-}
 
 export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/quotes', { preHandler: requirePermission('quotes', 'read') }, async (request) => {
@@ -225,7 +180,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/quotes/:id', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
-    const existing = await prisma.quote.findUnique({ where: { id } });
+    const existing = await prisma.quote.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!existing) throw notFound('Quote not found.');
     if (existing.status === 'ACCEPTED') throw badRequest('An accepted quote is locked. Create a new version instead.');
 
@@ -255,7 +210,19 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     }
 
     await recalcQuote(id);
-    await audit({ user: request.user, action: 'update', entity: 'Quote', entityId: id, summary: existing.number, ip: clientIp(request) });
+
+    const after = await prisma.quote.findUniqueOrThrow({ where: { id } });
+    const changes = diff(existing as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>);
+    await audit({
+      user: request.user, action: 'update', entity: 'Quote', entityId: id, summary: existing.number,
+      changes,
+      // Rewriting the lines is the destructive part of editing a quote, so it is the part
+      // undo has to be able to reach.
+      undo: lines
+        ? undoLineEdit('quote', 'quotes', id, existing as unknown as Record<string, unknown>, changes, existing.lines as unknown as Array<Record<string, unknown>>)
+        : undoUpdate('quote', 'quotes', id, existing as unknown as Record<string, unknown>, changes),
+      ip: clientIp(request),
+    });
     const full = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
     return maskFields(request.user, 'quotes', full);
   });

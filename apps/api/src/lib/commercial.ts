@@ -61,6 +61,58 @@ export async function recalcInvoice(invoiceId: string): Promise<void> {
 }
 
 /** Recompute a purchase order from its lines, then refresh its paid status. */
+/**
+ * Recompute a quote's derived money from its lines. Never trust client totals.
+ *
+ * Lives here beside recalcInvoice and recalcPurchaseOrder because undo needs it too:
+ * putting a quote's lines back is only half the job if the totals still describe the
+ * lines that were there a moment ago.
+ */
+export async function recalcQuote(quoteId: string): Promise<void> {
+  const quote = await prisma.quote.findUnique({ where: { id: quoteId }, include: { lines: true } });
+  if (!quote) return;
+
+  // Same per-line rounding as invoices and purchase orders, so an accepted quote
+  // and the invoice raised from it can never differ by a fil.
+  const totals = taxDocumentTotals(
+    quote.lines.map((l) => ({
+      quantity: num(l.quantity),
+      unitPrice: num(l.unitPrice),
+      unitCost: num(l.unitCost),
+      discountPct: num(l.discountPct),
+      taxable: l.taxable,
+    })),
+    { headerDiscountPct: num(quote.discountPct), defaultVatRate: num(quote.vatRate) },
+  );
+
+  await prisma.quote.update({
+    where: { id: quoteId },
+    data: {
+      subtotal: totals.subtotal,
+      discountAmt: totals.discountAmt,
+      vatAmount: totals.vatAmount,
+      total: totals.total,
+      totalCost: totals.totalCost,
+      marginAmount: totals.marginAmount,
+    },
+  });
+
+  // Keep the parent deal's headline figure in step with its accepted/latest quote.
+  if (quote.dealId) {
+    const net = totals.netAfterDiscount;
+    await prisma.deal.update({
+      where: { id: quote.dealId },
+      data: {
+        amount: net,
+        vatRate: quote.vatRate,
+        vatAmount: totals.vatAmount,
+        totalAmount: totals.total,
+        cost: totals.totalCost,
+      },
+    });
+  }
+}
+
 export async function recalcPurchaseOrder(poId: string): Promise<void> {
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: poId },

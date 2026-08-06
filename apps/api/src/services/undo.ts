@@ -124,15 +124,27 @@ export async function applyUndo(payload: UndoPayload): Promise<void> {
     return;
   }
 
-  if (!payload.before || Object.keys(payload.before).length === 0) {
+  const hasChildren = Object.keys(payload.children ?? {}).length > 0;
+  if ((!payload.before || Object.keys(payload.before).length === 0) && !hasChildren) {
     throw new Error('Cannot undo: no previous values were recorded for that change.');
   }
   const data: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(payload.before)) {
+  for (const [key, value] of Object.entries(payload.before ?? {})) {
     if (SKIP.has(key) || DERIVED.has(key)) continue;
     data[key] = value;
   }
+
+  /**
+   * Line edits replace the whole set rather than diffing it, so undoing one has to put
+   * the whole set back. Prisma does the delete and the recreate inside the same update,
+   * which matters — a half-restored document is worse than an un-restored one.
+   */
+  for (const [relation, rows] of Object.entries(payload.children ?? {})) {
+    data[relation] = { deleteMany: {}, create: rows.map((row) => stripChild(row)) };
+  }
+
   await d.update({ where: { id: payload.id }, data });
+  await rebuild(payload);
   await rebuild(payload);
 }
 
@@ -150,10 +162,22 @@ function stripChild(row: Record<string, unknown>): Record<string, unknown> {
 
 /** Money that Zeus derives rather than stores has to be recomputed after a restore. */
 async function rebuild(payload: UndoPayload): Promise<void> {
+  const commercial = await import('../lib/commercial.js');
+
+  /**
+   * Restoring lines without recomputing the document leaves totals describing the lines
+   * that were there a moment ago — which is a worse state than the one being undone,
+   * because it looks settled.
+   */
+  if (Object.keys(payload.children ?? {}).length > 0) {
+    if (payload.model === 'quote') await commercial.recalcQuote(payload.id);
+    else if (payload.model === 'invoice') await commercial.recalcInvoice(payload.id);
+    else if (payload.model === 'purchaseOrder') await commercial.recalcPurchaseOrder(payload.id);
+  }
+
   if (!payload.refresh) return;
-  const { refreshInvoicePayment, refreshPurchaseOrderPayment } = await import('../lib/commercial.js');
-  if (payload.refresh.kind === 'invoice') await refreshInvoicePayment(payload.refresh.id);
-  else await refreshPurchaseOrderPayment(payload.refresh.id);
+  if (payload.refresh.kind === 'invoice') await commercial.refreshInvoicePayment(payload.refresh.id);
+  else await commercial.refreshPurchaseOrderPayment(payload.refresh.id);
 }
 
 /** The `from` side of a recorded diff — what an update has to be set back to. */
