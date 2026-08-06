@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { audit } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, listParams, notFound, requirePermission } from '../lib/http.js';
 import { permissionFor, scopeWhere, type SessionUser } from '../auth/rbac.js';
 import { tablePdf, type TableColumn } from '../services/pdf.js';
 import { tableXlsx } from '../services/xlsx.js';
@@ -820,8 +820,23 @@ async function buildContext(request: FastifyRequest): Promise<ReportContext> {
 }
 
 export default async function reportRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/reports', { preHandler: requirePermission('reports', 'read') }, async () =>
-    REPORTS.map(({ key, name, description, module, columns }) => ({ key, name, description, module, columns })),
+  /**
+   * Some reports exist only to show a field the role may not see. Module permission is
+   * not enough for those: a Sales Executive may read `products`, but `cost` is masked on
+   * it — and the price book *screen* returns 403 for exactly that reason. Without this,
+   * the report handed them every vendor buy price the screen had just refused.
+   */
+  const REQUIRED_FIELD: Record<string, { module: string; field: string; what: string }> = {
+    'price-book': { module: 'products', field: 'cost', what: 'buy prices' },
+  };
+
+  app.get('/api/reports', { preHandler: requirePermission('reports', 'read') }, async (request) =>
+    REPORTS
+      .filter((r) => {
+        const gate = REQUIRED_FIELD[r.key];
+        return !gate || (permissionFor(request.user, gate.module).fields ?? {})[gate.field] !== 'hidden';
+      })
+      .map(({ key, name, description, module, columns }) => ({ key, name, description, module, columns })),
   );
 
   app.get('/api/reports/:key', { preHandler: requirePermission('reports', 'read') }, async (request, reply) => {
@@ -830,6 +845,11 @@ export default async function reportRoutes(app: FastifyInstance): Promise<void> 
 
     const def = REPORTS.find((r) => r.key === key);
     if (!def) throw notFound(`No report named "${key}".`);
+
+    const gate = REQUIRED_FIELD[def.key];
+    if (gate && (permissionFor(request.user, gate.module).fields ?? {})[gate.field] === 'hidden') {
+      throw forbidden(`Your role cannot see ${gate.what}, so this report is not available to it.`);
+    }
 
     const perm = permissionFor(request.user, def.module);
     if (perm.read === 'none') throw badRequest(`Your role cannot see ${def.module}.`);

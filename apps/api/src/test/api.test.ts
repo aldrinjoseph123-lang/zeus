@@ -496,6 +496,28 @@ describe('price book', () => {
     assert.equal(res.body.rate, 4);
   });
 
+  it('keeps the price book report away from that role too', async () => {
+    // The screen returned 403 and the report handed over every buy price. A report is
+    // just another way to ask the same question.
+    const product = await prisma.product.create({
+      data: { sku: 'SKU-REPORT', name: 'Reported thing', unit: 'licence', listPrice: 100, cost: 60, vendorId: fx.vendor.id },
+    });
+    await request(app, fx.manager).post('/api/price-book', { productId: product.id, vendorId: fx.vendor.id, cost: 55 });
+
+    const repRun = await request(app, fx.rep).get('/api/reports/price-book');
+    assert.equal(repRun.status, 403, `a rep read the price book report: ${JSON.stringify(repRun.body).slice(0, 160)}`);
+
+    const listed = await request(app, fx.rep).get('/api/reports');
+    assert.ok(
+      !(listed.body as Array<{ key: string }>).some((r) => r.key === 'price-book'),
+      'a report the role cannot open should not be offered to it',
+    );
+
+    const managerRun = await request(app, fx.manager).get('/api/reports/price-book');
+    assert.equal(managerRun.status, 200);
+    assert.equal(managerRun.body.rows.length, 1);
+  });
+
   it('keeps the price book away from a role that cannot see cost', async () => {
     const product = await makeProduct('SKU-RBAC', 100);
     assert.equal((await request(app, fx.rep).get(`/api/price-book?productId=${product.id}`)).status, 403);
