@@ -173,7 +173,7 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
       mayDeals
         ? prisma.deal.findMany({
             where: { approvalStatus: 'PENDING', deletedAt: null },
-            select: { id: true, reference: true, name: true, amount: true, approvalRequestedAt: true, account: { select: { name: true } }, approvalRequestedBy: { select: { name: true } } },
+            select: { id: true, reference: true, name: true, amount: true, cost: true, approvalRequestedAt: true, account: { select: { name: true } }, approvalRequestedBy: { select: { name: true } } },
             orderBy: { approvalRequestedAt: 'asc' },
             take: 25,
           })
@@ -196,11 +196,24 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
         : [],
     ]);
 
+    /**
+     * The margin the approver is signing off, called out when it is below the floor or
+     * gone negative. A manager working the queue on a phone should not have to open the
+     * record to find out they are approving a loss.
+     */
+    const floor = Number(await getSetting<number>('approvals.dealMinMarginPct', 0));
+
     return [
-      ...deals.map((d) => ({
-        entity: 'deals' as const, id: d.id, reference: d.reference, title: d.name,
-        account: d.account.name, value: num(d.amount), requestedAt: d.approvalRequestedAt, requestedBy: d.approvalRequestedBy?.name ?? null,
-      })),
+      ...deals.map((d) => {
+        const net = num(d.amount);
+        const marginPct = net > 0 ? ((net - num(d.cost)) / net) * 100 : 0;
+        return {
+          entity: 'deals' as const, id: d.id, reference: d.reference, title: d.name,
+          account: d.account.name, value: net, requestedAt: d.approvalRequestedAt, requestedBy: d.approvalRequestedBy?.name ?? null,
+          marginPct,
+          marginBelowFloor: marginPct < 0 || (floor > 0 && marginPct < floor),
+        };
+      }),
       ...purchaseOrders.map((p) => ({
         entity: 'purchase-orders' as const, id: p.id, reference: p.number, title: 'Purchase order',
         account: p.account.name, value: num(p.total), requestedAt: p.approvalRequestedAt, requestedBy: p.approvalRequestedBy?.name ?? null,

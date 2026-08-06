@@ -20,6 +20,8 @@ interface QuoteFull {
   deal: { id: string; reference: string; name: string } | null;
   preparedBy: { id: string; name: string } | null;
   lines: Array<{ id: string; productId: string | null; description: string; quantity: string | number; unit: string; unitPrice: string | number; unitCost: string | number; discountPct: string | number; taxable: boolean; termMonths: number | null }>;
+  /** Set by the server, so the warning reaches roles that cannot see the figure behind it. */
+  marginWarning: { belowFloor: boolean; negative: boolean; floorPct: number } | null;
 }
 
 export default function QuoteEditor() {
@@ -367,8 +369,23 @@ export default function QuoteEditor() {
                     </span>
                   </div>
                   {totals.marginPct < 10 && totals.netAfterDiscount > 0 ? (
-                    <p className="mt-2 text-[11px] text-accent">Margin is under 10% — check the vendor discount before sending.</p>
+                    <p className="mt-2 text-[11px] text-accent">
+                      {totals.marginPct < 0
+                        ? 'This quote sells below cost — check the buy price before sending.'
+                        : 'Margin is under 10% — check the vendor discount before sending.'}
+                    </p>
                   ) : null}
+                </div>
+              ) : null}
+
+              {/* A role that cannot see cost still needs telling, and cannot work it out. */}
+              {!showCost && quote?.marginWarning ? (
+                <div className="mt-3 border-t border-line pt-3">
+                  <p className="text-[11px] text-accent">
+                    {quote.marginWarning.negative
+                      ? 'This quote sells below what it costs us. Ask your manager before sending it.'
+                      : `Margin is below the ${quote.marginWarning.floorPct}% floor. Ask your manager before sending it.`}
+                  </p>
                 </div>
               ) : null}
 

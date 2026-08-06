@@ -98,6 +98,24 @@ async function costedLines(
 }
 
 
+/**
+ * Whether the margin on this quote is one somebody should look at, as a flag rather than
+ * a figure.
+ *
+ * A Sales Executive cannot see cost or margin, so the editor's margin warning was hidden
+ * from the one person able to act on it before sending — and their browser cannot work it
+ * out, because the numbers it would need are exactly the ones being withheld. A boolean is
+ * not the cost, so it survives masking and the warning reaches them.
+ */
+async function marginFlag(quote: { subtotal: unknown; discountAmt: unknown; totalCost: unknown }) {
+  const net = num(quote.subtotal) - num(quote.discountAmt);
+  if (net <= 0) return null;
+  const marginPct = ((net - num(quote.totalCost)) / net) * 100;
+  const floor = Number(await getSetting<number>('approvals.dealMinMarginPct', 0));
+  const belowFloor = marginPct < 0 || (floor > 0 && marginPct < floor);
+  return belowFloor ? { belowFloor: true, negative: marginPct < 0, floorPct: floor } : null;
+}
+
 export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/quotes', { preHandler: requirePermission('quotes', 'read') }, async (request) => {
     const params = listParams(request.query as Record<string, unknown>, 'createdAt');
@@ -133,7 +151,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
     if (!quote) throw notFound('Quote not found.');
-    return maskFields(request.user, 'quotes', quote);
+    return { ...maskFields(request.user, 'quotes', quote), marginWarning: await marginFlag(quote) };
   });
 
   app.post('/api/quotes', { preHandler: requirePermission('quotes', 'create') }, async (request, reply) => {
@@ -223,8 +241,8 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
         : undoUpdate('quote', 'quotes', id, existing as unknown as Record<string, unknown>, changes),
       ip: clientIp(request),
     });
-    const full = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
-    return maskFields(request.user, 'quotes', full);
+    const full = await prisma.quote.findUniqueOrThrow({ where: { id }, include: quoteInclude });
+    return { ...maskFields(request.user, 'quotes', full), marginWarning: await marginFlag(full) };
   });
 
   /** New version of an existing quote — keeps the old one for the audit trail. */

@@ -695,6 +695,53 @@ describe('quote cost', () => {
   });
 });
 
+// ── margin warnings ───────────────────────────────────────────────────────────
+
+describe('margin warnings', () => {
+  /**
+   * The quote editor already warned on a thin margin — inside a block only shown to roles
+   * that can see cost. So the person who could still act on it before sending was the one
+   * person not told, and their browser cannot work it out: the numbers it would need are
+   * exactly the ones being withheld.
+   */
+  it('warns a rep about a below-cost quote without showing them the cost', async () => {
+    const product = await prisma.product.create({
+      data: { sku: 'SKU-LOSS', name: 'Sold at a loss', unit: 'licence', listPrice: 100, cost: 400, vendorId: fx.vendor.id },
+    });
+    await request(app, fx.manager).post('/api/price-book', { productId: product.id, vendorId: fx.vendor.id, cost: 400 });
+
+    const created = await request(app, fx.rep).post('/api/quotes', {
+      accountId: fx.customer.id,
+      lines: [{ productId: product.id, description: 'Sold at a loss', quantity: 10, unitPrice: 100, unitCost: 0, discountPct: 0, taxable: true }],
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+
+    const seen = await request(app, fx.rep).get(`/api/quotes/${created.body.id}`);
+    assert.equal(seen.body.totalCost, undefined, 'the cost itself must stay hidden');
+    assert.equal(seen.body.marginWarning?.negative, true, 'the rep must still be told the quote sells below cost');
+  });
+
+  it('says nothing when the margin is healthy', async () => {
+    const created = await request(app, fx.manager).post('/api/quotes', {
+      accountId: fx.customer.id,
+      lines: [{ description: 'Healthy', quantity: 1, unitPrice: 1000, unitCost: 400, discountPct: 0, taxable: true }],
+    });
+    const seen = await request(app, fx.manager).get(`/api/quotes/${created.body.id}`);
+    assert.equal(seen.body.marginWarning, null);
+  });
+
+  it('shows the approver what they are signing off', async () => {
+    const deal = await makeDeal(fx.rep, { amount: 100_000, cost: 140_000 });
+    await request(app, fx.rep).post(`/api/approvals/deals/${deal.id}/submit`);
+
+    const queue = await request(app, fx.manager).get('/api/approvals/pending');
+    const row = (queue.body as Array<{ id: string; marginBelowFloor: boolean; marginPct: number }>).find((r) => r.id === deal.id);
+    assert.ok(row, 'the deal should be in the queue');
+    assert.equal(row.marginBelowFloor, true);
+    assert.ok(row.marginPct < 0, `expected a negative margin, got ${row.marginPct}`);
+  });
+});
+
 // ── undo of a line edit ───────────────────────────────────────────────────────
 
 describe('undo line edits', () => {

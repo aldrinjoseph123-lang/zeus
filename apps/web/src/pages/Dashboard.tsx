@@ -79,6 +79,7 @@ export default function Dashboard() {
     queryFn: () => api.get<Array<{
       entity: 'deals' | 'purchase-orders' | 'invoices'; id: string; reference: string; title: string;
       account: string; value: number; requestedAt: string | null; requestedBy: string | null;
+      marginPct?: number; marginBelowFloor?: boolean;
     }>>('/approvals/pending'),
     enabled: can('deals', 'approve') || can('invoices', 'approve'),
   });
@@ -363,10 +364,18 @@ export default function Dashboard() {
                       <span className="block text-[11px] text-muted">
                         {a.entity === 'deals' ? a.title : a.title} · {a.requestedBy ? `from ${a.requestedBy}` : 'submitted'} {a.requestedAt ? relative(a.requestedAt) : ''}
                       </span>
+                      {/* What is being signed off, not just how much. */}
+                      {a.marginBelowFloor ? (
+                        <span className="block text-[11px] font-semibold text-accent">
+                          {(a.marginPct ?? 0) < 0
+                            ? `Sells below cost · ${percent(a.marginPct ?? 0, 1)} margin`
+                            : `Thin margin · ${percent(a.marginPct ?? 0, 1)}`}
+                        </span>
+                      ) : null}
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <span className="tabular text-[13px] font-semibold">{money(a.value)}</span>
-                      <Badge tone="watch">Approve</Badge>
+                      <Badge tone={a.marginBelowFloor ? 'accent' : 'watch'}>Approve</Badge>
                     </span>
                   </Link>
                 ))
