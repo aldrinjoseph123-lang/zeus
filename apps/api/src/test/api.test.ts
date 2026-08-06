@@ -205,6 +205,22 @@ describe('invoices', () => {
     assert.equal(stored.supplierTrn, '100123456700003', 'the TRN must be snapshotted at issue');
   });
 
+  it('does not repair a missing TRN when reprinting an issued invoice', async () => {
+    const { supplierTrnLine } = await import('../services/pdf.js');
+    const current = '100123456700003';
+
+    // A draft is a preview — showing the current TRN there is helpful.
+    assert.equal(supplierTrnLine('DRAFT', null, current).line, `TRN ${current}`);
+    assert.equal(supplierTrnLine('DRAFT', null, '').line, 'TRN not set');
+
+    // An issued document prints its snapshot, and says so when there wasn't one. It must
+    // never substitute today's number for one the customer's copy never carried.
+    assert.equal(supplierTrnLine('SENT', '100999888700003', current).line, 'TRN 100999888700003');
+    assert.equal(supplierTrnLine('SENT', null, current).line, 'TRN not recorded at issue');
+    assert.equal(supplierTrnLine('SENT', null, current).trn, '');
+    assert.equal(supplierTrnLine('PAID', null, current).trn, '');
+  });
+
   it('refuses to delete an issued invoice so the number stays in the sequence', async () => {
     const invoice = await makeInvoice([{ description: 'Licence', quantity: 1, unitPrice: 500 }]);
     await request(app, fx.admin).post(`/api/approvals/invoices/${invoice.id}/submit`);

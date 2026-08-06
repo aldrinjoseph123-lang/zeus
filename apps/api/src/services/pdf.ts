@@ -378,6 +378,26 @@ export interface TaxDocLine {
   termMonths: number | null;
 }
 
+/**
+ * Which supplier TRN line a tax document gets.
+ *
+ * A draft is a preview, so filling in the current company details is helpful. Once
+ * issued, the snapshot is evidence of what the customer was actually sent — a reprint
+ * that quietly substitutes today's TRN shows a number that was never on their copy, so
+ * it says the field was empty instead.
+ */
+export function supplierTrnLine(
+  status: string,
+  snapshot: string | null,
+  currentTrn: string,
+): { trn: string; line: string } {
+  if (snapshot) return { trn: snapshot, line: `TRN ${snapshot}` };
+  if (status === 'DRAFT') {
+    return currentTrn ? { trn: currentTrn, line: `TRN ${currentTrn}` } : { trn: '', line: 'TRN not set' };
+  }
+  return { trn: '', line: 'TRN not recorded at issue' };
+}
+
 export interface InvoicePdfData {
   number: string;
   type: 'TAX_INVOICE' | 'CREDIT_NOTE';
@@ -443,11 +463,15 @@ export async function invoicePdf(doc: InvoicePdfData): Promise<Buffer> {
   pdf.fillColor(BLACK).font('Helvetica-Bold').fontSize(10)
     .text(doc.supplierName || String(company['company.legalName'] ?? company['company.name'] ?? ''), PAGE.margin, top + 12, { width: colW });
   pdf.fillColor(GREY).font('Helvetica').fontSize(8.5);
-  const supplierTrn = doc.supplierTrn || String(company['company.trn'] ?? '');
+  const isDraft = doc.status === 'DRAFT';
+  const { line: trnLine } = supplierTrnLine(doc.status, doc.supplierTrn, String(company['company.trn'] ?? ''));
+
   pdf.text(
     [
-      doc.supplierAddress || [company['company.addressLine1'], company['company.city'], company['company.country']].filter(Boolean).join(', '),
-      supplierTrn ? `TRN ${supplierTrn}` : 'TRN not set',
+      doc.supplierAddress || (isDraft
+        ? [company['company.addressLine1'], company['company.city'], company['company.country']].filter(Boolean).join(', ')
+        : ''),
+      trnLine,
       company['company.phone'],
       company['company.email'],
     ].filter(Boolean).map(String).join('\n'),
