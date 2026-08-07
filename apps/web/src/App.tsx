@@ -1,8 +1,10 @@
+import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout, { AccessDenied } from './components/Layout';
 import { useAuth } from './lib/auth';
 import { Loading } from './components/ui';
 
+// Loaded up front: the screens someone lands on, and the ones they move between all day.
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Deals from './pages/Deals';
@@ -13,18 +15,27 @@ import Accounts from './pages/Accounts';
 import AccountDetail from './pages/AccountDetail';
 import Contacts from './pages/Contacts';
 import Activities from './pages/Activities';
-import Quotes from './pages/Quotes';
-import QuoteEditor from './pages/QuoteEditor';
-import Invoices from './pages/Invoices';
-import InvoiceEditor from './pages/InvoiceEditor';
-import PurchaseOrders from './pages/PurchaseOrders';
-import PurchaseOrderEditor from './pages/PurchaseOrderEditor';
-import Products from './pages/Products';
-import Reports from './pages/Reports';
-import Imports from './pages/Imports';
-import Settings from './pages/Settings';
-import Renewals from './pages/Renewals';
-import PriceBook from './pages/PriceBook';
+
+/**
+ * Fetched when first opened.
+ *
+ * These are the heavy screens — the three document editors carry the line grid and its
+ * pricing lookups, Reports pulls in the chart library, Settings is nine panels of admin
+ * — and none of them is where a working day starts. Splitting them out means the first
+ * paint no longer waits for code most sessions never touch.
+ */
+const Quotes = lazy(() => import('./pages/Quotes'));
+const QuoteEditor = lazy(() => import('./pages/QuoteEditor'));
+const Invoices = lazy(() => import('./pages/Invoices'));
+const InvoiceEditor = lazy(() => import('./pages/InvoiceEditor'));
+const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
+const PurchaseOrderEditor = lazy(() => import('./pages/PurchaseOrderEditor'));
+const Products = lazy(() => import('./pages/Products'));
+const PriceBook = lazy(() => import('./pages/PriceBook'));
+const Renewals = lazy(() => import('./pages/Renewals'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Imports = lazy(() => import('./pages/Imports'));
+const Settings = lazy(() => import('./pages/Settings'));
 
 /** Gate a route on a module permission rather than hiding it silently. */
 function Guard({ module, children }: { module: string; children: JSX.Element }) {
@@ -35,7 +46,10 @@ function Guard({ module, children }: { module: string; children: JSX.Element }) 
 
 export default function App() {
   return (
-    <Routes>
+    // One boundary around the lot: a route swap is fast enough that per-route spinners
+    // would only flicker.
+    <Suspense fallback={<Loading />}>
+      <Routes>
       <Route path="/login" element={<Login />} />
 
       <Route element={<Layout />}>
@@ -71,7 +85,8 @@ export default function App() {
         <Route path="settings/*" element={<Settings />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }

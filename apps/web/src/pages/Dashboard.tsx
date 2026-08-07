@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, lazy, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -8,7 +8,25 @@ import {
 import { api, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, daysBetween, money, moneyShort, number, percent, quarterOf, relative } from '../lib/format';
-import { AgeingChart, ForecastChart, FunnelChart, PipelineHistoryChart, RankedBars, SplitDonut } from '../components/charts';
+/**
+ * The charts arrive after the numbers.
+ *
+ * Recharts is 450 kB — more than the rest of the application put together — and the
+ * tiles, the target bar and the approval queue are what someone opens this page to read.
+ * Loading it eagerly meant the first paint waited for a library the reader had not
+ * looked at yet.
+ */
+const AgeingChart = lazy(() => import('../components/charts').then((m) => ({ default: m.AgeingChart })));
+const ForecastChart = lazy(() => import('../components/charts').then((m) => ({ default: m.ForecastChart })));
+const FunnelChart = lazy(() => import('../components/charts').then((m) => ({ default: m.FunnelChart })));
+const PipelineHistoryChart = lazy(() => import('../components/charts').then((m) => ({ default: m.PipelineHistoryChart })));
+const RankedBars = lazy(() => import('../components/charts').then((m) => ({ default: m.RankedBars })));
+const SplitDonut = lazy(() => import('../components/charts').then((m) => ({ default: m.SplitDonut })));
+
+/** A quiet space the right size, so the layout does not jump when a chart lands. */
+function ChartSlot({ height = 220, children }: { height?: number; children: ReactNode }) {
+  return <Suspense fallback={<div style={{ height }} aria-hidden />}>{children}</Suspense>;
+}
 import {
   Avatar, Badge, Button, Card, CardHeader, DataTable, EmptyState, Loading, PageHeader,
   ProgressBar, Select, StatTile, Tabs,
@@ -206,7 +224,7 @@ export default function Dashboard() {
           <div className="border-t border-line pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
             <span className="eyebrow">Pipeline by expected close</span>
             <div className="mt-1">
-              <ForecastChart data={data.monthly.map((m) => ({ ...m, month: new Date(m.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) }))} />
+              <ChartSlot height={280}><ForecastChart data={data.monthly.map((m) => ({ ...m, month: new Date(m.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) }))} /></ChartSlot>
             </div>
           </div>
         </div>
@@ -220,7 +238,7 @@ export default function Dashboard() {
           actions={<Link to="/reports/pipeline-history"><Button size="sm" variant="ghost">Open report</Button></Link>}
         />
         <div className="px-4 py-3">
-          <PipelineHistoryChart data={history?.rows ?? []} />
+          <ChartSlot height={220}><PipelineHistoryChart data={history?.rows ?? []} /></ChartSlot>
         </div>
       </Card>
 
@@ -232,20 +250,20 @@ export default function Dashboard() {
             subtitle="Open deals by stage, with default win probability"
             actions={<Link to="/deals"><Button size="sm" variant="ghost">Open board</Button></Link>}
           />
-          <FunnelChart data={data.funnel} />
+          <ChartSlot height={260}><FunnelChart data={data.funnel} /></ChartSlot>
         </Card>
 
         <div className="flex flex-col gap-3">
           <Card>
             <CardHeader title="Direct vs partner" subtitle="Total deal value by channel" />
             <div className="px-4 py-3">
-              <SplitDonut data={data.byChannel.map((c) => ({ name: c.channel, value: c.net }))} height={150} />
+              <ChartSlot height={150}><SplitDonut data={data.byChannel.map((c) => ({ name: c.channel, value: c.net }))} height={150} /></ChartSlot>
             </div>
           </Card>
           <Card>
             <CardHeader title="Product vs service" subtitle="Reselling against managed services" />
             <div className="px-4 py-3">
-              <SplitDonut data={data.byType.map((t) => ({ name: t.type === 'PRODUCT' ? 'Reselling' : t.type === 'SERVICE' ? 'Managed service' : 'Mixed', value: t.net }))} height={150} />
+              <ChartSlot height={150}><SplitDonut data={data.byType.map((t) => ({ name: t.type === 'PRODUCT' ? 'Reselling' : t.type === 'SERVICE' ? 'Managed service' : 'Mixed', value: t.net }))} height={150} /></ChartSlot>
             </div>
           </Card>
         </div>
@@ -256,7 +274,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader title="Where deals come from" subtitle="Total value by source, with win rate" />
           <div className="px-2 py-3">
-            <RankedBars data={data.bySource.slice(0, 8).map((s) => ({ name: s.source, value: s.net }))} height={230} />
+            <ChartSlot height={230}><RankedBars data={data.bySource.slice(0, 8).map((s) => ({ name: s.source, value: s.net }))} height={230} /></ChartSlot>
           </div>
           <div className="border-t border-line px-4 py-2.5">
             <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -272,7 +290,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader title="Deal ageing" subtitle="Open value by how long the deal has existed" />
           <div className="px-2 py-3">
-            <AgeingChart data={data.ageing} />
+            <ChartSlot height={220}><AgeingChart data={data.ageing} /></ChartSlot>
           </div>
           {k.overdueDeals > 0 ? (
             <div className="border-t border-line bg-accent-soft px-4 py-2.5 text-[12px] text-[var(--red-700)]">

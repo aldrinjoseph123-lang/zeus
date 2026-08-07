@@ -9,5 +9,11 @@ export default defineConfig({
     // Dev only: the API runs on its own port. In production the API serves this build.
     proxy: { '/api': { target: 'http://localhost:4000', changeOrigin: true } },
   },
-  build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 1200 },
+  /**
+   * No manualChunks here on purpose. Naming recharts as a manual chunk did split it out,
+   * and then Vite preloaded that chunk from index.html — so every visit downloaded it
+   * anyway, which is the thing being fixed. Left to itself, Rollup puts it in the chunk
+   * behind the dynamic import, and it arrives only when a chart is rendered.
+   */
+  build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 700 },
 });
