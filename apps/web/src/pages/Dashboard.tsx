@@ -8,7 +8,7 @@ import {
 import { api, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, daysBetween, money, moneyShort, number, percent, quarterOf, relative } from '../lib/format';
-import { AgeingChart, ForecastChart, FunnelChart, RankedBars, SplitDonut } from '../components/charts';
+import { AgeingChart, ForecastChart, FunnelChart, PipelineHistoryChart, RankedBars, SplitDonut } from '../components/charts';
 import {
   Avatar, Badge, Button, Card, CardHeader, DataTable, EmptyState, Loading, PageHeader,
   ProgressBar, Select, StatTile, Tabs,
@@ -82,6 +82,13 @@ export default function Dashboard() {
       marginPct?: number; marginBelowFloor?: boolean;
     }>>('/approvals/pending'),
     enabled: can('deals', 'approve') || can('invoices', 'approve'),
+  });
+
+  // Reads the report rather than a second endpoint: it is already scoped to the reader.
+  const { data: history } = useQuery({
+    queryKey: ['pipeline-history'],
+    queryFn: () => api.get<{ rows: Array<{ date: string; openNet: number; weighted: number }> }>('/reports/pipeline-history'),
+    staleTime: 300_000,
   });
 
   const { data: owners } = useQuery({
@@ -202,6 +209,18 @@ export default function Dashboard() {
               <ForecastChart data={data.monthly.map((m) => ({ ...m, month: new Date(m.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) }))} />
             </div>
           </div>
+        </div>
+      </Card>
+
+      {/* ── how the pipeline has moved ───────────────────────────────────── */}
+      <Card className="mt-3">
+        <CardHeader
+          title="Pipeline over time"
+          subtitle="Photographed every evening — the only place that remembers what last month looked like"
+          actions={<Link to="/reports/pipeline-history"><Button size="sm" variant="ghost">Open report</Button></Link>}
+        />
+        <div className="px-4 py-3">
+          <PipelineHistoryChart data={history?.rows ?? []} />
         </div>
       </Card>
 

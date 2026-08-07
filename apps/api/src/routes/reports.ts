@@ -4,6 +4,7 @@ import { prisma, num } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, forbidden, listParams, notFound, requirePermission } from '../lib/http.js';
 import { permissionFor, scopeWhere, teamMemberIds, type SessionUser } from '../auth/rbac.js';
+import { pipelineTrend } from '../services/snapshots.js';
 import { tablePdf, type TableColumn } from '../services/pdf.js';
 import { tableXlsx } from '../services/xlsx.js';
 import { getSetting } from '../lib/settings.js';
@@ -110,6 +111,44 @@ export const REPORTS: ReportDef[] = [
           ['Pipeline value', aed(net)],
           ['Weighted forecast', aed(weighted)],
           ['Average deal', aed(rows.length ? net / rows.length : 0)],
+        ],
+      };
+    },
+  },
+  {
+    key: 'pipeline-history',
+    name: 'Pipeline over time',
+    description: 'What the open pipeline looked like on each day, from the nightly snapshot.',
+    module: 'deals',
+    columns: [
+      { key: 'date', label: 'Day', width: 100, format: 'date' },
+      { key: 'openCount', label: 'Open deals', width: 80, align: 'right' },
+      { key: 'openNet', label: 'Pipeline (AED)', width: 120, align: 'right', format: 'money' },
+      { key: 'weighted', label: 'Weighted (AED)', width: 120, align: 'right', format: 'money' },
+      { key: 'change', label: 'Day on day', width: 110, align: 'right', format: 'money' },
+    ],
+    run: async (ctx) => {
+      const points = await pipelineTrend(ctx.from, ctx.to, ctx.visibleOwnerIds);
+      const rows = points.map((p, i) => ({ ...p, change: i === 0 ? 0 : p.openNet - points[i - 1].openNet }));
+
+      // History cannot be backfilled — it starts the day the nightly job first ran. Say
+      // that, rather than showing an empty table that reads as a fault.
+      if (rows.length === 0) {
+        return {
+          rows,
+          summary: [['No history yet', 'The pipeline is photographed nightly. The first comparison appears tomorrow.']],
+        };
+      }
+
+      const first = rows[0];
+      const last = rows[rows.length - 1];
+      return {
+        rows,
+        summary: [
+          ['Days recorded', String(rows.length)],
+          ['Pipeline then', aed(first.openNet)],
+          ['Pipeline now', aed(last.openNet)],
+          ['Change', aed(last.openNet - first.openNet)],
         ],
       };
     },

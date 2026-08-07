@@ -695,6 +695,43 @@ describe('quote cost', () => {
   });
 });
 
+// ── pipeline history ──────────────────────────────────────────────────────────
+
+describe('pipeline snapshots', () => {
+  it('photographs the open pipeline once a day, however often it runs', async () => {
+    const { takePipelineSnapshot, pipelineTrend } = await import('../services/snapshots.js');
+    await makeDeal(fx.rep, { amount: 100_000 });
+    await makeDeal(fx.otherRep, { amount: 250_000 });
+
+    const first = await takePipelineSnapshot();
+    assert.equal(first.rows, 2, 'one row per stage per owner');
+    assert.equal(first.openNet, 350_000);
+
+    // A restart must not double-count: the day is rewritten, not added to.
+    await takePipelineSnapshot();
+    assert.equal(await prisma.pipelineSnapshot.count(), 2);
+
+    const all = await pipelineTrend(new Date(Date.now() - 86_400_000), new Date(), null);
+    assert.equal(all.length, 1);
+    assert.equal(all[0].openNet, 350_000);
+    assert.equal(all[0].openCount, 2);
+
+    // And it answers for the reader, not for the company.
+    const mine = await pipelineTrend(new Date(Date.now() - 86_400_000), new Date(), [fx.rep.id]);
+    assert.equal(mine[0].openNet, 100_000, 'a rep sees their own pipeline history');
+
+    const nobody = await pipelineTrend(new Date(Date.now() - 86_400_000), new Date(), []);
+    assert.deepEqual(nobody, [], 'no scope is not a reason to show the company');
+  });
+
+  it('says so rather than drawing an empty chart before there is history', async () => {
+    const res = await request(app, fx.manager).get('/api/reports/pipeline-history');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.rows.length, 0);
+    assert.match(String(res.body.summary[0][1]), /first comparison appears tomorrow/i);
+  });
+});
+
 // ── logging what already happened ─────────────────────────────────────────────
 
 describe('activities', () => {

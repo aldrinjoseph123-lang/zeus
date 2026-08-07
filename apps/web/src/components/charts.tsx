@@ -1,5 +1,5 @@
 import {
-  Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line,
+  Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { moneyShort, money, number as fmtNumber } from '../lib/format';
@@ -113,6 +113,42 @@ export function ForecastChart({ data }: {
         <Bar dataKey="won" name="Won" fill={INK} barSize={18} {...noAnim} />
         <Bar dataKey="openNet" name="Open pipeline" fill="#b8b8b4" barSize={18} {...noAnim} />
         <Line type="monotone" dataKey="openWeighted" name="Weighted forecast" stroke={ACCENT} strokeWidth={2} dot={{ r: 3, fill: ACCENT }} {...noAnim} />
+      </ComposedChart>
+    </Frame>
+  );
+}
+
+/**
+ * The open pipeline day by day, from the nightly snapshot.
+ *
+ * The empty state is the interesting one: history cannot be backfilled, so a new install
+ * has nothing to show and that is expected rather than broken. Say when it will fill in.
+ */
+export function PipelineHistoryChart({ data }: {
+  data: Array<{ date: string; openNet: number; weighted: number }>;
+}) {
+  if (data.length < 2) {
+    return (
+      <EmptyState
+        title={data.length ? 'One day recorded so far' : 'History starts tonight'}
+        message="The pipeline is photographed every evening. A trend needs two days, so this fills in from tomorrow."
+      />
+    );
+  }
+  return (
+    <Frame height={220}>
+      <ComposedChart data={data} margin={{ top: 12, right: 8, bottom: 4, left: 4 }}>
+        <CartesianGrid stroke={LINE} strokeDasharray="2 4" vertical={false} />
+        <XAxis
+          dataKey="date"
+          {...axis}
+          tickFormatter={(v: string) => new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+        />
+        <YAxis {...axis} tickFormatter={(v) => moneyShort(v).replace('AED ', '')} width={54} />
+        <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(10,10,10,0.04)' }} />
+        <Legend wrapperStyle={legendStyle} iconType="square" iconSize={9} />
+        <Area type="monotone" dataKey="openNet" name="Open pipeline" stroke={INK} fill={INK} fillOpacity={0.08} strokeWidth={2} {...noAnim} />
+        <Line type="monotone" dataKey="weighted" name="Weighted" stroke={ACCENT} strokeWidth={2} dot={false} {...noAnim} />
       </ComposedChart>
     </Frame>
   );

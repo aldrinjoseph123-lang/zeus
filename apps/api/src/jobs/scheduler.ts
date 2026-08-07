@@ -6,6 +6,7 @@ import { runBackup } from '../services/backup.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
 import { sweepRenewals } from '../services/renewals.js';
 import { ratesAreStale, refreshRates } from '../services/fx.js';
+import { takePipelineSnapshot } from '../services/snapshots.js';
 import { formatAed } from '../lib/money.js';
 
 /**
@@ -438,6 +439,16 @@ export function startScheduler(): void {
     if (await ratesAreStale()) await exchangeRates();
   });
 
+  /**
+   * Photograph the pipeline at the end of the working day rather than the start, so the
+   * day's moves are in the picture. Every day including weekends — a flat line over a
+   * weekend is information, and a gap is just a hole in the chart.
+   */
+  tasks.push(cron.schedule('0 19 * * *', () => void safely('pipelineSnapshot', async () => {
+    const { takenOn, rows, openNet } = await takePipelineSnapshot();
+    console.log(`[scheduler] pipeline photographed for ${takenOn.toISOString().slice(0, 10)}: ${rows} row(s), ${formatAed(openNet)} open`);
+  }), { timezone: TZ }));
+
   // Morning digest, 08:30 GST on working days (Mon-Fri in the UAE).
   tasks.push(cron.schedule('30 8 * * 1-5', async () => {
     await safely('staleAccounts', staleAccounts);
@@ -484,4 +495,4 @@ export function stopScheduler(): void {
 }
 
 /** Exposed so an admin can fire the digest manually from Settings. */
-export const JOBS = { taskReminders, staleAccounts, stuckDeals, expiringRegistrations, overdueInvoices, paymentsDueSoon, overduePayables, targetCheck, exchangeRates };
+export const JOBS = { pipelineSnapshot: async () => { await takePipelineSnapshot(); }, taskReminders, staleAccounts, stuckDeals, expiringRegistrations, overdueInvoices, paymentsDueSoon, overduePayables, targetCheck, exchangeRates };

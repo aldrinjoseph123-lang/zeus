@@ -14,52 +14,53 @@ datasource db {
 // ---------------------------------------------------------------- identity
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  name         String
-  passwordHash String? // null when the user is Entra-only
-  entraOid     String?   @unique // Entra ID object id, set on first SSO login
-  jobTitle     String?
-  phone        String?
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  passwordHash   String? // null when the user is Entra-only
+  entraOid       String?   @unique // Entra ID object id, set on first SSO login
+  jobTitle       String?
+  phone          String?
   /// E.164 number for WhatsApp alerts, e.g. +971501234567. Blank means no WhatsApp.
   whatsappNumber String?
-  avatarColor  String    @default("#e11d2e")
-  isActive     Boolean   @default(true)
-  roleId       String
-  role         Role      @relation(fields: [roleId], references: [id])
-  teamId       String?
-  team         Team?     @relation(fields: [teamId], references: [id])
-  managerId    String?
-  manager      User?     @relation("UserManager", fields: [managerId], references: [id])
-  reports      User[]    @relation("UserManager")
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  avatarColor    String    @default("#e11d2e")
+  isActive       Boolean   @default(true)
+  roleId         String
+  role           Role      @relation(fields: [roleId], references: [id])
+  teamId         String?
+  team           Team?     @relation(fields: [teamId], references: [id])
+  managerId      String?
+  manager        User?     @relation("UserManager", fields: [managerId], references: [id])
+  reports        User[]    @relation("UserManager")
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  ownedAccounts         Account[]       @relation("AccountOwner")
-  ownedContacts         Contact[]       @relation("ContactOwner")
-  ownedLeads            Lead[]          @relation("LeadOwner")
-  ownedDeals            Deal[]          @relation("DealOwner")
-  ownedSubscriptions    Subscription[]  @relation("SubscriptionOwner")
-  activities            Activity[]      @relation("ActivityOwner")
-  createdActivities     Activity[]      @relation("ActivityCreator")
-  auditLogs             AuditLog[]
-  undoneAuditLogs       AuditLog[]      @relation("AuditUndoer")
-  notifications         Notification[]
-  targets               Target[]
-  quotes                Quote[]
-  invoices              Invoice[]
-  ownedPurchaseOrders   PurchaseOrder[] @relation("PoOwner")
-  createdPurchaseOrders PurchaseOrder[] @relation("PoCreator")
-  dealApprovalsRequested    Deal[]          @relation("DealApprovalRequester")
-  dealApprovals             Deal[]          @relation("DealApprover")
-  poApprovalsRequested      PurchaseOrder[] @relation("PoApprovalRequester")
-  poApprovals               PurchaseOrder[] @relation("PoApprover")
-  invoiceApprovalsRequested Invoice[]       @relation("InvoiceApprovalRequester")
-  invoiceApprovals          Invoice[]       @relation("InvoiceApprover")
-  payments              Payment[]
-  attachments           Attachment[]
-  importJobs            ImportJob[]
+  ownedAccounts             Account[]          @relation("AccountOwner")
+  ownedContacts             Contact[]          @relation("ContactOwner")
+  ownedLeads                Lead[]             @relation("LeadOwner")
+  ownedDeals                Deal[]             @relation("DealOwner")
+  ownedSubscriptions        Subscription[]     @relation("SubscriptionOwner")
+  activities                Activity[]         @relation("ActivityOwner")
+  createdActivities         Activity[]         @relation("ActivityCreator")
+  auditLogs                 AuditLog[]
+  undoneAuditLogs           AuditLog[]         @relation("AuditUndoer")
+  notifications             Notification[]
+  targets                   Target[]
+  quotes                    Quote[]
+  invoices                  Invoice[]
+  ownedPurchaseOrders       PurchaseOrder[]    @relation("PoOwner")
+  createdPurchaseOrders     PurchaseOrder[]    @relation("PoCreator")
+  dealApprovalsRequested    Deal[]             @relation("DealApprovalRequester")
+  dealApprovals             Deal[]             @relation("DealApprover")
+  poApprovalsRequested      PurchaseOrder[]    @relation("PoApprovalRequester")
+  poApprovals               PurchaseOrder[]    @relation("PoApprover")
+  invoiceApprovalsRequested Invoice[]          @relation("InvoiceApprovalRequester")
+  invoiceApprovals          Invoice[]          @relation("InvoiceApprover")
+  payments                  Payment[]
+  attachments               Attachment[]
+  importJobs                ImportJob[]
+  pipelineSnapshots         PipelineSnapshot[] @relation("SnapshotOwner")
 
   @@index([teamId])
   @@index([roleId])
@@ -127,22 +128,22 @@ model Account {
   updatedAt      DateTime    @updatedAt
   deletedAt      DateTime?
 
-  contacts           Contact[]
-  deals              Deal[]             @relation("DealCustomer")
-  partnerDeals       Deal[]             @relation("DealPartner")
-  products           Product[]          @relation("ProductVendor")
-  registrations      DealRegistration[] @relation("RegistrationVendor")
+  contacts             Contact[]
+  deals                Deal[]             @relation("DealCustomer")
+  partnerDeals         Deal[]             @relation("DealPartner")
+  products             Product[]          @relation("ProductVendor")
+  registrations        DealRegistration[] @relation("RegistrationVendor")
   partnerRegistrations DealRegistration[] @relation("RegistrationPartner")
-  quotes             Quote[]
-  invoices           Invoice[]
-  purchaseOrders     PurchaseOrder[]
-  payments           Payment[]
-  activities         Activity[]
-  attachments        Attachment[]
-  convertedFromLeads Lead[]
-  subscriptions      Subscription[]
-  vendorSubscriptions Subscription[] @relation("SubscriptionVendor")
-  priceEntries       PriceEntry[]   @relation("PriceEntryVendor")
+  quotes               Quote[]
+  invoices             Invoice[]
+  purchaseOrders       PurchaseOrder[]
+  payments             Payment[]
+  activities           Activity[]
+  attachments          Attachment[]
+  convertedFromLeads   Lead[]
+  subscriptions        Subscription[]
+  vendorSubscriptions  Subscription[]     @relation("SubscriptionVendor")
+  priceEntries         PriceEntry[]       @relation("PriceEntryVendor")
 
   @@index([domain])
   @@index([type])
@@ -260,19 +261,20 @@ model Pipeline {
 }
 
 model Stage {
-  id          String   @id @default(cuid())
+  id          String             @id @default(cuid())
   pipelineId  String
-  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  pipeline    Pipeline           @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
   name        String
   order       Int
   /// Default win probability for deals sitting in this stage (0-100).
-  probability Int      @default(0)
-  isWon       Boolean  @default(false)
-  isLost      Boolean  @default(false)
-  color       String   @default("#6b6b6b")
+  probability Int                @default(0)
+  isWon       Boolean            @default(false)
+  isLost      Boolean            @default(false)
+  color       String             @default("#6b6b6b")
   /// Days a deal may sit here before it is flagged as rotting on the board.
-  rotDays     Int      @default(14)
+  rotDays     Int                @default(14)
   deals       Deal[]
+  snapshots   PipelineSnapshot[]
 
   @@unique([pipelineId, name])
   @@index([pipelineId, order])
@@ -341,24 +343,24 @@ model Deal {
   nextStep        String?
   description     String?
 
-  ownerId String?
-  owner   User?   @relation("DealOwner", fields: [ownerId], references: [id])
-  soldSubscriptions    Subscription[] @relation("SubscriptionSourceDeal")
-  specialPrices        PriceEntry[]
+  ownerId               String?
+  owner                 User?          @relation("DealOwner", fields: [ownerId], references: [id])
+  soldSubscriptions     Subscription[] @relation("SubscriptionSourceDeal")
+  specialPrices         PriceEntry[]
   renewingSubscriptions Subscription[] @relation("SubscriptionRenewalDeal")
 
   /// Manager sign-off. The record cannot take its next irreversible step — a deal
   /// closing won, a PO going to the supplier, an invoice going to the customer —
   /// while this is PENDING or REJECTED.
-  approvalStatus      ApprovalStatus @default(NOT_REQUIRED)
-  approvalRequestedAt DateTime?
+  approvalStatus        ApprovalStatus @default(NOT_REQUIRED)
+  approvalRequestedAt   DateTime?
   approvalRequestedById String?
-  approvalRequestedBy User?          @relation("DealApprovalRequester", fields: [approvalRequestedById], references: [id])
-  approvalDecidedAt   DateTime?
-  approvalDecidedById String?
-  approvalDecidedBy   User?          @relation("DealApprover", fields: [approvalDecidedById], references: [id])
+  approvalRequestedBy   User?          @relation("DealApprovalRequester", fields: [approvalRequestedById], references: [id])
+  approvalDecidedAt     DateTime?
+  approvalDecidedById   String?
+  approvalDecidedBy     User?          @relation("DealApprover", fields: [approvalDecidedById], references: [id])
   /// Why it was rejected, or a condition attached to the approval.
-  approvalNote        String?
+  approvalNote          String?
 
   stageChangedAt DateTime  @default(now())
   lastActivityAt DateTime?
@@ -423,32 +425,32 @@ enum RegistrationSide {
 /// Deal registration, either side of the channel. A deal can carry several — one per
 /// vendor involved, plus the partner protection if the deal came through the channel.
 model DealRegistration {
-  id               String             @id @default(cuid())
-  dealId           String
-  deal             Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  side             RegistrationSide   @default(VENDOR)
+  id                String             @id @default(cuid())
+  dealId            String
+  deal              Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  side              RegistrationSide   @default(VENDOR)
   /// Set when side = VENDOR.
-  vendorId         String?
-  vendor           Account?           @relation("RegistrationVendor", fields: [vendorId], references: [id])
+  vendorId          String?
+  vendor            Account?           @relation("RegistrationVendor", fields: [vendorId], references: [id])
   /// Set when side = PARTNER — the partner holding the protection.
-  partnerId        String?
-  partner          Account?           @relation("RegistrationPartner", fields: [partnerId], references: [id])
+  partnerId         String?
+  partner           Account?           @relation("RegistrationPartner", fields: [partnerId], references: [id])
   /// Who at the partner gets the reminder mail.
-  partnerContactId String?
-  partnerContact   Contact?           @relation("RegistrationPartnerContact", fields: [partnerContactId], references: [id])
+  partnerContactId  String?
+  partnerContact    Contact?           @relation("RegistrationPartnerContact", fields: [partnerContactId], references: [id])
   /// Last time Zeus mailed the partner about this registration, so a daily job cannot
   /// turn one expiry into fourteen emails.
   partnerNotifiedAt DateTime?
-  regNumber        String?
-  status           RegistrationStatus @default(DRAFT)
-  submittedAt      DateTime?
-  approvedAt       DateTime?
-  expiresAt        DateTime?
+  regNumber         String?
+  status            RegistrationStatus @default(DRAFT)
+  submittedAt       DateTime?
+  approvedAt        DateTime?
+  expiresAt         DateTime?
   /// Discount/margin the vendor approved, as a percentage.
-  approvedDiscount Decimal?           @db.Decimal(5, 2)
-  notes            String?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  approvedDiscount  Decimal?           @db.Decimal(5, 2)
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   specialPrices PriceEntry[]
 
@@ -478,63 +480,63 @@ enum SubscriptionStatus {
 /// is still running, what it is worth, and when it has to be sold again. Without it an
 /// expiry is invisible until the customer has already gone elsewhere.
 model Subscription {
-  id          String             @id @default(cuid())
+  id          String   @id @default(cuid())
   /// Human reference, e.g. ZEU-SUB-000042.
-  reference   String             @unique
+  reference   String   @unique
   accountId   String
-  account     Account            @relation(fields: [accountId], references: [id])
+  account     Account  @relation(fields: [accountId], references: [id])
   productId   String?
-  product     Product?           @relation(fields: [productId], references: [id])
+  product     Product? @relation(fields: [productId], references: [id])
   /// Kept even when a product is linked: the line as sold, which may differ from the
   /// catalogue name a year later.
   description String
   vendorId    String?
-  vendor      Account?           @relation("SubscriptionVendor", fields: [vendorId], references: [id])
+  vendor      Account? @relation("SubscriptionVendor", fields: [vendorId], references: [id])
 
-  quantity    Decimal            @default(1) @db.Decimal(12, 2)
-  unit        String             @default("licence")
+  quantity  Decimal @default(1) @db.Decimal(12, 2)
+  unit      String  @default("licence")
   /// Per-unit sell and buy for one term, so renewal quotes start from real numbers.
-  unitPrice   Decimal            @default(0) @db.Decimal(14, 2)
-  unitCost    Decimal            @default(0) @db.Decimal(14, 2)
-  currency    String             @default("AED")
+  unitPrice Decimal @default(0) @db.Decimal(14, 2)
+  unitCost  Decimal @default(0) @db.Decimal(14, 2)
+  currency  String  @default("AED")
   /// quantity x unitPrice, stored so the renewals list can sum without joining lines.
-  termValue   Decimal            @default(0) @db.Decimal(14, 2)
-  termCost    Decimal            @default(0) @db.Decimal(14, 2)
+  termValue Decimal @default(0) @db.Decimal(14, 2)
+  termCost  Decimal @default(0) @db.Decimal(14, 2)
 
-  startDate   DateTime
-  endDate     DateTime
-  termMonths  Int                @default(12)
-  autoRenew   Boolean            @default(true)
-  status      SubscriptionStatus @default(ACTIVE)
+  startDate  DateTime
+  endDate    DateTime
+  termMonths Int                @default(12)
+  autoRenew  Boolean            @default(true)
+  status     SubscriptionStatus @default(ACTIVE)
 
   /// Where it came from, so the paper trail runs both ways.
   sourceInvoiceId String?
-  sourceInvoice   Invoice?       @relation("SubscriptionSource", fields: [sourceInvoiceId], references: [id])
+  sourceInvoice   Invoice? @relation("SubscriptionSource", fields: [sourceInvoiceId], references: [id])
   sourceDealId    String?
-  sourceDeal      Deal?          @relation("SubscriptionSourceDeal", fields: [sourceDealId], references: [id])
+  sourceDeal      Deal?    @relation("SubscriptionSourceDeal", fields: [sourceDealId], references: [id])
 
   /// The renewal opportunity Zeus opened for it, and the term it replaced.
   renewalDealId String?
-  renewalDeal   Deal?            @relation("SubscriptionRenewalDeal", fields: [renewalDealId], references: [id])
-  renewedFromId String?          @unique
-  renewedFrom   Subscription?    @relation("RenewalChain", fields: [renewedFromId], references: [id])
-  renewedTo     Subscription?    @relation("RenewalChain")
+  renewalDeal   Deal?         @relation("SubscriptionRenewalDeal", fields: [renewalDealId], references: [id])
+  renewedFromId String?       @unique
+  renewedFrom   Subscription? @relation("RenewalChain", fields: [renewedFromId], references: [id])
+  renewedTo     Subscription? @relation("RenewalChain")
 
   /// Licence key, vendor contract number, support ID — whatever the renewal needs.
-  vendorRef   String?
-  notes       String?
-  cancelReason String?
+  vendorRef        String?
+  notes            String?
+  cancelReason     String?
   /// Set when the renewal deal was opened, so the job never opens two.
-  renewalOpenedAt DateTime?
+  renewalOpenedAt  DateTime?
   /// Last time someone was told this is coming up, per reminder step.
   lastRemindedDays Int?
 
-  ownerId     String?
-  owner       User?              @relation("SubscriptionOwner", fields: [ownerId], references: [id])
-  customFields Json              @default("{}")
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  deletedAt   DateTime?
+  ownerId      String?
+  owner        User?     @relation("SubscriptionOwner", fields: [ownerId], references: [id])
+  customFields Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
   @@index([accountId])
   @@index([endDate])
@@ -571,11 +573,11 @@ model Product {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  quoteLines   QuoteLine[]
-  invoiceLines InvoiceLine[]
-  poLines      PurchaseOrderLine[]
+  quoteLines    QuoteLine[]
+  invoiceLines  InvoiceLine[]
+  poLines       PurchaseOrderLine[]
   subscriptions Subscription[]
-  priceEntries PriceEntry[]
+  priceEntries  PriceEntry[]
 
   @@index([category])
   @@index([vendorId])
@@ -706,15 +708,15 @@ model Invoice {
   /// Manager sign-off. The record cannot take its next irreversible step — a deal
   /// closing won, a PO going to the supplier, an invoice going to the customer —
   /// while this is PENDING or REJECTED.
-  approvalStatus      ApprovalStatus @default(NOT_REQUIRED)
-  approvalRequestedAt DateTime?
+  approvalStatus        ApprovalStatus @default(NOT_REQUIRED)
+  approvalRequestedAt   DateTime?
   approvalRequestedById String?
-  approvalRequestedBy User?          @relation("InvoiceApprovalRequester", fields: [approvalRequestedById], references: [id])
-  approvalDecidedAt   DateTime?
-  approvalDecidedById String?
-  approvalDecidedBy   User?          @relation("InvoiceApprover", fields: [approvalDecidedById], references: [id])
+  approvalRequestedBy   User?          @relation("InvoiceApprovalRequester", fields: [approvalRequestedById], references: [id])
+  approvalDecidedAt     DateTime?
+  approvalDecidedById   String?
+  approvalDecidedBy     User?          @relation("InvoiceApprover", fields: [approvalDecidedById], references: [id])
   /// Why it was rejected, or a condition attached to the approval.
-  approvalNote        String?
+  approvalNote          String?
 
   subscriptions Subscription[] @relation("SubscriptionSource")
 
@@ -838,7 +840,6 @@ model PriceEntry {
   @@index([validTo])
 }
 
-
 // ---------------------------------------------------------------- purchase orders
 
 /// CUSTOMER = a PO your client sent you, recorded as evidence of the order.
@@ -902,25 +903,25 @@ model PurchaseOrder {
   issuedAt      DateTime?
 
   ownerId     String?
-  owner       User?     @relation("PoOwner", fields: [ownerId], references: [id])
+  owner       User?   @relation("PoOwner", fields: [ownerId], references: [id])
   createdById String?
-  createdBy   User?     @relation("PoCreator", fields: [createdById], references: [id])
+  createdBy   User?   @relation("PoCreator", fields: [createdById], references: [id])
 
   /// Manager sign-off. The record cannot take its next irreversible step — a deal
   /// closing won, a PO going to the supplier, an invoice going to the customer —
   /// while this is PENDING or REJECTED.
-  approvalStatus      ApprovalStatus @default(NOT_REQUIRED)
-  approvalRequestedAt DateTime?
+  approvalStatus        ApprovalStatus @default(NOT_REQUIRED)
+  approvalRequestedAt   DateTime?
   approvalRequestedById String?
-  approvalRequestedBy User?          @relation("PoApprovalRequester", fields: [approvalRequestedById], references: [id])
-  approvalDecidedAt   DateTime?
-  approvalDecidedById String?
-  approvalDecidedBy   User?          @relation("PoApprover", fields: [approvalDecidedById], references: [id])
+  approvalRequestedBy   User?          @relation("PoApprovalRequester", fields: [approvalRequestedById], references: [id])
+  approvalDecidedAt     DateTime?
+  approvalDecidedById   String?
+  approvalDecidedBy     User?          @relation("PoApprover", fields: [approvalDecidedById], references: [id])
   /// Why it was rejected, or a condition attached to the approval.
-  approvalNote        String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  approvalNote          String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  deletedAt             DateTime?
 
   lines       PurchaseOrderLine[]
   payments    Payment[]
@@ -1070,22 +1071,22 @@ model Attachment {
 }
 
 model AuditLog {
-  id       String   @id @default(cuid())
-  userId   String?
-  user     User?    @relation(fields: [userId], references: [id])
-  action   String // create | update | delete | login | export | import | integration
-  entity   String
-  entityId String?
-  summary  String?
-  changes  Json? // { field: { from, to } }
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id])
+  action     String // create | update | delete | login | export | import | integration
+  entity     String
+  entityId   String?
+  summary    String?
+  changes    Json? // { field: { from, to } }
   /// What it would take to put this back: { model, id, kind, before }. Null when the
   /// action cannot be reversed — a login, an export, a sent tax invoice.
-  undo     Json?
-  undoneAt DateTime?
+  undo       Json?
+  undoneAt   DateTime?
   undoneById String?
-  undoneBy User?    @relation("AuditUndoer", fields: [undoneById], references: [id])
-  ip       String?
-  at       DateTime @default(now())
+  undoneBy   User?     @relation("AuditUndoer", fields: [undoneById], references: [id])
+  ip         String?
+  at         DateTime  @default(now())
 
   @@index([entity, entityId])
   @@index([userId])
@@ -1163,20 +1164,19 @@ model Target {
   @@unique([userId, year, quarter])
 }
 
-
 /// Adds a field to any module without a migration. Values live in the entity's
 /// customFields JSON column.
 model CustomField {
-  id         String   @id @default(cuid())
-  module     String
-  key        String
-  label      String
+  id       String   @id @default(cuid())
+  module   String
+  key      String
+  label    String
   /// text | textarea | number | currency | date | select | multiselect | checkbox | url | email
-  type       String   @default("text")
-  options    String[] @default([])
-  required   Boolean  @default(false)
-  order      Int      @default(0)
-  isActive   Boolean  @default(true)
+  type     String   @default("text")
+  options  String[] @default([])
+  required Boolean  @default(false)
+  order    Int      @default(0)
+  isActive Boolean  @default(true)
 
   @@unique([module, key])
 }
@@ -1237,4 +1237,32 @@ model BackupRun {
 model Counter {
   key   String @id
   value Int    @default(0)
+}
+
+/// A daily photograph of the open pipeline.
+///
+/// Nothing else can answer "did we improve?" — the deal table only knows today, and a
+/// stage change overwrites what was there before. One row per stage per owner per day,
+/// written by the nightly job and never backfilled: history starts the day this ships.
+///
+/// The day's rows are deleted and rewritten rather than upserted, because a nullable
+/// owner cannot take part in a unique key — Postgres treats NULLs as distinct, so an
+/// unassigned deal would photograph itself twice on a restart.
+model PipelineSnapshot {
+  id      String   @id @default(cuid())
+  /// The day being photographed, at midnight. Date only — a snapshot is not a moment.
+  takenOn DateTime @db.Date
+  stageId String
+  stage   Stage    @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  ownerId String?
+  owner   User?    @relation("SnapshotOwner", fields: [ownerId], references: [id])
+
+  openCount Int     @default(0)
+  openNet   Decimal @default(0) @db.Decimal(14, 2)
+  weighted  Decimal @default(0) @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+
+  @@index([takenOn])
+  @@index([takenOn, ownerId])
 }
