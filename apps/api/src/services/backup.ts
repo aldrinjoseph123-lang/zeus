@@ -15,28 +15,41 @@ import { notify } from './notify.js';
 
 function dump(): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    // --no-owner keeps the dump restorable into a differently-named role.
-    const child = spawn(env.PG_DUMP_PATH, ['--no-owner', '--no-privileges', '--format=plain', env.DATABASE_URL], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // Prisma's DATABASE_URL carries ?schema=public, which pg_dump rejects as an
+    // invalid URI query param. Pull it out and hand it to pg_dump's own --schema,
+    // leaving any real libpq params (sslmode, …) on the connection string.
+    const url = new URL(env.DATABASE_URL);
+    const schema = url.searchParams.get('schema');
+    url.searchParams.delete('schema');
+    const args = ['--no-owner', '--no-privileges', '--format=plain']; // --no-owner: restorable into a differently-named role
+    if (schema) args.push(`--schema=${schema}`);
+    args.push(url.toString());
+
+    const child = spawn(env.PG_DUMP_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
     const gzip = createGzip({ level: 9 });
     const chunks: Buffer[] = [];
     let stderr = '';
+    let flushed = false; // gzip has emitted all output
+    let ok = false; // pg_dump exited 0
+    const finish = () => { if (flushed && ok) resolve(Buffer.concat(chunks)); };
 
-    child.stdout.pipe(gzip);
+    child.stdout.pipe(gzip); // ends gzip when pg_dump's stdout closes
     gzip.on('data', (c: Buffer) => chunks.push(c));
+    gzip.on('end', () => { flushed = true; finish(); });
+    gzip.on('error', reject);
     child.stderr.on('data', (c: Buffer) => { stderr += c.toString(); });
 
     child.on('error', (err) =>
       reject(new Error(`Could not run pg_dump (${env.PG_DUMP_PATH}): ${err.message}`)),
     );
+    // Gate resolution on the exit code: a failed pg_dump still flushes an empty
+    // gzip, and resolving on that produced silent zero-byte "successful" backups.
     child.on('close', (code) => {
       if (code !== 0) return reject(new Error(`pg_dump exited ${code}: ${stderr.trim().slice(0, 500)}`));
-      gzip.end();
+      ok = true;
+      finish();
     });
-    gzip.on('end', () => resolve(Buffer.concat(chunks)));
-    gzip.on('error', reject);
   });
 }
 

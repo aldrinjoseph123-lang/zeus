@@ -71,7 +71,7 @@ export default async function integrationRoutes(app: FastifyInstance): Promise<v
       data: {
         isConnected: result.ok,
         status: result.ok ? 'connected' : 'error',
-        lastError: result.error ?? result.mailbox?.message ?? null,
+        lastError: result.ok ? null : (result.error ?? result.mailbox?.message ?? result.drive?.message ?? null),
         connectedAt: result.ok ? new Date() : null,
       },
     });

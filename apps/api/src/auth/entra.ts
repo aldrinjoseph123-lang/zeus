@@ -64,6 +64,8 @@ export async function adminConsentUrl(): Promise<string> {
   if (!m365) throw new Error('Microsoft 365 is not configured.');
   const params = new URLSearchParams({
     client_id: m365.config.clientId,
+    // v2.0 adminconsent requires scope; .default consents to all app permissions on the registration.
+    scope: 'https://graph.microsoft.com/.default',
     redirect_uri: `${env.APP_URL.replace(/\/$/, '')}/api/auth/microsoft/consent-callback`,
     state: signState('/settings/integrations'),
   });
