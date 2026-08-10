@@ -2,6 +2,7 @@ import { prisma } from '../db.js';
 import { env } from '../env.js';
 import { postToTeams, type CardFact } from './teams.js';
 import { sendMail } from './graph.js';
+import { dispatch } from './webhooks.js';
 import { alertText, sendWhatsapp } from './whatsapp.js';
 
 /**
@@ -140,6 +141,20 @@ export async function notify(input: NotifyInput): Promise<void> {
         })),
       });
     }
+
+    /**
+     * Anything else that asked to hear about this. Deliberately not awaited: a webhook is
+     * a courtesy to another system, and a deal closing must not wait on — or fail
+     * because of — somebody's endpoint being slow.
+     */
+    void dispatch({
+      event: input.event,
+      title: input.title,
+      body: input.body,
+      link: absoluteLink,
+      severity: input.severity,
+      facts: input.facts,
+    }).catch((err) => console.error('[notify] webhook dispatch failed:', (err as Error).message));
 
     if (rule?.teams) {
       await postToTeams(

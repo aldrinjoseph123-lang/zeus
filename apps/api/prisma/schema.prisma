@@ -1290,3 +1290,45 @@ model RecoveryCode {
 
   @@index([userId])
 }
+
+/// An outbound HTTP callback, so something else can know a deal was won.
+model Webhook {
+  id       String   @id @default(cuid())
+  name     String
+  url      String
+  /// Which notification events fire it. Same vocabulary as NOTIFICATION_EVENTS.
+  events   String[]
+  /// Shared with the receiver so it can verify the signature. Encrypted at rest.
+  secret   String
+  isActive Boolean  @default(true)
+
+  /// Consecutive failures. Reset on any success; at the limit the hook is switched off
+  /// so a dead endpoint cannot keep the queue busy for ever.
+  failureCount Int       @default(0)
+  disabledAt   DateTime?
+  lastError    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deliveries WebhookDelivery[]
+}
+
+/// What was sent, where it went, and what came back.
+model WebhookDelivery {
+  id           String   @id @default(cuid())
+  webhookId    String
+  webhook      Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event        String
+  /// The addresses the hostname resolved to at send time — the useful thing to have when
+  /// somebody asks where the data actually went.
+  resolvedTo   String[]
+  attempt      Int      @default(1)
+  ok           Boolean  @default(false)
+  responseCode Int?
+  error        String?
+  durationMs   Int?
+  createdAt    DateTime @default(now())
+
+  @@index([webhookId, createdAt])
+}

@@ -97,6 +97,143 @@ describe('authentication', () => {
   });
 });
 
+// ── outbound webhooks ─────────────────────────────────────────────────────────
+
+describe('webhooks', () => {
+  /**
+   * A URL typed by a person and then fetched by the server is a request forgery
+   * primitive. These are the cases that matter more than delivery working.
+   */
+  it('refuses to be pointed at the network Zeus runs in', async () => {
+    const cases: Array<[string, RegExp]> = [
+      ['http://localhost:9000/hook', /https/i],
+      ['https://127.0.0.1/hook', /this machine/i],
+      ['https://10.0.0.5/hook', /private/i],
+      ['https://192.168.1.10/hook', /private/i],
+      ['https://172.16.4.4/hook', /private/i],
+      // The one that gets people: cloud instance metadata.
+      ['https://169.254.169.254/latest/meta-data/', /link-local|metadata/i],
+      ['https://[::1]/hook', /this machine/i],
+      ['https://user:pass@example.com/hook', /credentials/i],
+      ['file:///etc/passwd', /http/i],
+      ['not-a-url', /valid URL/i],
+    ];
+
+    for (const [url, expected] of cases) {
+      const res = await request(app, fx.admin).post('/api/webhooks', {
+        name: 'Bad', url, events: ['deal_won'],
+      });
+      assert.equal(res.status, 400, `${url} should have been refused`);
+      assert.match(res.body.error, expected, `wrong reason for ${url}: ${res.body.error}`);
+    }
+
+    assert.equal(await prisma.webhook.count(), 0, 'nothing should have been stored');
+  });
+
+  it('only accepts events Zeus actually raises', async () => {
+    const res = await request(app, fx.admin).post('/api/webhooks', {
+      name: 'Typo', url: 'https://example.com/hook', events: ['deal_one'],
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /does not raise an event/i);
+  });
+
+  it('hands the secret back once and never again', async () => {
+    const created = await request(app, fx.admin).post('/api/webhooks', {
+      name: 'Ops', url: 'https://example.com/hook', events: ['deal_won'],
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.match(created.body.secret, /^whsec_/);
+
+    const listed = await request(app, fx.admin).get('/api/webhooks');
+    assert.equal(listed.body[0].secret, undefined, 'the secret must not come back on a read');
+  });
+
+  it('will not let a rep create one', async () => {
+    const res = await request(app, fx.rep).post('/api/webhooks', {
+      name: 'Sneaky', url: 'https://example.com/hook', events: ['deal_won'],
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('signs what it delivers, and logs where it went', async () => {
+    const { createServer } = await import('node:http');
+    const seen: Array<{ signature: string; timestamp: string; event: string; body: string }> = [];
+
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        seen.push({
+          signature: String(req.headers['x-zeus-signature'] ?? ''),
+          timestamp: String(req.headers['x-zeus-timestamp'] ?? ''),
+          event: String(req.headers['x-zeus-event'] ?? ''),
+          body,
+        });
+        res.writeHead(200).end('ok');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+
+    try {
+      const secret = 'whsec_known';
+      const { encryptJson } = await import('../lib/crypto.js');
+      const hook = await prisma.webhook.create({
+        data: {
+          name: 'Local', url: `http://127.0.0.1:${port}/hook`,
+          events: ['deal_won'], secret: encryptJson({ secret }),
+        },
+        select: { id: true, url: true, secret: true },
+      });
+
+      const { deliverOne, verifySignature } = await import('../services/webhooks.js');
+      // allowPrivate, because a test necessarily points at a local stub.
+      const ok = await deliverOne(hook, { event: 'deal_won', title: 'Emaar signed' }, true);
+      assert.equal(ok, true);
+      assert.equal(seen.length, 1);
+
+      const call = seen[0];
+      assert.equal(call.event, 'deal_won');
+      assert.equal(
+        verifySignature(secret, Number(call.timestamp), call.body, call.signature),
+        true,
+        'the receiver must be able to prove it came from Zeus',
+      );
+      assert.match(call.body, /Emaar signed/);
+
+      const delivery = await prisma.webhookDelivery.findFirstOrThrow({ where: { webhookId: hook.id } });
+      assert.equal(delivery.ok, true);
+      assert.equal(delivery.responseCode, 200);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('gives up on a refusal rather than hammering it', async () => {
+    const { createServer } = await import('node:http');
+    let hits = 0;
+    const server = createServer((_req, res) => { hits += 1; res.writeHead(400).end('no'); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+
+    try {
+      const { encryptJson } = await import('../lib/crypto.js');
+      const hook = await prisma.webhook.create({
+        data: { name: 'Refuses', url: `http://127.0.0.1:${port}/hook`, events: ['deal_won'], secret: encryptJson({ secret: 'whsec_x' }) },
+        select: { id: true, url: true, secret: true },
+      });
+
+      const { deliverOne } = await import('../services/webhooks.js');
+      const ok = await deliverOne(hook, { event: 'deal_won', title: 'Nope' }, true);
+      assert.equal(ok, false);
+      assert.equal(hits, 1, 'a 400 means the receiver understood and said no — retrying is rude');
+    } finally {
+      server.close();
+    }
+  });
+});
+
 // ── two-factor ────────────────────────────────────────────────────────────────
 
 describe('two-factor', () => {

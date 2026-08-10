@@ -33,14 +33,25 @@ process.env.APP_URL ??= 'http://localhost:4000';
 export const prisma = new PrismaClient({ datasources: { db: { url: TEST_URL } } });
 
 /** Every table, child-first, so truncation never trips a foreign key. */
-const TABLES = [
-  'Payment', 'InvoiceLine', 'Invoice', 'PurchaseOrderLine', 'PurchaseOrder',
-  'QuoteLine', 'Quote', 'Subscription', 'DealRegistration', 'StageHistory', 'Deal',
-  'Activity', 'Attachment', 'Contact', 'Lead', 'Account', 'Product',
-  'Notification', 'AuditLog', 'ImportJob', 'Target', 'Counter',
-  'NotificationRule', 'TeamsWebhook', 'Setting', 'Integration',
-  'User', 'Role', 'Team', 'Stage', 'Pipeline',
-];
+/**
+ * Every table, asked of the database rather than listed here.
+ *
+ * This used to be a hand-written array, and it went stale the moment a model was added
+ * with no parent to cascade from — Webhook rows survived the reset and leaked between
+ * tests, which showed up as a count assertion failing for reasons that had nothing to do
+ * with the test that failed. A list of tables is the database's job to remember.
+ */
+let tableCache: string[] | null = null;
+
+async function allTables(): Promise<string[]> {
+  if (tableCache) return tableCache;
+  const rows = await prisma.$queryRaw<Array<{ tablename: string }>>`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND tablename NOT LIKE '\\_prisma%'
+  `;
+  tableCache = rows.map((r) => r.tablename);
+  return tableCache;
+}
 
 let migrated = false;
 
@@ -55,8 +66,9 @@ export function migrateTestDatabase(): void {
 }
 
 export async function resetDatabase(): Promise<void> {
+  const tables = await allTables();
   await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`,
+    `TRUNCATE TABLE ${tables.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`,
   );
 }
 

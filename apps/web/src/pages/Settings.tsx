@@ -1669,7 +1669,193 @@ function IntegrationsSection() {
       <div className="mt-3">
         <SettingsGroup prefix="auth." title="Sign-in" description="Control which sign-in methods are accepted." />
       </div>
+
+      <div className="mt-3">
+        <WebhooksPanel />
+      </div>
     </>
+  );
+}
+
+interface WebhookRow {
+  id: string; name: string; url: string; events: string[]; isActive: boolean;
+  failureCount: number; disabledAt: string | null; lastError: string | null;
+  deliveries: Array<{ id: string; event: string; ok: boolean; responseCode: number | null; error: string | null; durationMs: number | null; createdAt: string }>;
+}
+
+/**
+ * Outbound webhooks.
+ *
+ * The secret is shown once, at creation, because that is the only moment Zeus has it in
+ * the clear — after that it is encrypted and there is nothing to display.
+ */
+function WebhooksPanel() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const editable = can('integrations', 'update');
+
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [events, setEvents] = useState<string[]>([]);
+  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const { data: hooks } = useQuery({
+    queryKey: ['webhooks'],
+    queryFn: () => api.get<WebhookRow[]>('/webhooks'),
+  });
+
+  const { data: catalogue } = useQuery({
+    queryKey: ['notification-events'],
+    queryFn: () => api.get<{ events: Array<{ event: string; label: string }> }>('/notification-rules'),
+  });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['webhooks'] });
+  const reset = () => { setAdding(false); setName(''); setUrl(''); setEvents([]); setError(null); };
+
+  const create = useMutation({
+    mutationFn: () => api.post<{ secret: string }>('/webhooks', { name, url, events }),
+    onSuccess: (created) => { setNewSecret(created.secret); reset(); void refresh(); },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not save it.'),
+  });
+
+  const toggle = useMutation({
+    mutationFn: (hook: WebhookRow) => api.patch(`/webhooks/${hook.id}`, { isActive: !hook.isActive || Boolean(hook.disabledAt) }),
+    onSuccess: () => void refresh(),
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not change it.', 'error'),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/webhooks/${id}`),
+    onSuccess: () => { void refresh(); toast.push('Webhook removed.'); },
+  });
+
+  const test = useMutation({
+    mutationFn: (id: string) => api.post<{ ok: boolean; responseCode: number | null; error: string | null }>(`/webhooks/${id}/test`, {}),
+    onSuccess: (result) => {
+      void refresh();
+      toast.push(
+        result.ok ? `The endpoint answered ${result.responseCode}.` : result.error ?? 'The call did not get through.',
+        result.ok ? 'success' : 'error',
+      );
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader
+        title="Outbound webhooks"
+        subtitle="Tell another system when something happens here. Signed, so the receiver can prove it came from Zeus."
+        actions={editable && !adding ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setAdding(true)}>Add webhook</Button> : undefined}
+      />
+
+      {newSecret ? (
+        <div className="border-b border-line bg-sunken px-4 py-3">
+          <p className="text-[12px] font-semibold text-accent">Signing secret — copy it now</p>
+          <p className="mt-1 text-[12px] text-n600">
+            The receiving end needs this to check the signature. It is encrypted from here on,
+            so this is the only time Zeus can show it.
+          </p>
+          <Input readOnly value={newSecret} className="mt-2 font-mono text-[12px]" onFocus={(e) => e.currentTarget.select()} />
+          <Button size="sm" className="mt-2" onClick={() => setNewSecret(null)}>Done</Button>
+        </div>
+      ) : null}
+
+      {adding ? (
+        <div className="space-y-3 border-b border-line px-4 py-4">
+          {error ? <ErrorNote error={error} /> : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ops channel" /></Field>
+            <Field label="URL" hint="https only, and not an address inside your own network.">
+              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/zeus" />
+            </Field>
+          </div>
+          <div>
+            <span className="eyebrow">Events</span>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {(catalogue?.events ?? []).map((e) => (
+                <button
+                  key={e.event}
+                  type="button"
+                  onClick={() => setEvents((current) => current.includes(e.event) ? current.filter((x) => x !== e.event) : [...current, e.event])}
+                  className={cx(
+                    'rounded-sharp border px-2 py-1 text-[11px] transition-colors',
+                    events.includes(e.event) ? 'border-n950 bg-n950 text-white' : 'border-line bg-white text-muted hover:border-n900 hover:text-ink',
+                  )}
+                >
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={reset}>Cancel</Button>
+            <Button variant="accent" size="sm" disabled={!name || !url || events.length === 0} loading={create.isPending} onClick={() => create.mutate()}>
+              Add webhook
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {(hooks ?? []).length === 0 && !adding ? (
+        <EmptyState title="No webhooks" message="Nothing outside Zeus is being told when things happen." icon={<Plug size={22} />} />
+      ) : null}
+
+      {(hooks ?? []).map((hook) => (
+        <div key={hook.id} className="border-b border-line px-4 py-3 last:border-b-0">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <span className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold">{hook.name}</span>
+                {hook.disabledAt ? <Badge tone="accent">Switched off</Badge>
+                  : hook.isActive ? <Badge tone="secure">On</Badge>
+                  : <Badge>Paused</Badge>}
+              </span>
+              <span className="block truncate font-mono text-[11px] text-muted">{hook.url}</span>
+              <span className="block text-[11px] text-muted">{hook.events.length} event{hook.events.length === 1 ? '' : 's'}</span>
+              {hook.lastError ? <span className="block text-[11px] text-accent">{hook.lastError}</span> : null}
+            </div>
+            {editable ? (
+              <div className="flex shrink-0 gap-1.5">
+                <Button size="sm" variant="ghost" loading={test.isPending} onClick={() => test.mutate(hook.id)}>Send test</Button>
+                <Button size="sm" variant="ghost" onClick={() => toggle.mutate(hook)}>
+                  {hook.disabledAt || !hook.isActive ? 'Turn on' : 'Pause'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setExpanded(expanded === hook.id ? null : hook.id)}>
+                  {expanded === hook.id ? 'Hide log' : 'Log'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => remove.mutate(hook.id)}><Trash2 size={13} /></Button>
+              </div>
+            ) : null}
+          </div>
+
+          {expanded === hook.id ? (
+            <div className="mt-2 border-t border-line pt-2">
+              {hook.deliveries.length === 0 ? (
+                <p className="text-[11px] text-muted">Nothing sent yet.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {hook.deliveries.map((d) => (
+                    <li key={d.id} className="flex items-baseline justify-between gap-3 text-[11px]">
+                      <span className="truncate">
+                        <span className={cx('font-semibold', d.ok ? 'text-secure' : 'text-accent')}>{d.ok ? 'sent' : 'failed'}</span>
+                        {' · '}{d.event}{d.error ? ` · ${d.error}` : ''}
+                      </span>
+                      <span className="shrink-0 tabular text-muted">
+                        {d.responseCode ?? '—'}{d.durationMs !== null ? ` · ${d.durationMs}ms` : ''} · {relative(d.createdAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </Card>
   );
 }
 

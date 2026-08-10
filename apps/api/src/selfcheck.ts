@@ -6,6 +6,7 @@ import { buildCard } from './services/teams.js';
 import { alertText, normalizeNumber } from './services/whatsapp.js';
 import { addMonths, termEnd } from './services/renewals.js';
 import { base32Decode, base32Encode, currentCode, generateRecoveryCodes, normalizeRecoveryCode, verifyCode } from './lib/totp.js';
+import { signPayload, verifySignature } from './services/webhooks.js';
 import { MODULES, SYSTEM_ROLES, can, type SessionUser, maskFields, stripUnwritableFields } from './auth/rbac.js';
 
 /**
@@ -363,6 +364,20 @@ check('recovery codes are unambiguous and normalise for retyping', () => {
     assert.ok(!/[O0I1]/.test(code), 'no ambiguous characters');
   }
   assert.equal(normalizeRecoveryCode('abcde-fghjk'), 'ABCDEFGHJK');
+});
+
+// ── webhook signing ─────────────────────────────────────────────────────────────
+check('a webhook signature covers the timestamp as well as the body', () => {
+  const secret = 'whsec_test';
+  const body = JSON.stringify({ event: 'deal_won' });
+  const signature = signPayload(secret, 1_700_000_000, body);
+
+  assert.equal(verifySignature(secret, 1_700_000_000, body, signature), true);
+  // Replaying the same body under a different timestamp must not verify.
+  assert.equal(verifySignature(secret, 1_700_000_060, body, signature), false);
+  assert.equal(verifySignature(secret, 1_700_000_000, '{"event":"deal_lost"}', signature), false);
+  assert.equal(verifySignature('whsec_other', 1_700_000_000, body, signature), false);
+  assert.equal(verifySignature(secret, 1_700_000_000, body, 'short'), false);
 });
 
 console.log(process.exitCode ? '\nSelf-check FAILED\n' : '\nAll checks passed\n');

@@ -10,6 +10,9 @@ import { invalidateCustomFields } from '../lib/customFields.js';
 import { NOTIFICATION_EVENTS } from '../services/notify.js';
 import { postToWebhook } from '../services/teams.js';
 import { refreshRates } from '../services/fx.js';
+import { checkEgress } from '../lib/egress.js';
+import { encryptJson } from '../lib/crypto.js';
+import { deliverOne, generateSecret as generateWebhookSecret } from '../services/webhooks.js';
 
 export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── users ───────────────────────────────────────────────────────────────────
@@ -334,6 +337,103 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     return result;
+  });
+
+  // ── outbound webhooks ───────────────────────────────────────────────────────
+
+  const webhookFields = {
+    id: true, name: true, url: true, events: true, isActive: true,
+    failureCount: true, disabledAt: true, lastError: true, createdAt: true,
+  } as const;
+
+  app.get('/api/webhooks', { preHandler: requirePermission('integrations', 'read') }, async () => {
+    // The secret is never sent back — only the fact that one exists.
+    return prisma.webhook.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: {
+        ...webhookFields,
+        deliveries: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: { id: true, event: true, ok: true, responseCode: true, error: true, durationMs: true, createdAt: true },
+        },
+      },
+    });
+  });
+
+  const webhookSchema = z.object({
+    name: z.string().min(1, 'Give it a name so you know what it is for.'),
+    url: z.string().min(1, 'Where should Zeus send it?'),
+    events: z.array(z.string()).min(1, 'Pick at least one event.'),
+    isActive: z.boolean().optional(),
+  });
+
+  app.post('/api/webhooks', { preHandler: requirePermission('integrations', 'update') }, async (request, reply) => {
+    const parsed = webhookSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    // Checked here as well as before every send: catching a typo where somebody typed it
+    // is kinder than a delivery log full of refusals.
+    const egress = await checkEgress(parsed.data.url);
+    if (!egress.ok) throw badRequest(egress.reason ?? 'Zeus will not send there.');
+
+    const unknown = parsed.data.events.filter((e) => !NOTIFICATION_EVENTS.some((known) => known.event === e));
+    if (unknown.length) throw badRequest(`Zeus does not raise an event called "${unknown[0]}".`);
+
+    const secret = generateWebhookSecret();
+    const hook = await prisma.webhook.create({
+      data: { ...parsed.data, secret: encryptJson({ secret }) },
+      select: webhookFields,
+    });
+
+    await audit({ user: request.user, action: 'create', entity: 'Webhook', entityId: hook.id, summary: `${hook.name} → ${hook.url}`, ip: clientIp(request) });
+    // The only time the secret is returned. The receiver needs it to check signatures.
+    return reply.status(201).send({ ...hook, secret });
+  });
+
+  app.patch('/api/webhooks/:id', { preHandler: requirePermission('integrations', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const parsed = webhookSchema.partial().safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    if (parsed.data.url) {
+      const egress = await checkEgress(parsed.data.url);
+      if (!egress.ok) throw badRequest(egress.reason ?? 'Zeus will not send there.');
+    }
+
+    const hook = await prisma.webhook.update({
+      where: { id },
+      // Switching it back on is also how a disabled hook is revived.
+      data: { ...parsed.data, ...(parsed.data.isActive ? { disabledAt: null, failureCount: 0, lastError: null } : {}) },
+      select: webhookFields,
+    });
+    await audit({ user: request.user, action: 'update', entity: 'Webhook', entityId: id, summary: hook.name, ip: clientIp(request) });
+    return hook;
+  });
+
+  app.delete('/api/webhooks/:id', { preHandler: requirePermission('integrations', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const hook = await prisma.webhook.findUnique({ where: { id }, select: { name: true } });
+    if (!hook) throw notFound('That webhook no longer exists.');
+    await prisma.webhook.delete({ where: { id } });
+    await audit({ user: request.user, action: 'delete', entity: 'Webhook', entityId: id, summary: hook.name, ip: clientIp(request) });
+    return { ok: true };
+  });
+
+  /** Send a real signed call, so the receiving end can be tested before it matters. */
+  app.post('/api/webhooks/:id/test', { preHandler: requirePermission('integrations', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const hook = await prisma.webhook.findUnique({ where: { id }, select: { id: true, url: true, secret: true } });
+    if (!hook) throw notFound('That webhook no longer exists.');
+
+    const ok = await deliverOne(hook, {
+      event: 'test',
+      title: 'Test call from Zeus',
+      body: 'If you can read this and the signature checks out, the endpoint is wired up.',
+    });
+
+    const latest = await prisma.webhookDelivery.findFirst({ where: { webhookId: id }, orderBy: { createdAt: 'desc' } });
+    return { ok, responseCode: latest?.responseCode ?? null, error: latest?.error ?? null };
   });
 
   // ── custom fields ───────────────────────────────────────────────────────────
