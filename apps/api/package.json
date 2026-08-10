@@ -16,7 +16,7 @@
     "db:studio": "prisma studio",
     "test": "npm run test:unit && npm run test:api",
     "test:unit": "tsx src/selfcheck.ts",
-    "test:api": "tsx --test src/test/*.test.ts",
+    "test:api": "tsx --test --test-concurrency=1 src/test/*.test.ts",
     "db:simulate": "tsx src/simulate.ts"
   },
   "dependencies": {

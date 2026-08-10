@@ -1,6 +1,16 @@
 import ExcelJS from 'exceljs';
 import type { TableColumn } from './pdf.js';
 
+/**
+ * Excel forbids * ? : \ / [ ] in a worksheet name, caps it at 31 chars, and rejects
+ * a blank one — feed it a report title with a slash or colon and addWorksheet throws,
+ * turning an export into a 500. Sanitise to a name Excel always accepts.
+ */
+function sheetName(raw: string): string {
+  const cleaned = raw.replace(/[*?:\\/[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31);
+  return cleaned || 'Sheet1';
+}
+
 /** Excel export styled to match the PDF: black header, red rule, frozen top row. */
 export async function tableXlsx(opts: {
   title: string;
@@ -12,7 +22,7 @@ export async function tableXlsx(opts: {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Zeus CRM';
   wb.created = new Date();
-  const ws = wb.addWorksheet(opts.sheetName ?? opts.title.slice(0, 30), {
+  const ws = wb.addWorksheet(sheetName(opts.sheetName ?? opts.title), {
     views: [{ state: 'frozen', ySplit: opts.summary?.length ? 4 : 2 }],
   });
 
@@ -104,7 +114,7 @@ export async function templateXlsx(opts: { title: string; columns: TemplateColum
   wb.creator = 'Zeus CRM';
   wb.created = new Date();
 
-  const ws = wb.addWorksheet(opts.title.slice(0, 30), { views: [{ state: 'frozen', ySplit: 1 }] });
+  const ws = wb.addWorksheet(sheetName(opts.title), { views: [{ state: 'frozen', ySplit: 1 }] });
   const header = ws.getRow(1);
   opts.columns.forEach((col, i) => {
     const cell = header.getCell(i + 1);
