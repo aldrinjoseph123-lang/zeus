@@ -4,13 +4,42 @@ import { prisma } from '../db.js';
 import { env } from '../env.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, requirePermission } from '../lib/http.js';
-import { getM365, saveM365, testConnection, resetTokenCache, sendMail, REQUIRED_APP_PERMISSIONS } from '../services/graph.js';
+import { getM365, saveM365, testConnection, resetTokenCache, sendMail, pingM365, REQUIRED_APP_PERMISSIONS } from '../services/graph.js';
 import { adminConsentUrl, redirectUri } from '../auth/entra.js';
 import { lastBackups, localBackupSize, runBackup } from '../services/backup.js';
 import { emailTemplate } from '../services/notify.js';
-import { getWhatsapp, saveWhatsapp, testWhatsapp } from '../services/whatsapp.js';
+import { getWhatsapp, saveWhatsapp, testWhatsapp, pingWhatsapp } from '../services/whatsapp.js';
 
 export default async function integrationRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * Heartbeat across every integration, checked live and in parallel. Cheap by
+   * design: M365 reuses the cached app token, WhatsApp reads phone metadata (no
+   * send), webhooks are judged from the DB.
+   * ponytail: runs only when polled (Settings page open). If you need alerting
+   * while nobody is looking, move this to a cron that writes status to the row.
+   */
+  app.get('/api/integrations/health', { preHandler: requirePermission('integrations', 'read') }, async () => {
+    const [m365, whatsapp, hooks] = await Promise.all([
+      pingM365(),
+      pingWhatsapp(),
+      prisma.webhook.findMany({ where: { isActive: true }, select: { disabledAt: true } }),
+    ]);
+    const disabled = hooks.filter((h) => h.disabledAt).length;
+    const checkedAt = new Date().toISOString();
+    return [
+      { provider: 'microsoft365', label: 'Microsoft 365', ...m365, checkedAt },
+      { provider: 'whatsapp', label: 'WhatsApp', ...whatsapp, checkedAt },
+      {
+        provider: 'webhooks',
+        label: 'Outbound webhooks',
+        configured: hooks.length > 0,
+        ok: disabled === 0,
+        message: hooks.length === 0 ? 'No webhooks configured.' : disabled > 0 ? `${disabled} disabled by delivery failures.` : `${hooks.length} active.`,
+        checkedAt,
+      },
+    ];
+  });
+
   /** Current wiring state plus everything the admin needs to finish the Entra setup. */
   app.get('/api/integrations/microsoft365', { preHandler: requirePermission('integrations', 'read') }, async () => {
     const row = await prisma.integration.findUnique({ where: { provider: 'microsoft365' } });

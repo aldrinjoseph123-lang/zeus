@@ -145,6 +145,26 @@ export async function sendWhatsapp(to: string, text: string): Promise<void> {
   }
 }
 
+/**
+ * Heartbeat check: validates the credentials without sending (and without cost)
+ * by reading the phone number's own metadata from Meta.
+ */
+export async function pingWhatsapp(): Promise<{ configured: boolean; ok: boolean; message: string }> {
+  const row = await prisma.integration.findUnique({ where: { provider: 'whatsapp' } });
+  const config = { ...DEFAULTS, ...((row?.config ?? {}) as Partial<WhatsappConfig>) };
+  const token = decryptJson<WhatsappSecrets>(row?.secrets)?.accessToken;
+  if (!config.phoneNumberId || !token) return { configured: false, ok: false, message: 'Not configured yet.' };
+  try {
+    const res = await fetch(`${GRAPH}/${config.phoneNumberId}?fields=verified_name`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return { configured: true, ok: false, message: `Meta returned ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    return { configured: true, ok: true, message: 'Credentials valid.' };
+  } catch (err) {
+    return { configured: true, ok: false, message: (err as Error).message };
+  }
+}
+
 export async function testWhatsapp(to: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await sendWhatsapp(to, alertText({ title: 'Zeus test alert', body: 'WhatsApp notifications are wired up correctly.' }));

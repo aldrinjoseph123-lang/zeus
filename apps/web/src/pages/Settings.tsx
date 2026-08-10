@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Bell, Building2, Check, Database, GitBranch, KeyRound, ListTree, Plug, ScrollText,
+  Bell, Building2, Check, ChevronDown, Database, GitBranch, KeyRound, ListTree, Plug, ScrollText,
   ShieldHalf, SlidersHorizontal, Target as TargetIcon, Trash2, Users as UsersIcon, Plus, RefreshCw, X,
 } from 'lucide-react';
 import { api, ApiError, qs } from '../lib/api';
@@ -1505,10 +1505,68 @@ interface M365State {
   setup: { redirectUri: string; consentRedirectUri: string; requiredApplicationPermissions: string[]; requiredDelegatedPermissions: string[] };
 }
 
+interface IntegrationHealth {
+  provider: string; label: string; configured: boolean; ok: boolean; message: string; checkedAt: string;
+}
+
+/** One shared, polling query — react-query dedupes by key, so every consumer reuses it. */
+function useIntegrationHealth(provider: string): IntegrationHealth | null {
+  const { data } = useQuery({
+    queryKey: ['integrations-health'],
+    queryFn: () => api.get<IntegrationHealth[]>('/integrations/health'),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  return data?.find((h) => h.provider === provider) ?? null;
+}
+
+/** Live heartbeat pill for an integration header. */
+function HealthBadge({ health }: { health: IntegrationHealth | null }) {
+  if (!health) return null;
+  const tone = !health.configured ? 'neutral' : health.ok ? 'secure' : 'accent';
+  const text = !health.configured ? 'Not set up' : health.ok ? 'Healthy' : 'Error';
+  return (
+    <span className="flex items-center gap-2" title={health.message}>
+      <Badge tone={tone}>{text}</Badge>
+      {health.configured ? <span className="hidden text-[10px] text-muted sm:inline">checked {relative(health.checkedAt)}</span> : null}
+    </span>
+  );
+}
+
+/** Card whose body collapses under a clickable header — keeps the page short. */
+function CollapsibleCard({
+  title, subtitle, status, defaultOpen = false, className, children,
+}: {
+  title: ReactNode; subtitle?: ReactNode; status?: ReactNode; defaultOpen?: boolean; className?: string; children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card className={className}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cx('flex w-full items-start justify-between gap-4 px-4 py-3 text-left', open && 'border-b border-line')}
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <h3 className="truncate text-[13px] font-semibold uppercase tracking-[0.1em]">{title}</h3>
+          {subtitle ? <p className="mt-0.5 line-clamp-2 text-xs text-muted">{subtitle}</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {status}
+          <ChevronDown size={16} className={cx('text-n400 transition-transform', open && 'rotate-180')} />
+        </div>
+      </button>
+      {open ? children : null}
+    </Card>
+  );
+}
+
 function IntegrationsSection() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
+  const health = useIntegrationHealth('microsoft365');
   const [testEmail, setTestEmail] = useState('');
   const [secret, setSecret] = useState('');
   const [form, setForm] = useState<M365State['config'] | null>(null);
@@ -1574,17 +1632,12 @@ function IntegrationsSection() {
 
   return (
     <>
-      <Card>
-        <CardHeader
-          title="Microsoft 365"
-          subtitle="One app registration powers sign-in, Outlook email, Teams cards and OneDrive backup."
-          actions={
-            <Badge tone={data.isConnected ? 'secure' : data.status === 'error' ? 'accent' : 'neutral'}>
-              {data.isConnected ? 'Connected' : data.status}
-            </Badge>
-          }
-        />
-
+      <CollapsibleCard
+        title="Microsoft 365"
+        subtitle="One app registration powers sign-in, Outlook email, Teams cards and OneDrive backup."
+        status={<HealthBadge health={health} />}
+        defaultOpen={!health?.configured || !health?.ok}
+      >
         <div className="border-b border-line bg-sunken px-4 py-3">
           <p className="eyebrow mb-1.5">Before you start — in the Entra admin centre</p>
           <ol className="list-decimal space-y-1 pl-4 text-[12px] leading-relaxed text-n600">
@@ -1633,7 +1686,7 @@ function IntegrationsSection() {
             </span>
           </div>
         ) : null}
-      </Card>
+      </CollapsibleCard>
 
       <Card className="mt-3">
         <CardHeader
@@ -1694,6 +1747,7 @@ function WebhooksPanel() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
+  const health = useIntegrationHealth('webhooks');
   const editable = can('integrations', 'update');
 
   const [adding, setAdding] = useState(false);
@@ -1750,7 +1804,12 @@ function WebhooksPanel() {
       <CardHeader
         title="Outbound webhooks"
         subtitle="Tell another system when something happens here. Signed, so the receiver can prove it came from Zeus."
-        actions={editable && !adding ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setAdding(true)}>Add webhook</Button> : undefined}
+        actions={
+          <span className="flex items-center gap-2">
+            <HealthBadge health={health} />
+            {editable && !adding ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setAdding(true)}>Add webhook</Button> : null}
+          </span>
+        }
       />
 
       {newSecret ? (
@@ -1879,6 +1938,7 @@ function WhatsappPanel() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
+  const health = useIntegrationHealth('whatsapp');
   const [token, setToken] = useState('');
   const [testTo, setTestTo] = useState('');
   const [form, setForm] = useState<WhatsappState['config'] | null>(null);
@@ -1913,17 +1973,12 @@ function WhatsappPanel() {
   if (isLoading || !data || !config) return <Card><Loading /></Card>;
 
   return (
-    <Card>
-      <CardHeader
-        title="WhatsApp alerts"
-        subtitle="Meta Cloud API. Sends the same events as Teams and email, to a handset."
-        actions={
-          <Badge tone={data.isConnected ? 'secure' : data.status === 'error' ? 'accent' : 'neutral'}>
-            {data.isConnected ? 'Connected' : data.status}
-          </Badge>
-        }
-      />
-
+    <CollapsibleCard
+      title="WhatsApp alerts"
+      subtitle="Meta Cloud API. Sends the same events as Teams and email, to a handset."
+      status={<HealthBadge health={health} />}
+      defaultOpen={!health?.configured || !health?.ok}
+    >
       <div className="border-b border-line bg-sunken px-4 py-3">
         <p className="eyebrow mb-1.5">What this costs</p>
         <ul className="space-y-1 pl-4 text-[12px] leading-relaxed text-n600" style={{ listStyleType: 'disc' }}>
@@ -1982,7 +2037,7 @@ function WhatsappPanel() {
           </Button>
         ) : null}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }
 

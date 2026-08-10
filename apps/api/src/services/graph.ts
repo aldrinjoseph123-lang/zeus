@@ -105,6 +105,18 @@ export async function appToken(): Promise<string> {
   return json.access_token;
 }
 
+/** Cheap liveness check for the heartbeat: can we still get an app token? */
+export async function pingM365(): Promise<{ configured: boolean; ok: boolean; message: string }> {
+  const m365 = await getM365();
+  if (!m365?.secrets?.clientSecret) return { configured: false, ok: false, message: 'Not configured yet.' };
+  try {
+    await appToken();
+    return { configured: true, ok: true, message: 'Token acquired.' };
+  } catch (err) {
+    return { configured: true, ok: false, message: (err as Error).message };
+  }
+}
+
 async function graphFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await appToken();
   return fetch(path.startsWith('http') ? path : `${GRAPH}${path}`, {
