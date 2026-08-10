@@ -14,6 +14,7 @@ import {
 } from '../components/ui';
 import { Toolbar } from '../components/pickers';
 import { AccessDenied } from '../components/Layout';
+import { fileSize } from '../components/attachments';
 
 const SECTIONS = [
   { path: 'company', label: 'Company', icon: Building2, module: 'settings' },
@@ -1637,7 +1638,7 @@ function IntegrationsSection() {
       <Card className="mt-3">
         <CardHeader
           title="Backups"
-          subtitle={`${backups?.local.count ?? 0} local copies (${((backups?.local.bytes ?? 0) / 1_048_576).toFixed(1)} MB). The nightly schedule is set below.`}
+          subtitle={`${backups?.local.count ?? 0} local copies (${fileSize(backups?.local.bytes ?? 0)}). The nightly schedule is set below.`}
           actions={editable ? <Button size="sm" variant="accent" loading={backupNow.isPending} onClick={() => backupNow.mutate()}>Back up now</Button> : undefined}
         />
         {(backups?.runs ?? []).length === 0 ? (
@@ -1651,7 +1652,7 @@ function IntegrationsSection() {
               { key: 'startedAt', header: 'When', width: '180px', render: (row) => <span className="text-[12px]">{dateTime(row.startedAt)}</span> },
               { key: 'status', header: 'Status', width: '100px', render: (row) => <Badge tone={row.status === 'success' ? 'secure' : row.status === 'failed' ? 'accent' : 'neutral'}>{row.status}</Badge> },
               { key: 'filename', header: 'File', render: (row) => <span className="text-[12px]">{row.filename ?? '—'}</span> },
-              { key: 'sizeBytes', header: 'Size', align: 'right', width: '90px', render: (row) => <span className="tabular text-[12px]">{row.sizeBytes ? `${(row.sizeBytes / 1_048_576).toFixed(1)} MB` : '—'}</span> },
+              { key: 'sizeBytes', header: 'Size', align: 'right', width: '90px', render: (row) => <span className="tabular text-[12px]">{row.sizeBytes ? fileSize(row.sizeBytes) : '—'}</span> },
               { key: 'error', header: 'Note', render: (row) => row.error ? <span className="text-[11px] text-accent">{row.error}</span> : null },
             ]}
           />
