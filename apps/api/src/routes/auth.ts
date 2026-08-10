@@ -5,6 +5,8 @@ import { prisma } from '../db.js';
 import { env } from '../env.js';
 import { getSetting } from '../lib/settings.js';
 import { audit } from '../lib/audit.js';
+import { closeChallenge, openChallenge, readChallenge, verifySecondFactor } from '../services/twoFactor.js';
+import * as twoFactor from '../services/twoFactor.js';
 import { badRequest, clientIp, HttpError } from '../lib/http.js';
 import { clearSession, issueSession } from '../auth/session.js';
 import { authorizeUrl, adminConsentUrl, exchangeCode, verifyState } from '../auth/entra.js';
@@ -51,10 +53,52 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
       throw new HttpError(401, 'Email or password is incorrect.');
     }
 
+    /**
+     * The password was right, but it is not a session yet. The cookie is only issued once
+     * the second factor is checked, so a stolen password on its own reaches nothing.
+     */
+    if (user.totpEnabledAt) {
+      await audit({ action: 'login_pending_2fa', entity: 'User', entityId: user.id, summary: `${user.name} passed the password step`, ip: clientIp(request) });
+      return { ok: false, twoFactorRequired: true, challenge: openChallenge(user.id) };
+    }
+
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await issueSession(reply, user.id);
     await audit({ action: 'login', entity: 'User', entityId: user.id, summary: `${user.name} signed in with a password`, ip: clientIp(request) });
     return { ok: true };
+  });
+
+  /**
+   * The second step. Rate-limited harder than the password: a six-digit code is a million
+   * guesses, which is nothing without a limit and a great deal with one.
+   */
+  app.post('/api/auth/2fa/verify', { config: { rateLimit: { max: 6, timeWindow: '5 minutes' } } }, async (request, reply) => {
+    const parsed = z.object({ challenge: z.string().min(1), code: z.string().min(1) }).safeParse(request.body);
+    if (!parsed.success) throw badRequest('Enter the code from your authenticator, or a recovery code.');
+
+    const userId = readChallenge(parsed.data.challenge);
+    if (!userId) throw new HttpError(401, 'That sign-in took too long. Enter your password again.');
+
+    const factor = await verifySecondFactor(userId, parsed.data.code);
+    if (!factor) {
+      await audit({ action: 'login_failed', entity: 'User', entityId: userId, summary: 'wrong second factor', ip: clientIp(request) });
+      throw new HttpError(401, 'That code is not right. Check the clock on your phone, or use a recovery code.');
+    }
+
+    closeChallenge(parsed.data.challenge);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, name: true, isActive: true } });
+    if (!user.isActive) throw new HttpError(401, 'That account is no longer active.');
+
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    await issueSession(reply, user.id);
+    await audit({
+      action: 'login', entity: 'User', entityId: user.id,
+      summary: `${user.name} signed in with a password and ${factor === 'recovery' ? 'a recovery code' : 'an authenticator code'}`,
+      ip: clientIp(request),
+    });
+
+    // Spending a recovery code is worth saying out loud — it usually means a lost phone.
+    return { ok: true, usedRecoveryCode: factor === 'recovery' };
   });
 
   app.post('/api/auth/logout', async (_request, reply) => {
@@ -151,6 +195,56 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     await issueSession(reply, user.id);
     await audit({ action: 'login', entity: 'User', entityId: user.id, summary: `${user.name} signed in with Microsoft`, ip: clientIp(request) });
     return reply.redirect(`${env.APP_URL}${state.nextPath}`);
+  });
+
+  // ── two-factor enrolment, for a signed-in user managing their own account ─────
+
+  app.get('/api/auth/2fa', async (request) => {
+    if (!request.user) throw new HttpError(401, 'Not signed in.');
+    return twoFactor.status(request.user.id);
+  });
+
+  /**
+   * Start enrolment. Hands back the secret, a QR payload and the recovery codes — the
+   * one and only time the codes are shown in the clear. Nothing is enforced until the
+   * user confirms with a working code.
+   */
+  app.post('/api/auth/2fa/enrol', async (request) => {
+    if (!request.user) throw new HttpError(401, 'Not signed in.');
+    const enrolment = await twoFactor.beginEnrolment(request.user.id, request.user.email);
+    await audit({ action: 'update', entity: 'User', entityId: request.user.id, summary: 'started two-factor enrolment', ip: clientIp(request) });
+    return enrolment;
+  });
+
+  app.post('/api/auth/2fa/confirm', async (request) => {
+    if (!request.user) throw new HttpError(401, 'Not signed in.');
+    const parsed = z.object({ code: z.string().min(1) }).safeParse(request.body);
+    if (!parsed.success) throw badRequest('Enter the six-digit code from your authenticator.');
+
+    const ok = await twoFactor.confirmEnrolment(request.user.id, parsed.data.code);
+    if (!ok) throw badRequest('That code did not match. Check your phone\'s clock and try the current code.');
+
+    await audit({ action: 'update', entity: 'User', entityId: request.user.id, summary: 'turned two-factor on', ip: clientIp(request) });
+    return { ok: true };
+  });
+
+  /**
+   * Turn it off. Requires the current password — a hijacked *session* must not be able
+   * to strip the protection that would have stopped it, and a shared unlocked screen is
+   * the ordinary case this defends against.
+   */
+  app.post('/api/auth/2fa/disable', async (request) => {
+    if (!request.user) throw new HttpError(401, 'Not signed in.');
+    const parsed = z.object({ password: z.string().min(1) }).safeParse(request.body);
+    if (!parsed.success) throw badRequest('Enter your password to turn two-factor off.');
+
+    const user = await prisma.user.findUnique({ where: { id: request.user.id }, select: { passwordHash: true } });
+    const ok = user?.passwordHash ? await bcrypt.compare(parsed.data.password, user.passwordHash) : false;
+    if (!ok) throw new HttpError(401, 'That password is not right.');
+
+    await twoFactor.disable(request.user.id);
+    await audit({ action: 'update', entity: 'User', entityId: request.user.id, summary: 'turned two-factor off', ip: clientIp(request) });
+    return { ok: true };
   });
 
   /** Where Entra lands after an admin grants tenant-wide consent. */

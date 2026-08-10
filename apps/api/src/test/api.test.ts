@@ -97,6 +97,102 @@ describe('authentication', () => {
   });
 });
 
+// ── two-factor ────────────────────────────────────────────────────────────────
+
+describe('two-factor', () => {
+  const enrol = async (user: typeof fx.admin) => {
+    const started = await request(app, user).post('/api/auth/2fa/enrol', {});
+    assert.equal(started.status, 200, JSON.stringify(started.body));
+    const { currentCode } = await import('../lib/totp.js');
+    const confirmed = await request(app, user).post('/api/auth/2fa/confirm', { code: currentCode(started.body.secret) });
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+    return started.body as { secret: string; otpauth: string; recoveryCodes: string[] };
+  };
+
+  it('hands back recovery codes at enrolment and arms nothing until a code is proved', async () => {
+    const started = await request(app, fx.admin).post('/api/auth/2fa/enrol', {});
+    assert.equal(started.body.recoveryCodes.length, 10, 'recovery codes are not optional');
+    assert.match(started.body.otpauth, /^otpauth:\/\/totp\//);
+
+    // Abandoning enrolment must leave the account exactly as it was.
+    let state = await request(app, fx.admin).get('/api/auth/2fa');
+    assert.equal(state.body.enabled, false, 'not armed until confirmed');
+
+    const { currentCode } = await import('../lib/totp.js');
+    await request(app, fx.admin).post('/api/auth/2fa/confirm', { code: currentCode(started.body.secret) });
+    state = await request(app, fx.admin).get('/api/auth/2fa');
+    assert.equal(state.body.enabled, true);
+    assert.equal(state.body.recoveryCodesLeft, 10);
+  });
+
+  it('refuses to arm on a wrong code', async () => {
+    const started = await request(app, fx.admin).post('/api/auth/2fa/enrol', {});
+    const { currentCode } = await import('../lib/totp.js');
+    const right = currentCode(started.body.secret);
+    const wrong = right === '000000' ? '999999' : '000000';
+
+    const res = await request(app, fx.admin).post('/api/auth/2fa/confirm', { code: wrong });
+    assert.equal(res.status, 400);
+    assert.equal((await request(app, fx.admin).get('/api/auth/2fa')).body.enabled, false);
+  });
+
+  it('stops the password alone from becoming a session', async () => {
+    const enrolment = await enrol(fx.rep);
+
+    const password = await request(app).post('/api/auth/login', { email: fx.rep.email, password: 'Passw0rd!Test' });
+    assert.equal(password.status, 200);
+    assert.equal(password.body.twoFactorRequired, true);
+    assert.ok(password.body.challenge, 'a challenge is needed to finish');
+    assert.ok(
+      !String(password.raw.headers['set-cookie'] ?? '').includes('zeus_session='),
+      'the password step must not issue a session on its own',
+    );
+
+    const { currentCode } = await import('../lib/totp.js');
+    const second = await request(app).post('/api/auth/2fa/verify', {
+      challenge: password.body.challenge,
+      code: currentCode(enrolment.secret),
+    });
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.ok(String(second.raw.headers['set-cookie']).includes('zeus_session='), 'now it is a session');
+  });
+
+  it('lets a recovery code in once and never again', async () => {
+    const enrolment = await enrol(fx.rep);
+    const code = enrolment.recoveryCodes[0];
+
+    const first = await request(app).post('/api/auth/login', { email: fx.rep.email, password: 'Passw0rd!Test' });
+    const used = await request(app).post('/api/auth/2fa/verify', { challenge: first.body.challenge, code });
+    assert.equal(used.status, 200);
+    assert.equal(used.body.usedRecoveryCode, true, 'the user should be told they spent one');
+
+    const second = await request(app).post('/api/auth/login', { email: fx.rep.email, password: 'Passw0rd!Test' });
+    const reused = await request(app).post('/api/auth/2fa/verify', { challenge: second.body.challenge, code });
+    assert.equal(reused.status, 401, 'a spent recovery code is as dead as a wrong one');
+
+    assert.equal((await request(app, fx.rep).get('/api/auth/2fa')).body.recoveryCodesLeft, 9);
+  });
+
+  it('will not turn off without the password', async () => {
+    await enrol(fx.rep);
+
+    const noPassword = await request(app, fx.rep).post('/api/auth/2fa/disable', { password: 'wrong' });
+    assert.equal(noPassword.status, 401, 'a hijacked session must not be able to strip the protection');
+    assert.equal((await request(app, fx.rep).get('/api/auth/2fa')).body.enabled, true);
+
+    const ok = await request(app, fx.rep).post('/api/auth/2fa/disable', { password: 'Passw0rd!Test' });
+    assert.equal(ok.status, 200);
+    const after = await request(app, fx.rep).get('/api/auth/2fa');
+    assert.equal(after.body.enabled, false);
+    assert.equal(after.body.recoveryCodesLeft, 0, 'the codes go with it');
+  });
+
+  it('refuses a challenge it does not know', async () => {
+    const res = await request(app).post('/api/auth/2fa/verify', { challenge: 'made-up', code: '123456' });
+    assert.equal(res.status, 401);
+  });
+});
+
 // ── RBAC, enforced on the route rather than hidden in the UI ──────────────────
 
 describe('permissions', () => {

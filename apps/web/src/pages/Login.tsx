@@ -15,6 +15,10 @@ export default function Login() {
   const [error, setError] = useState<string | null>(params.get('error'));
   const [busy, setBusy] = useState(false);
 
+  /** Set once the password is accepted and a second factor is owed. */
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+
   const { data: config, isLoading, error: configError } = useQuery({
     queryKey: ['auth-config'],
     queryFn: () => api.get<{ localLogin: boolean; microsoftLogin: boolean; productName: string }>('/auth/config'),
@@ -30,11 +34,34 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await api.post('/auth/login', { email, password });
+      const result = await api.post<{ ok: boolean; twoFactorRequired?: boolean; challenge?: string }>(
+        '/auth/login', { email, password },
+      );
+      // The password was right but it is not a session yet.
+      if (result.twoFactorRequired && result.challenge) {
+        setChallenge(result.challenge);
+        return;
+      }
       navigate(next, { replace: true });
       location.reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Sign-in failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post('/auth/2fa/verify', { challenge, code: code.trim() });
+      navigate(next, { replace: true });
+      location.reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'That code was not accepted.');
+      setCode('');
     } finally {
       setBusy(false);
     }
@@ -119,7 +146,37 @@ export default function Login() {
                 </>
               ) : null}
 
-              {config?.localLogin ? (
+              {challenge ? (
+                <form onSubmit={submitCode} className="space-y-3">
+                  <p className="text-[13px] leading-relaxed text-n600">
+                    Enter the six-digit code from your authenticator app. If you have lost your
+                    phone, one of your recovery codes works instead — each one only once.
+                  </p>
+                  <Field label="Code">
+                    <Input
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      // A phone keypad for the common case, and the browser's own
+                      // one-time-code autofill where the platform offers it.
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="123456"
+                      required
+                      autoFocus
+                    />
+                  </Field>
+                  <Button type="submit" variant="accent" loading={busy} className="w-full">
+                    Verify
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setChallenge(null); setCode(''); setError(null); setPassword(''); }}
+                    className="w-full text-[12px] text-muted underline decoration-dotted underline-offset-2 hover:text-ink"
+                  >
+                    Start again
+                  </button>
+                </form>
+              ) : config?.localLogin ? (
                 <form onSubmit={submit} className="space-y-3">
                   <Field label="Email">
                     <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required autoFocus />

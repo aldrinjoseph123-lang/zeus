@@ -5,6 +5,7 @@ import { parseCsv } from './services/xlsx.js';
 import { buildCard } from './services/teams.js';
 import { alertText, normalizeNumber } from './services/whatsapp.js';
 import { addMonths, termEnd } from './services/renewals.js';
+import { base32Decode, base32Encode, currentCode, generateRecoveryCodes, normalizeRecoveryCode, verifyCode } from './lib/totp.js';
 import { MODULES, SYSTEM_ROLES, can, type SessionUser, maskFields, stripUnwritableFields } from './auth/rbac.js';
 
 /**
@@ -318,6 +319,50 @@ check('Teams adaptive card has the shape Teams accepts', () => {
   assert.equal(card.attachments[0].content.type, 'AdaptiveCard');
   assert.ok(card.attachments[0].content.body.length >= 2);
   assert.equal(card.attachments[0].content.actions.length, 1);
+});
+
+// ── TOTP ────────────────────────────────────────────────────────────────────────
+check('base32 round-trips', () => {
+  const bytes = Buffer.from('a secret worth 20 by');
+  assert.equal(base32Decode(base32Encode(bytes)).toString(), bytes.toString());
+});
+
+check('a fresh code verifies against its own secret', () => {
+  // A fixed secret and a fixed instant, so this cannot flake on a step boundary.
+  const secret = base32Encode(Buffer.from('12345678901234567890'));
+  const at = 1_700_000_000_000;
+  assert.equal(verifyCode(secret, currentCode(secret, at), at), true);
+});
+
+check('a code from the previous step still works, a stale one does not', () => {
+  const secret = base32Encode(Buffer.from('12345678901234567890'));
+  const at = 1_700_000_000_000;
+  // 30s ago is within the ±1 step window; 5 minutes ago is not.
+  assert.equal(verifyCode(secret, currentCode(secret, at - 30_000), at), true);
+  assert.equal(verifyCode(secret, currentCode(secret, at - 300_000), at), false);
+  // And a code from the future, which is what a badly-set phone clock produces.
+  assert.equal(verifyCode(secret, currentCode(secret, at + 300_000), at), false);
+});
+
+check('a wrong code is refused', () => {
+  const secret = base32Encode(Buffer.from('12345678901234567890'));
+  const at = 1_700_000_000_000;
+  const right = currentCode(secret, at);
+  const wrong = right === '111111' ? '222222' : '111111';
+  assert.equal(verifyCode(secret, wrong, at), false);
+  assert.equal(verifyCode(secret, 'abc', at), false);
+  assert.equal(verifyCode(secret, '1234567', at), false);
+});
+
+check('recovery codes are unambiguous and normalise for retyping', () => {
+  const codes = generateRecoveryCodes(10);
+  assert.equal(codes.length, 10);
+  assert.equal(new Set(codes).size, 10, 'codes must be unique');
+  for (const code of codes) {
+    assert.match(code, /^[A-Z0-9]{5}-[A-Z0-9]{5}$/);
+    assert.ok(!/[O0I1]/.test(code), 'no ambiguous characters');
+  }
+  assert.equal(normalizeRecoveryCode('abcde-fghjk'), 'ABCDEFGHJK');
 });
 
 console.log(process.exitCode ? '\nSelf-check FAILED\n' : '\nAll checks passed\n');

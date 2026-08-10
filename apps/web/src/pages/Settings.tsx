@@ -1917,7 +1917,128 @@ function ProfileSection() {
           </Button>
           <p className="text-[11px] text-muted">If you sign in with Microsoft, your password is managed by Microsoft, not here.</p>
         </div>
+
+        <TwoFactorPanel />
       </div>
     </Card>
+  );
+}
+
+/**
+ * Two-factor sign-in for this account.
+ *
+ * The recovery codes are shown once and never again, so the screen has to be blunt about
+ * that: the realistic failure here is not an attacker, it is the owner replacing a phone
+ * and finding nobody can get into the CRM.
+ */
+function TwoFactorPanel() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [enrolment, setEnrolment] = useState<{ secret: string; otpauth: string; recoveryCodes: string[] } | null>(null);
+  const [code, setCode] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: state } = useQuery({
+    queryKey: ['two-factor'],
+    queryFn: () => api.get<{ enabled: boolean; recoveryCodesLeft: number }>('/auth/2fa'),
+  });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['two-factor'] });
+
+  const start = useMutation({
+    mutationFn: () => api.post<{ secret: string; otpauth: string; recoveryCodes: string[] }>('/auth/2fa/enrol', {}),
+    onSuccess: (data) => { setEnrolment(data); setSaved(false); setError(null); },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not start enrolment.'),
+  });
+
+  const confirm = useMutation({
+    mutationFn: () => api.post('/auth/2fa/confirm', { code: code.trim() }),
+    onSuccess: () => { setEnrolment(null); setCode(''); setError(null); void refresh(); toast.push('Two-factor sign-in is on.'); },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'That code did not match.'),
+  });
+
+  const turnOff = useMutation({
+    mutationFn: () => api.post('/auth/2fa/disable', { password }),
+    onSuccess: () => { setPassword(''); setError(null); void refresh(); toast.push('Two-factor sign-in is off.'); },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not turn it off.'),
+  });
+
+  return (
+    <div className="mt-6 max-w-lg space-y-3 border-t border-line pt-4">
+      <span className="eyebrow">Two-factor sign-in</span>
+      {error ? <ErrorNote error={error} /> : null}
+
+      {state?.enabled && !enrolment ? (
+        <>
+          <p className="text-[13px] text-n600">
+            On. Signing in asks for a code after your password.
+            {' '}
+            <b>{state.recoveryCodesLeft}</b> recovery {state.recoveryCodesLeft === 1 ? 'code' : 'codes'} left.
+          </p>
+          {state.recoveryCodesLeft <= 2 ? (
+            <p className="text-[12px] text-accent">
+              Almost out of recovery codes. Turn two-factor off and on again to get a fresh set.
+            </p>
+          ) : null}
+          <Field label="Password" hint="Confirms it is you, not just an open session.">
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+          </Field>
+          <Button disabled={!password} loading={turnOff.isPending} onClick={() => turnOff.mutate()}>
+            Turn two-factor off
+          </Button>
+        </>
+      ) : null}
+
+      {!state?.enabled && !enrolment ? (
+        <>
+          <p className="text-[13px] text-n600">
+            Off. A password on its own is all anyone needs to get in.
+          </p>
+          <Button variant="accent" loading={start.isPending} onClick={() => start.mutate()}>
+            Set up two-factor
+          </Button>
+        </>
+      ) : null}
+
+      {enrolment ? (
+        <div className="space-y-3">
+          <p className="text-[13px] text-n600">
+            Add this to your authenticator app, then enter the code it shows to switch it on.
+          </p>
+
+          <Field label="Setup key" hint="Type this into the app, or paste the link below into a QR generator.">
+            <Input readOnly value={enrolment.secret} className="font-mono" onFocus={(e) => e.currentTarget.select()} />
+          </Field>
+          <Input readOnly value={enrolment.otpauth} className="font-mono text-[11px]" onFocus={(e) => e.currentTarget.select()} />
+
+          <div className="border border-accent bg-sunken px-3 py-3">
+            <p className="text-[12px] font-semibold text-accent">Save these recovery codes now</p>
+            <p className="mt-1 text-[12px] text-n600">
+              This is the only time they are shown. Each works once, and they are the only way
+              back in if you lose the authenticator — without them, nobody can reach this
+              account and only database access will recover it.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-1 font-mono text-[13px]">
+              {enrolment.recoveryCodes.map((c) => <span key={c}>{c}</span>)}
+            </div>
+            <div className="mt-3">
+              <Checkbox label="I have saved these somewhere safe" checked={saved} onChange={setSaved} />
+            </div>
+          </div>
+
+          <Field label="Code from the app">
+            <Input value={code} inputMode="numeric" placeholder="123456" onChange={(e) => setCode(e.target.value)} />
+          </Field>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={() => { setEnrolment(null); setCode(''); setError(null); }}>Cancel</Button>
+            <Button variant="accent" disabled={!saved || code.trim().length < 6} loading={confirm.isPending} onClick={() => confirm.mutate()}>
+              Turn two-factor on
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }

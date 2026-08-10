@@ -62,6 +62,12 @@ model User {
   importJobs                ImportJob[]
   pipelineSnapshots         PipelineSnapshot[] @relation("SnapshotOwner")
 
+  /// TOTP shared secret, AES-256-GCM at rest. Null until the user enrols.
+  totpSecret    String?
+  /// When two-factor was turned on. Null means it is not in force for this account.
+  totpEnabledAt DateTime?
+  recoveryCodes RecoveryCode[]
+
   @@index([teamId])
   @@index([roleId])
 }
@@ -1265,4 +1271,22 @@ model PipelineSnapshot {
 
   @@index([takenOn])
   @@index([takenOn, ownerId])
+}
+
+/// A one-shot way back in when the authenticator is gone.
+///
+/// Stored as a hash, never in the clear: this row is the last thing standing between a
+/// database dump and somebody's account. Single use — `usedAt` is set the moment one is
+/// accepted, and a used code is as dead as a wrong one.
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SHA-256 of the normalised code. Not bcrypt: these are 80 bits of our own randomness,
+  /// not a human-chosen password, so there is nothing for a slow hash to defend against.
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }

@@ -55,6 +55,9 @@ export async function buildApp() {
     '/api/health',
     '/api/auth/config',
     '/api/auth/login',
+    // The second factor is checked before a session exists — that is the point of it.
+    // Only the *verify* step is public; enrolling and disabling need a signed-in user.
+    '/api/auth/2fa/verify',
     '/api/auth/logout',
     '/api/auth/microsoft/start',
     '/api/auth/microsoft/callback',
