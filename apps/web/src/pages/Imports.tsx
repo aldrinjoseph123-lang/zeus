@@ -143,7 +143,7 @@ export default function Imports() {
                       title={field.required ? 'Required' : 'Optional'}
                       className={cx(
                         'border px-1.5 py-0.5 text-[11px]',
-                        field.required ? 'border-[var(--red-300)] bg-accent-soft font-semibold text-[var(--red-700)]' : 'border-line bg-white text-muted',
+                        field.required ? 'border-[var(--red-300)] bg-accent-soft font-semibold text-[var(--red-700)]' : 'border-line bg-card text-muted',
                       )}
                     >
                       {field.label}

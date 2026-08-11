@@ -6,7 +6,7 @@ import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, requirePermission } from '../lib/http.js';
 import { getM365, saveM365, testConnection, resetTokenCache, sendMail, pingM365, REQUIRED_APP_PERMISSIONS } from '../services/graph.js';
 import { adminConsentUrl, redirectUri } from '../auth/entra.js';
-import { lastBackups, localBackupSize, runBackup } from '../services/backup.js';
+import { lastBackups, localBackupSize, runBackup, verifyLatestBackup, validateLatestBackup } from '../services/backup.js';
 import { emailTemplate } from '../services/notify.js';
 import { getWhatsapp, saveWhatsapp, testWhatsapp, pingWhatsapp } from '../services/whatsapp.js';
 
@@ -202,15 +202,29 @@ export default async function integrationRoutes(app: FastifyInstance): Promise<v
     return { ok: true };
   });
 
-  app.get('/api/backups', { preHandler: requirePermission('integrations', 'read') }, async () => ({
+  app.get('/api/backups', { preHandler: requirePermission('backups', 'read') }, async () => ({
     runs: await lastBackups(),
     local: await localBackupSize(),
   }));
 
-  app.post('/api/backups/run', { preHandler: requirePermission('integrations', 'update') }, async (request) => {
+  app.post('/api/backups/run', { preHandler: requirePermission('backups', 'update') }, async (request) => {
     const { uploadToOneDrive } = z.object({ uploadToOneDrive: z.boolean().default(true) }).parse(request.body ?? {});
     const result = await runBackup({ uploadToOneDrive });
     await audit({ user: request.user, action: 'backup', entity: 'BackupRun', entityId: result.id, summary: result.filename, ip: clientIp(request) });
+    return result;
+  });
+
+  // Validate = integrity only, no database touched — open to anyone who can read backups.
+  app.post('/api/backups/validate', { preHandler: requirePermission('backups', 'read') }, async (request) => {
+    const result = await validateLatestBackup();
+    await audit({ user: request.user, action: 'integration', entity: 'BackupRun', summary: `Backup validate: ${result.ok ? 'valid' : 'FAILED'} (${result.filename ?? 'none'})`, ip: clientIp(request) });
+    return result;
+  });
+
+  // Verify = a real restore into a throwaway database. Privileged: needs backups:delete.
+  app.post('/api/backups/verify', { preHandler: requirePermission('backups', 'delete') }, async (request) => {
+    const result = await verifyLatestBackup();
+    await audit({ user: request.user, action: 'integration', entity: 'BackupRun', summary: `Backup verify (restore): ${result.ok ? 'restorable' : 'FAILED'} (${result.filename ?? 'none'})`, ip: clientIp(request) });
     return result;
   });
 }

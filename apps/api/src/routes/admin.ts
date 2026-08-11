@@ -31,7 +31,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
         where,
         select: {
           id: true, email: true, name: true, jobTitle: true, phone: true, whatsappNumber: true, avatarColor: true, isActive: true,
-          lastLoginAt: true, createdAt: true, entraOid: true,
+          lastLoginAt: true, lastLoginIp: true, lastLoginDevice: true, totpEnabledAt: true, createdAt: true, entraOid: true,
           role: { select: { id: true, name: true } },
           team: { select: { id: true, name: true } },
           manager: { select: { id: true, name: true } },

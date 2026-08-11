@@ -27,6 +27,7 @@ export const MODULES = [
   'roles',
   'settings',
   'integrations',
+  'backups',
   'audit',
 ] as const;
 
@@ -134,6 +135,32 @@ export const SYSTEM_ROLES: Array<{ name: string; description: string; permission
     },
   },
 ];
+
+/**
+ * Backfill any MODULES a role is missing — runs at boot so adding a module (e.g.
+ * 'backups') does not silently lock everyone, including the admin, out of it.
+ * Administrator gains full access to the new module; every other role gets none, so
+ * a new capability is opt-in per the least-privilege default until an admin grants it.
+ */
+export async function ensureRoleModules(): Promise<number> {
+  const roles = await prisma.role.findMany();
+  let patched = 0;
+  for (const role of roles) {
+    const perms = { ...((role.permissions ?? {}) as Record<string, unknown>) };
+    let changed = false;
+    for (const m of MODULES) {
+      if (!(m in perms)) {
+        perms[m] = role.name === 'Administrator' ? fullAccess() : NONE;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await prisma.role.update({ where: { id: role.id }, data: { permissions: perms as never } });
+      patched++;
+    }
+  }
+  return patched;
+}
 
 export interface SessionUser {
   id: string;

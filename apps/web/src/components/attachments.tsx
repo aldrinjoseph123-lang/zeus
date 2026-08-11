@@ -165,7 +165,7 @@ export function AttachmentPanel({ parent, parentId }: { parent: AttachmentParent
             const Icon = iconFor(attachment.filename, attachment.mimeType);
             return (
               <li key={attachment.id} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-white text-muted">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-card text-muted">
                   <Icon size={15} />
                 </span>
                 <button onClick={() => void get(attachment)} className="min-w-0 flex-1 text-left">

@@ -7,6 +7,10 @@ import { daysUntil, mailPartnerAboutRegistration } from '../services/registratio
 import { sweepRenewals } from '../services/renewals.js';
 import { ratesAreStale, refreshRates } from '../services/fx.js';
 import { takePipelineSnapshot } from '../services/snapshots.js';
+import { logSystem, pruneSystemLogs } from '../services/systemLog.js';
+import { alertOnTransitions } from '../services/healthMonitor.js';
+import { componentStatuses, recordComponentChecks } from '../services/systemStatus.js';
+import { recordResourceSample, pruneResourceSamples } from '../services/resources.js';
 import { formatAed } from '../lib/money.js';
 
 /**
@@ -422,6 +426,7 @@ async function safely(name: string, fn: () => Promise<void>): Promise<void> {
     await fn();
   } catch (err) {
     console.error(`[scheduler] ${name} failed:`, (err as Error).message);
+    logSystem('error', 'cron', `${name} failed: ${(err as Error).message}`, { job: name });
   }
 }
 
@@ -447,6 +452,23 @@ export function startScheduler(): void {
   tasks.push(cron.schedule('0 19 * * *', () => void safely('pipelineSnapshot', async () => {
     const { takenOn, rows, openNet } = await takePipelineSnapshot();
     console.log(`[scheduler] pipeline photographed for ${takenOn.toISOString().slice(0, 10)}: ${rows} row(s), ${formatAed(openNet)} open`);
+  }), { timezone: TZ }));
+
+  // Watch component health every 5 minutes: one snapshot, recorded for uptime and
+  // checked for an up→down flip to alert admins.
+  tasks.push(cron.schedule('*/5 * * * *', () => void safely('healthMonitor', async () => {
+    const components = await componentStatuses();
+    await recordComponentChecks(components);
+    await recordResourceSample();
+    await alertOnTransitions(components);
+  }), { timezone: TZ }));
+
+  // Trim the system log and health samples so they cannot grow without bound. 03:00 GST.
+  tasks.push(cron.schedule('0 3 * * *', () => void safely('pruneSystemLogs', async () => {
+    const removed = await pruneSystemLogs(30);
+    const { count } = await prisma.componentCheck.deleteMany({ where: { at: { lt: new Date(Date.now() - 30 * 86_400_000) } } });
+    const resources = await pruneResourceSamples(7);
+    if (removed || count || resources) console.log(`[scheduler] pruned ${removed} log + ${count} health + ${resources} resource rows`);
   }), { timezone: TZ }));
 
   // Morning digest, 08:30 GST on working days (Mon-Fri in the UAE).

@@ -215,7 +215,7 @@ export default function DealDetail() {
                   onClick={() => (stage.isLost ? setLostFor(stage.id) : moveStage.mutate({ stageId: stage.id }))}
                   className={cx(
                     'flex-1 min-w-[104px] border px-2.5 py-2 text-left transition-colors disabled:cursor-default',
-                    active ? 'border-transparent text-white' : passed ? 'border-line bg-n100 text-n600' : 'border-line bg-white text-muted hover:border-n900 hover:text-ink',
+                    active ? 'border-transparent text-white' : passed ? 'border-line bg-n100 text-n600' : 'border-line bg-card text-muted hover:border-n900 hover:text-ink',
                   )}
                   style={active ? { background: stage.color } : undefined}
                 >
@@ -729,7 +729,7 @@ function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
                 onClick={() => setSide(option.key)}
                 className={cx(
                   'border px-3 py-2 text-left transition-colors',
-                  side === option.key ? 'border-n950 bg-n950 text-white' : 'border-line bg-white hover:border-n900',
+                  side === option.key ? 'border-n950 bg-n950 text-white' : 'border-line bg-card hover:border-n900',
                 )}
               >
                 <span className="block text-[11px] font-bold uppercase tracking-[0.06em]">{option.label}</span>

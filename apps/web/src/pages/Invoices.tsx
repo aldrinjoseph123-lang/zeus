@@ -91,7 +91,7 @@ export default function Invoices() {
             className={
               overdue
                 ? 'rounded-sharp border border-accent bg-accent px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white'
-                : 'rounded-sharp border border-line bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted hover:border-n900 hover:text-ink'
+                : 'rounded-sharp border border-line bg-card px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted hover:border-n900 hover:text-ink'
             }
           >
             Overdue only

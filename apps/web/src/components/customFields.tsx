@@ -74,7 +74,7 @@ export function CustomFieldInputs({ module, values, onChange, disabled }: {
                         className={
                           on
                             ? 'rounded-sharp border border-n950 bg-n950 px-2.5 py-1 text-[11px] font-semibold text-white'
-                            : 'rounded-sharp border border-line bg-white px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-n900 hover:text-ink'
+                            : 'rounded-sharp border border-line bg-card px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-n900 hover:text-ink'
                         }
                       >
                         {option}

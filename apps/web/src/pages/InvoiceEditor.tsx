@@ -587,14 +587,14 @@ function CreditNoteModal({ invoice, onClose }: { invoice: InvoiceFull; onClose: 
         <div className="flex gap-2">
           <button
             onClick={() => setFull(true)}
-            className={cx('flex-1 rounded-sharp border px-3 py-2 text-left text-[12px] transition-colors', full ? 'border-n950 bg-n950 text-white' : 'border-line bg-white hover:border-n900')}
+            className={cx('flex-1 rounded-sharp border px-3 py-2 text-left text-[12px] transition-colors', full ? 'border-n950 bg-n950 text-white' : 'border-line bg-card hover:border-n900')}
           >
             <span className="block font-semibold">Full reversal</span>
             <span className={cx('block text-[11px]', full ? 'text-white/70' : 'text-muted')}>Credits the whole {money(Number(invoice.total))}</span>
           </button>
           <button
             onClick={() => setFull(false)}
-            className={cx('flex-1 rounded-sharp border px-3 py-2 text-left text-[12px] transition-colors', !full ? 'border-n950 bg-n950 text-white' : 'border-line bg-white hover:border-n900')}
+            className={cx('flex-1 rounded-sharp border px-3 py-2 text-left text-[12px] transition-colors', !full ? 'border-n950 bg-n950 text-white' : 'border-line bg-card hover:border-n900')}
           >
             <span className="block font-semibold">Partial credit</span>
             <span className={cx('block text-[11px]', !full ? 'text-white/70' : 'text-muted')}>Edit the lines below</span>

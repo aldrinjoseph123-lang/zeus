@@ -2,19 +2,20 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Bell, Building2, Check, ChevronDown, Database, GitBranch, KeyRound, ListTree, Plug, ScrollText,
-  ShieldHalf, SlidersHorizontal, Target as TargetIcon, Trash2, Users as UsersIcon, Plus, RefreshCw, X,
+  Activity, Bell, Building2, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
+  ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, Plus, RefreshCw, X,
 } from 'lucide-react';
-import { api, ApiError, qs } from '../lib/api';
+import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { dateTime, money, quarterOf, relative } from '../lib/format';
 import {
-  Avatar, Badge, Button, Card, CardHeader, Checkbox, ConfirmDialog, DataTable, EmptyState,
-  ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, Textarea, cx, useToast,
+  Avatar, Badge, Button, Card, CardHeader, Checkbox, ConfirmDialog, CopyButton, DataTable, EmptyState,
+  ErrorNote, Field, Input, Loading, Modal, PageHeader, ProgressBar, Select, Textarea, cx, useToast,
 } from '../components/ui';
 import { Toolbar } from '../components/pickers';
 import { AccessDenied } from '../components/Layout';
 import { fileSize } from '../components/attachments';
+import { UtilizationChart } from '../components/charts';
 
 const SECTIONS = [
   { path: 'company', label: 'Company', icon: Building2, module: 'settings' },
@@ -29,7 +30,10 @@ const SECTIONS = [
   // Named for what the tab holds, not for one of the things in it — Microsoft 365,
   // WhatsApp, backups and sign-in all live here.
   { path: 'integrations', label: 'Integrations', icon: Plug, module: 'integrations' },
+  { path: 'backups', label: 'Backups', icon: HardDrive, module: 'backups' },
   { path: 'audit', label: 'Audit trail', icon: ScrollText, module: 'audit' },
+  { path: 'status', label: 'System status', icon: Activity, module: 'audit' },
+  { path: 'logs', label: 'System log', icon: Terminal, module: 'audit' },
   { path: 'profile', label: 'My account', icon: KeyRound, module: '*' },
 ];
 
@@ -91,7 +95,10 @@ export default function Settings() {
             section.path === 'targets' ? <TargetsSection /> :
             section.path === 'notifications' ? <NotificationsSection /> :
             section.path === 'integrations' ? <IntegrationsSection /> :
+            section.path === 'backups' ? <BackupsSection /> :
             section.path === 'audit' ? <AuditSection /> :
+            section.path === 'status' ? <StatusSection /> :
+            section.path === 'logs' ? <SystemLogSection /> :
             <ProfileSection />}
         </div>
       </div>
@@ -129,6 +136,8 @@ const LABELS: Record<string, string> = {
   'numbering.invoicePrefix': 'Invoice number prefix', 'numbering.padding': 'Number padding',
   'backup.enabled': 'Nightly backup enabled', 'backup.cron': 'Backup schedule (cron)', 'backup.retainLocal': 'Local backups to keep',
   'backup.folder': 'OneDrive folder',
+  'syslog.enabled': 'Forward system log to SIEM', 'syslog.host': 'Syslog server host', 'syslog.port': 'Syslog port',
+  'syslog.protocol': 'Protocol (udp or tcp)',
   'auth.allowLocalLogin': 'Allow password sign-in', 'auth.allowEntraLogin': 'Allow Microsoft sign-in',
   'auth.autoProvisionEntra': 'Create users automatically on first Microsoft sign-in',
   'auth.defaultRoleName': 'Default role for new users', 'auth.sessionHours': 'Session length (hours)',
@@ -359,7 +368,7 @@ function ListsSection() {
             <span className="eyebrow">{pretty(key)}</span>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {items(key).map((item) => (
-                <span key={item} className="flex items-center gap-1 rounded-sharp border border-line bg-white px-2 py-1 text-[12px]">
+                <span key={item} className="flex items-center gap-1 rounded-sharp border border-line bg-card px-2 py-1 text-[12px]">
                   {item}
                   {can('settings', 'update') ? (
                     <button onClick={() => setItems(key, items(key).filter((i) => i !== item))} aria-label={`Remove ${item}`} className="text-n300 hover:text-accent">
@@ -645,7 +654,7 @@ function CustomFieldModal({ field, module, onClose }: { field: CustomField | nul
           <Field label="Options" required hint="Press Enter to add each one.">
             <div className="mb-2 flex flex-wrap gap-1.5">
               {form.options.map((option) => (
-                <span key={option} className="flex items-center gap-1 rounded-sharp border border-line bg-white px-2 py-1 text-[12px]">
+                <span key={option} className="flex items-center gap-1 rounded-sharp border border-line bg-card px-2 py-1 text-[12px]">
                   {option}
                   <button onClick={() => setForm({ ...form, options: form.options.filter((o) => o !== option) })} aria-label={`Remove ${option}`} className="text-n300 hover:text-accent">
                     <X size={11} />
@@ -731,7 +740,7 @@ function PipelinesSection() {
             </div>
             <div className="flex flex-wrap gap-1 px-4 pb-3">
               {pipeline.stages.map((stage) => (
-                <span key={stage.id} className="flex items-center gap-1.5 border border-line bg-white px-2 py-1 text-[11px]">
+                <span key={stage.id} className="flex items-center gap-1.5 border border-line bg-card px-2 py-1 text-[11px]">
                   <span className="h-2 w-2" style={{ background: stage.color }} />
                   {stage.name}
                   <span className="text-n400">{stage.probability}%</span>
@@ -759,7 +768,7 @@ function PipelinesSection() {
         >
           <div className="space-y-2">
             {stages.map((stage, index) => (
-              <div key={index} className="grid grid-cols-[1fr_84px_84px_44px_auto] items-end gap-2 border border-line bg-white p-2">
+              <div key={index} className="grid grid-cols-[1fr_84px_84px_44px_auto] items-end gap-2 border border-line bg-card p-2">
                 <Field label={index === 0 ? 'Stage name' : undefined}>
                   <Input value={stage.name} onChange={(e) => setStages(stages.map((s, i) => (i === index ? { ...s, name: e.target.value } : s)))} />
                 </Field>
@@ -806,7 +815,7 @@ function PipelinesSection() {
 
 interface UserRow {
   id: string; email: string; name: string; jobTitle: string | null; whatsappNumber: string | null; avatarColor: string; isActive: boolean;
-  lastLoginAt: string | null; entraOid: string | null;
+  lastLoginAt: string | null; lastLoginIp: string | null; lastLoginDevice: string | null; totpEnabledAt: string | null; entraOid: string | null;
   role: { id: string; name: string }; team: { id: string; name: string } | null; manager: { id: string; name: string } | null;
   _count: { ownedDeals: number; ownedAccounts: number };
 }
@@ -854,7 +863,18 @@ function UsersSection() {
             { key: 'team', header: 'Team', width: '130px', render: (row) => <span className="text-[12px]">{row.team?.name ?? '—'}</span> },
             { key: 'records', header: 'Owns', width: '120px', render: (row) => <span className="tabular text-[12px] text-muted">{row._count.ownedDeals} deals · {row._count.ownedAccounts} accts</span> },
             { key: 'auth', header: 'Sign-in', width: '110px', render: (row) => <span className="text-[11px] text-muted">{row.entraOid ? 'Microsoft' : 'Password'}</span> },
-            { key: 'lastLoginAt', header: 'Last seen', width: '130px', render: (row) => <span className="text-[12px] text-muted">{relative(row.lastLoginAt)}</span> },
+            { key: 'twoFactor', header: '2FA', width: '64px', render: (row) => <Badge tone={row.totpEnabledAt ? 'secure' : 'neutral'}>{row.totpEnabledAt ? 'On' : 'Off'}</Badge> },
+            {
+              key: 'lastLoginAt', header: 'Last login', width: '200px',
+              render: (row) => (
+                <div className="text-[12px] text-muted">
+                  <div>{relative(row.lastLoginAt)}</div>
+                  {row.lastLoginIp || row.lastLoginDevice ? (
+                    <div className="text-[10px] text-n400">{[row.lastLoginIp, row.lastLoginDevice].filter(Boolean).join(' · ')}</div>
+                  ) : null}
+                </div>
+              ),
+            },
             { key: 'isActive', header: '', width: '90px', render: (row) => row.isActive ? null : <Badge tone="accent">Inactive</Badge> },
           ]}
         />
@@ -864,7 +884,7 @@ function UsersSection() {
         <CardHeader title="Teams" subtitle="Used by the &quot;team&quot; permission scope — a rep sees their own team's records." />
         <div className="flex flex-wrap gap-2 px-4 py-3">
           {(teams ?? []).map((team) => (
-            <span key={team.id} className="flex items-center gap-2 border border-line bg-white px-3 py-1.5 text-[12px]">
+            <span key={team.id} className="flex items-center gap-2 border border-line bg-card px-3 py-1.5 text-[12px]">
               <span className="font-semibold">{team.name}</span>
               <Badge tone={team.kind === 'service' ? 'info' : 'neutral'}>{team.kind}</Badge>
               <span className="text-muted">{team._count.users} member{team._count.users === 1 ? '' : 's'}</span>
@@ -1149,7 +1169,7 @@ function ScopeSelect({ value, onChange }: { value: Scope; onChange: (value: Scop
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as Scope)}
-      className="w-full rounded-sharp border border-line bg-white px-1.5 py-1 text-[11px]"
+      className="w-full rounded-sharp border border-line bg-card px-1.5 py-1 text-[11px]"
     >
       {SCOPES.map((scope) => (
         <option key={scope} value={scope}>{scope}</option>
@@ -1421,7 +1441,7 @@ function NotificationsSection() {
                       value={rule.audience}
                       disabled={!can('settings', 'update')}
                       onChange={(e) => update.mutate({ id: rule.id, audience: e.target.value })}
-                      className="rounded-sharp border border-line bg-white px-2 py-1 text-[12px]"
+                      className="rounded-sharp border border-line bg-card px-2 py-1 text-[12px]"
                     >
                       {['owner', 'manager', 'admins', 'all'].map((audience) => (
                         <option key={audience} value={audience}>{audience}</option>
@@ -1562,6 +1582,82 @@ function CollapsibleCard({
   );
 }
 
+function BackupsSection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+
+  const { data: backups } = useQuery({
+    queryKey: ['backups'],
+    queryFn: () => api.get<{ runs: Array<{ id: string; status: string; filename: string | null; sizeBytes: number | null; error: string | null; startedAt: string }>; local: { count: number; bytes: number } }>('/backups'),
+  });
+
+  const backupNow = useMutation({
+    mutationFn: () => api.post<{ filename: string; uploaded: boolean; error?: string }>('/backups/run', { uploadToOneDrive: true }),
+    onSuccess: (r) => {
+      void queryClient.invalidateQueries({ queryKey: ['backups'] });
+      toast.push(r.uploaded ? `${r.filename} uploaded to OneDrive.` : `${r.filename} saved locally. ${r.error ?? ''}`, r.uploaded ? 'success' : 'error');
+    },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Backup failed.', 'error'),
+  });
+
+  const validate = useMutation({
+    mutationFn: () => api.post<{ ok: boolean; filename: string | null; tables: number; note: string }>('/backups/validate', {}),
+    onSuccess: (r) => toast.push(r.ok ? `Valid — ${r.note}` : `Invalid: ${r.note}`, r.ok ? 'success' : 'error'),
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Validate failed.', 'error'),
+  });
+
+  const verify = useMutation({
+    mutationFn: () => api.post<{ ok: boolean; filename: string | null; tables: number; note: string }>('/backups/verify', {}),
+    onSuccess: (r) => toast.push(r.ok ? `Restorable — ${r.note}` : `Verify failed: ${r.note}`, r.ok ? 'success' : 'error'),
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Verify failed.', 'error'),
+  });
+
+  return (
+    <>
+      <Card>
+        <CardHeader
+          title="Backups"
+          subtitle={`${backups?.local.count ?? 0} local copies (${fileSize(backups?.local.bytes ?? 0)}). Nightly pg_dump, gzipped, uploaded to the OneDrive folder set in Integrations.`}
+          actions={
+            <span className="flex flex-wrap gap-2">
+              {can('backups', 'read') ? <Button size="sm" loading={validate.isPending} onClick={() => validate.mutate()}>Validate</Button> : null}
+              {can('backups', 'delete') ? <Button size="sm" loading={verify.isPending} onClick={() => verify.mutate()}>Verify (restore)</Button> : null}
+              {can('backups', 'update') ? <Button size="sm" variant="accent" loading={backupNow.isPending} onClick={() => backupNow.mutate()}>Back up now</Button> : null}
+            </span>
+          }
+        />
+        <div className="border-b border-line bg-sunken px-4 py-2 text-[11px] text-muted">
+          <strong>Validate</strong> checks the file is a genuine gzip’d dump — no database touched.{' '}
+          <strong>Verify (restore)</strong> restores it into a throwaway database to prove it is genuinely restorable, then drops it. Restore needs the privileged Backups permission.
+        </div>
+        {(backups?.runs ?? []).length === 0 ? (
+          <EmptyState title="No backups yet" message="Run one now, or enable the nightly schedule below." />
+        ) : (
+          <DataTable
+            dense
+            rows={backups!.runs}
+            rowKey={(row) => row.id}
+            columns={[
+              { key: 'startedAt', header: 'When', width: '180px', render: (row) => <span className="text-[12px]">{dateTime(row.startedAt)}</span> },
+              { key: 'status', header: 'Status', width: '100px', render: (row) => <Badge tone={row.status === 'success' ? 'secure' : row.status === 'failed' ? 'accent' : 'neutral'}>{row.status}</Badge> },
+              { key: 'filename', header: 'File', render: (row) => <span className="text-[12px]">{row.filename ?? '—'}</span> },
+              { key: 'sizeBytes', header: 'Size', align: 'right', width: '90px', render: (row) => <span className="tabular text-[12px]">{row.sizeBytes ? fileSize(row.sizeBytes) : '—'}</span> },
+              { key: 'error', header: 'Note', render: (row) => row.error ? <span className="text-[11px] text-accent">{row.error}</span> : null },
+            ]}
+          />
+        )}
+      </Card>
+
+      {can('settings', 'update') ? (
+        <div className="mt-3">
+          <SettingsGroup prefix="backup." title="Backup schedule" description="Cron runs on Gulf time. Backups upload to the OneDrive folder set in Integrations." />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function IntegrationsSection() {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -1574,11 +1670,6 @@ function IntegrationsSection() {
   const { data, isLoading } = useQuery({
     queryKey: ['m365'],
     queryFn: () => api.get<M365State>('/integrations/microsoft365'),
-  });
-
-  const { data: backups } = useQuery({
-    queryKey: ['backups'],
-    queryFn: () => api.get<{ runs: Array<{ id: string; status: string; filename: string | null; sizeBytes: number | null; error: string | null; startedAt: string }>; local: { count: number; bytes: number } }>('/backups'),
   });
 
   useEffect(() => { if (data && !form) setForm(data.config); }, [data, form]);
@@ -1608,15 +1699,6 @@ function IntegrationsSection() {
     onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Send failed.', 'error'),
   });
 
-  const backupNow = useMutation({
-    mutationFn: () => api.post<{ filename: string; uploaded: boolean; error?: string }>('/backups/run', { uploadToOneDrive: true }),
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ['backups'] });
-      toast.push(result.uploaded ? `${result.filename} uploaded to OneDrive.` : `${result.filename} saved locally. ${result.error ?? ''}`, result.uploaded ? 'success' : 'error');
-    },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Backup failed.', 'error'),
-  });
-
   const consent = async () => {
     try {
       const { url } = await api.get<{ url: string }>('/integrations/microsoft365/consent-url');
@@ -1642,7 +1724,7 @@ function IntegrationsSection() {
           <p className="eyebrow mb-1.5">Before you start — in the Entra admin centre</p>
           <ol className="list-decimal space-y-1 pl-4 text-[12px] leading-relaxed text-n600">
             <li>App registrations → New registration → name it <strong>Zeus CRM</strong>, single tenant.</li>
-            <li>Authentication → Add a Web platform with redirect URI <code className="bg-white px-1">{data.setup.redirectUri}</code> and <code className="bg-white px-1">{data.setup.consentRedirectUri}</code>.</li>
+            <li>Authentication → Add a Web platform with redirect URI <code className="bg-card px-1">{data.setup.redirectUri}</code> and <code className="bg-card px-1">{data.setup.consentRedirectUri}</code>.</li>
             <li>Certificates &amp; secrets → New client secret → copy the <em>value</em>.</li>
             <li>API permissions → Microsoft Graph → Application permissions → add <strong>{data.setup.requiredApplicationPermissions.join(', ')}</strong>.</li>
             <li>Paste the three IDs below, save, then press <strong>Grant admin consent</strong>.</li>
@@ -1688,36 +1770,8 @@ function IntegrationsSection() {
         ) : null}
       </CollapsibleCard>
 
-      <Card className="mt-3">
-        <CardHeader
-          title="Backups"
-          subtitle={`${backups?.local.count ?? 0} local copies (${fileSize(backups?.local.bytes ?? 0)}). The nightly schedule is set below.`}
-          actions={editable ? <Button size="sm" variant="accent" loading={backupNow.isPending} onClick={() => backupNow.mutate()}>Back up now</Button> : undefined}
-        />
-        {(backups?.runs ?? []).length === 0 ? (
-          <EmptyState title="No backups yet" message="Run one now, or enable the nightly schedule below." />
-        ) : (
-          <DataTable
-            dense
-            rows={backups!.runs}
-            rowKey={(row) => row.id}
-            columns={[
-              { key: 'startedAt', header: 'When', width: '180px', render: (row) => <span className="text-[12px]">{dateTime(row.startedAt)}</span> },
-              { key: 'status', header: 'Status', width: '100px', render: (row) => <Badge tone={row.status === 'success' ? 'secure' : row.status === 'failed' ? 'accent' : 'neutral'}>{row.status}</Badge> },
-              { key: 'filename', header: 'File', render: (row) => <span className="text-[12px]">{row.filename ?? '—'}</span> },
-              { key: 'sizeBytes', header: 'Size', align: 'right', width: '90px', render: (row) => <span className="tabular text-[12px]">{row.sizeBytes ? fileSize(row.sizeBytes) : '—'}</span> },
-              { key: 'error', header: 'Note', render: (row) => row.error ? <span className="text-[11px] text-accent">{row.error}</span> : null },
-            ]}
-          />
-        )}
-      </Card>
-
       <div className="mt-3">
         <WhatsappPanel />
-      </div>
-
-      <div className="mt-3">
-        <SettingsGroup prefix="backup." title="Backup schedule" description="Cron runs on Gulf time. Backups upload to the OneDrive folder above." />
       </div>
 
       <div className="mt-3">
@@ -1843,7 +1897,7 @@ function WebhooksPanel() {
                   onClick={() => setEvents((current) => current.includes(e.event) ? current.filter((x) => x !== e.event) : [...current, e.event])}
                   className={cx(
                     'rounded-sharp border px-2 py-1 text-[11px] transition-colors',
-                    events.includes(e.event) ? 'border-n950 bg-n950 text-white' : 'border-line bg-white text-muted hover:border-n900 hover:text-ink',
+                    events.includes(e.event) ? 'border-n950 bg-n950 text-white' : 'border-line bg-card text-muted hover:border-n900 hover:text-ink',
                   )}
                 >
                   {e.label}
@@ -2115,6 +2169,178 @@ function AuditSection() {
         </>
       )}
     </Card>
+  );
+}
+
+// ── system status ───────────────────────────────────────────────────────────────
+
+interface SystemStatus {
+  ok: boolean;
+  time: string;
+  process: { uptimeSeconds: number; startedAt: string; node: string; pid: number; rssMb: number; heapUsedMb: number };
+  components: Array<{ key: string; label: string; ok: boolean; detail: string; latencyMs?: number; uptime: { day: number; week: number } | null }>;
+  resources: {
+    current: { cpuPct: number; memPct: number; diskPct: number; totalMemMb: number };
+    history: Array<{ at: string; cpuPct: number; memPct: number; diskPct: number }>;
+  };
+}
+
+function uptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400), h = Math.floor((seconds % 86400) / 3600), m = Math.floor((seconds % 3600) / 60);
+  return [d && `${d}d`, (d || h) && `${h}h`, `${m}m`].filter(Boolean).join(' ');
+}
+
+function StatusSection() {
+  const { data, isLoading, dataUpdatedAt } = useQuery({
+    queryKey: ['system-status'],
+    queryFn: () => api.get<SystemStatus>('/system/status'),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+
+  if (isLoading || !data) return <Card><Loading /></Card>;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Card>
+        <CardHeader
+          title="System status"
+          subtitle={`Live component health · refreshed ${relative(new Date(dataUpdatedAt).toISOString())}`}
+          actions={<Badge tone={data.ok ? 'secure' : 'accent'}>{data.ok ? 'All systems operational' : 'Degraded'}</Badge>}
+        />
+        <ul>
+          {data.components.map((c) => (
+            <li key={c.key} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
+              <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', c.ok ? 'bg-[#22a559]' : 'bg-[var(--red-500,#e11d2e)]')} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold">{c.label}</p>
+                <p className="truncate text-[11px] text-muted">{c.detail}</p>
+              </div>
+              {c.uptime ? <span className="hidden tabular text-[11px] text-muted sm:inline" title="Uptime — last 24h / 7d">{c.uptime.day}% · {c.uptime.week}%</span> : null}
+              {typeof c.latencyMs === 'number' ? <span className="tabular text-[11px] text-n400">{c.latencyMs} ms</span> : null}
+              <Badge tone={c.ok ? 'secure' : 'accent'}>{c.ok ? 'Up' : 'Down'}</Badge>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <Card>
+        <CardHeader title="Compute utilisation" subtitle="CPU, memory and disk on the server — sampled every 5 minutes." />
+        <div className="grid gap-4 px-4 py-4 sm:grid-cols-3">
+          {([
+            { label: 'CPU', pct: data.resources.current.cpuPct },
+            { label: 'RAM', pct: data.resources.current.memPct, sub: `of ${(data.resources.current.totalMemMb / 1024).toFixed(1)} GB` },
+            { label: 'Disk', pct: data.resources.current.diskPct },
+          ] as Array<{ label: string; pct: number; sub?: string }>).map(({ label, pct, sub }) => (
+            <div key={label}>
+              <div className="mb-1 flex items-baseline justify-between">
+                <span className="eyebrow">{label}</span>
+                <span className="tabular text-[13px] font-semibold">{pct}%</span>
+              </div>
+              <ProgressBar value={pct} tone={pct >= 90 ? 'accent' : pct >= 75 ? 'watch' : 'secure'} />
+              {sub ? <p className="mt-1 text-[10px] text-muted">{sub}</p> : null}
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-line px-2 py-3">
+          <UtilizationChart data={data.resources.history} />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Runtime" subtitle="The API process serving this app." />
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-4 sm:grid-cols-4">
+          {[
+            ['Uptime', uptime(data.process.uptimeSeconds)],
+            ['Node', data.process.node],
+            ['Memory (RSS)', `${data.process.rssMb} MB`],
+            ['Heap used', `${data.process.heapUsedMb} MB`],
+          ].map(([k, v]) => (
+            <div key={k}>
+              <dt className="eyebrow mb-0.5">{k}</dt>
+              <dd className="tabular text-[13px] font-semibold">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
+    </div>
+  );
+}
+
+// ── system log ──────────────────────────────────────────────────────────────────
+
+const LOG_TONE: Record<string, 'accent' | 'watch' | 'neutral'> = { error: 'accent', warn: 'watch', info: 'neutral' };
+
+function SystemLogSection() {
+  const { can } = useAuth();
+  const [page, setPage] = useState(1);
+  const [level, setLevel] = useState('');
+  const [source, setSource] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['system-logs', page, level, source],
+    queryFn: () => api.get<{ data: Array<{ id: string; level: string; source: string; message: string; context: unknown; at: string }>; total: number; totalPages: number }>(
+      `/system/logs${qs({ page, level, source, pageSize: 50 })}`,
+    ),
+    refetchInterval: 30_000,
+  });
+
+  return (
+    <div className="flex flex-col gap-3">
+    <Card>
+      <CardHeader
+        title="System log"
+        subtitle="Technical events — errors, failed jobs, backup and integration trouble. Kept 30 days."
+        actions={
+          <Button size="sm" disabled={!data?.data.length} onClick={() => download(`/system/logs/export${qs({ level, source })}`, 'zeus-system-log.xlsx')}>
+            Export
+          </Button>
+        }
+      />
+      <Toolbar>
+        <Select value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }} placeholder="All levels"
+          options={['info', 'warn', 'error'].map((v) => ({ value: v, label: v }))} className="w-[140px]" />
+        <Select value={source} onChange={(e) => { setSource(e.target.value); setPage(1); }} placeholder="All sources"
+          options={['http', 'backup', 'cron', 'integration', 'auth', 'app'].map((v) => ({ value: v, label: v }))} className="w-[150px]" />
+      </Toolbar>
+
+      {isLoading ? (
+        <Loading />
+      ) : (data?.data ?? []).length === 0 ? (
+        <EmptyState title="Nothing logged" message="No system events match. A quiet log is a healthy sign." />
+      ) : (
+        <>
+          <ol className="max-h-[560px] overflow-y-auto">
+            {(data?.data ?? []).map((e) => (
+              <li key={e.id} className="flex items-start gap-3 border-b border-line px-4 py-2.5">
+                <Badge tone={LOG_TONE[e.level] ?? 'neutral'}>{e.level}</Badge>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-[13px]"><span className="text-muted">[{e.source}]</span> {e.message}</p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">{dateTime(e.at)}</p>
+                </div>
+                <CopyButton value={`[${e.source}] ${e.message}`} label="" className="mt-0.5 shrink-0" />
+              </li>
+            ))}
+          </ol>
+          <div className="flex items-center justify-between border-t border-line px-3 py-2">
+            <span className="text-xs text-muted">{data?.total ?? 0} entries</span>
+            <div className="flex gap-1">
+              <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
+              <Button size="sm" variant="ghost" disabled={page >= (data?.totalPages ?? 1)} onClick={() => setPage(page + 1)}>Next</Button>
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+
+    {can('settings', 'update') ? (
+      <SettingsGroup
+        prefix="syslog."
+        title="Forward to SIEM"
+        description="Stream every system-log event to a syslog server (RFC5424 over UDP or TCP) for central monitoring. Protocol accepts udp or tcp."
+      />
+    ) : null}
+    </div>
   );
 }
 

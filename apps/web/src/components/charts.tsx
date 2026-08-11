@@ -33,7 +33,7 @@ function ChartTooltip({ active, payload, label, valueFormat = 'money' }: {
   if (!active || !payload?.length) return null;
   const format = (v: number) => (valueFormat === 'money' ? money(v) : valueFormat === 'percent' ? `${v.toFixed(1)}%` : fmtNumber(v));
   return (
-    <div className="border border-line bg-white px-2.5 py-2 shadow-[var(--shadow-md)]">
+    <div className="border border-line bg-card px-2.5 py-2 shadow-[var(--shadow-md)]">
       {label ? <div className="eyebrow mb-1">{label}</div> : null}
       {payload.map((entry) => (
         <div key={entry.name} className="flex items-center gap-2 text-[12px]">
@@ -53,6 +53,33 @@ function Frame({ height = 260, children }: { height?: number; children: React.Re
     <ResponsiveContainer width="100%" height={height}>
       {children}
     </ResponsiveContainer>
+  );
+}
+
+// ── compute utilisation ─────────────────────────────────────────────────────────
+
+/** CPU / RAM / disk % over time. Colours chosen to read on both light and dark. */
+export function UtilizationChart({ data, height = 200 }: {
+  data: Array<{ at: string; cpuPct: number; memPct: number; diskPct: number }>;
+  height?: number;
+}) {
+  if (!data.length) {
+    return <EmptyState title="No samples yet" message="Utilisation is sampled every 5 minutes — the graph fills in as history builds." />;
+  }
+  const rows = data.map((d) => ({ ...d, t: new Date(d.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) }));
+  return (
+    <Frame height={height}>
+      <ComposedChart data={rows} margin={{ top: 8, right: 10, left: -16, bottom: 0 }}>
+        <CartesianGrid stroke={LINE} strokeDasharray="2 4" vertical={false} />
+        <XAxis dataKey="t" {...axis} minTickGap={44} />
+        <YAxis domain={[0, 100]} unit="%" width={42} {...axis} />
+        <Tooltip content={<ChartTooltip valueFormat="percent" />} />
+        <Legend wrapperStyle={legendStyle} />
+        <Line type="monotone" dataKey="cpuPct" name="CPU" stroke="#e11d2e" strokeWidth={2} dot={false} {...noAnim} />
+        <Line type="monotone" dataKey="memPct" name="RAM" stroke="#2563a8" strokeWidth={2} dot={false} {...noAnim} />
+        <Line type="monotone" dataKey="diskPct" name="Disk" stroke="#d97a1f" strokeWidth={2} dot={false} {...noAnim} />
+      </ComposedChart>
+    </Frame>
   );
 }
 

@@ -2,7 +2,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState,
   type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from 'react';
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Info, Loader2, Search, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Info, Loader2, Search, X } from 'lucide-react';
 
 /**
  * Class joiner with last-wins resolution for sizing utilities.
@@ -36,9 +36,9 @@ type ButtonVariant = 'primary' | 'accent' | 'ghost' | 'outline' | 'danger';
 const BUTTON_STYLES: Record<ButtonVariant, string> = {
   primary: 'bg-n950 text-white hover:bg-n800 border border-n950',
   accent: 'bg-accent text-white hover:bg-accent-hover border border-accent',
-  outline: 'bg-white text-ink border border-n900 hover:bg-n50',
+  outline: 'bg-card text-ink border border-n900 hover:bg-n50',
   ghost: 'bg-transparent text-muted border border-transparent hover:bg-n100 hover:text-ink',
-  danger: 'bg-white text-accent border border-accent hover:bg-accent hover:text-white',
+  danger: 'bg-card text-accent border border-accent hover:bg-accent hover:text-white',
 };
 
 export function Button({
@@ -151,8 +151,8 @@ export function StatTile({
 // ── form controls ─────────────────────────────────────────────────────────────
 
 const CONTROL =
-  'w-full rounded-sharp border border-line bg-white px-3 py-2 text-[13px] text-ink placeholder:text-n400 ' +
-  'focus:border-n900 disabled:bg-n50 disabled:text-muted';
+  'w-full rounded-sharp border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-n400 ' +
+  'focus:border-ink disabled:bg-sunken disabled:text-muted';
 
 export function Field({
   label, hint, error, required, children, className,
@@ -302,8 +302,36 @@ export function ErrorNote({ error }: { error: unknown }) {
   return (
     <div className="flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--red-700)]">
       <AlertTriangle size={15} className="mt-px shrink-0" />
-      <span>{message}</span>
+      <span className="min-w-0 flex-1 break-words">{message}</span>
+      <CopyButton value={message} label="" className="shrink-0 text-[var(--red-700)]" />
     </div>
+  );
+}
+
+/**
+ * Copy a value to the clipboard with a moment's "copied" acknowledgement. Handy for
+ * long, error-prone strings — references, IDs, and the Microsoft AADSTS/correlation
+ * codes support teams ask to be read back verbatim.
+ */
+export function CopyButton({ value, label = 'Copy', className }: { value: string; label?: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        } catch { /* clipboard blocked (insecure context) — nothing to do */ }
+      }}
+      className={cx('inline-flex items-center gap-1 text-[11px] text-muted transition-colors hover:text-n700', className)}
+      title={copied ? 'Copied' : label || 'Copy'}
+      aria-label={copied ? 'Copied' : label || 'Copy'}
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+      {label ? <span>{copied ? 'Copied' : label}</span> : null}
+    </button>
   );
 }
 
@@ -396,7 +424,7 @@ export interface Column<T> {
 }
 
 export function DataTable<T>({
-  columns, rows, rowKey, onRowClick, sortBy, sortDir, onSort, empty, dense,
+  columns, rows, rowKey, onRowClick, sortBy, sortDir, onSort, empty, dense, selection,
 }: {
   columns: Array<Column<T>>;
   rows: T[];
@@ -407,14 +435,24 @@ export function DataTable<T>({
   onSort?: (key: string) => void;
   empty?: ReactNode;
   dense?: boolean;
+  /** Optional row selection — pass to get a leading checkbox column with select-all. */
+  selection?: { selected: Set<string>; onToggle: (id: string) => void; onToggleAll: (ids: string[]) => void };
 }) {
   if (rows.length === 0 && empty) return <>{empty}</>;
+
+  const ids = rows.map((r, i) => rowKey(r, i));
+  const allChecked = selection ? ids.length > 0 && ids.every((id) => selection.selected.has(id)) : false;
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] border-collapse text-[13px]">
         <thead>
           <tr className="bg-n950 text-white">
+            {selection ? (
+              <th className="w-9 px-3 py-2">
+                <input type="checkbox" checked={allChecked} onChange={() => selection.onToggleAll(ids)} aria-label="Select all rows" />
+              </th>
+            ) : null}
             {columns.map((column) => (
               <th
                 key={column.key}
@@ -444,6 +482,16 @@ export function DataTable<T>({
                 onRowClick && 'cursor-pointer hover:bg-accent-soft',
               )}
             >
+              {selection ? (
+                <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selection.selected.has(rowKey(row, index))}
+                    onChange={() => selection.onToggle(rowKey(row, index))}
+                    aria-label="Select row"
+                  />
+                </td>
+              ) : null}
               {columns.map((column) => (
                 <td
                   key={column.key}
@@ -542,9 +590,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={toast.id}
             className={cx(
               'pointer-events-auto flex items-start gap-2 border px-3 py-2.5 text-[13px] shadow-[var(--shadow-lg)]',
-              toast.tone === 'error' ? 'border-[var(--red-300)] bg-white text-[var(--red-700)]'
-                : toast.tone === 'info' ? 'border-line bg-white text-ink'
-                : 'border-[#b8dfc8] bg-white text-[#14653a]',
+              toast.tone === 'error' ? 'border-[var(--red-300)] bg-card text-[var(--red-700)]'
+                : toast.tone === 'info' ? 'border-line bg-card text-ink'
+                : 'border-[#b8dfc8] bg-card text-[#14653a]',
             )}
           >
             {toast.tone === 'error' ? <AlertTriangle size={15} className="mt-px shrink-0" /> : toast.tone === 'info' ? <Info size={15} className="mt-px shrink-0" /> : <Check size={15} className="mt-px shrink-0" />}

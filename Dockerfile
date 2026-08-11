@@ -1,7 +1,7 @@
 # Zeus CRM — single image: API + built frontend.
 # Multi-stage so the runtime layer carries no toolchain.
 
-FROM node:22-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 
 # postgresql-client gives us pg_dump for the OneDrive backup job.
@@ -26,7 +26,7 @@ RUN npm run build --workspace=apps/api \
 RUN npm prune --omit=dev
 
 # ── runtime ───────────────────────────────────────────────────────────────────
-FROM node:22-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 

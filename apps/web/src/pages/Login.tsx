@@ -125,7 +125,7 @@ export default function Login() {
                 <>
                   <a
                     href={`/api/auth/microsoft/start?next=${encodeURIComponent(next)}`}
-                    className="flex w-full items-center justify-center gap-2.5 rounded-sharp border border-n900 bg-white px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors hover:bg-n50"
+                    className="flex w-full items-center justify-center gap-2.5 rounded-sharp border border-n900 bg-card px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors hover:bg-n50"
                   >
                     <svg width="15" height="15" viewBox="0 0 23 23" aria-hidden="true">
                       <path fill="#f35325" d="M1 1h10v10H1z" />

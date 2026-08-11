@@ -167,6 +167,12 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'backup.cron': '0 2 * * *',
   'backup.retainLocal': 7,
 
+  // System-log forwarding to a syslog server / SIEM (RFC5424 over UDP or TCP).
+  'syslog.enabled': false,
+  'syslog.host': '',
+  'syslog.port': 514,
+  'syslog.protocol': 'udp',
+
   'branding.productName': 'Zeus',
   'branding.tagline': 'Revenue command centre',
 

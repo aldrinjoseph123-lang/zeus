@@ -64,6 +64,49 @@
   --font-sans: 'Chakra Petch', system-ui, sans-serif;
 }
 
+/**
+ * Dark theme. Only the *semantic* tokens flip — surfaces, text, borders — because
+ * the Tailwind utilities inline them as var() references. The primitives (neutral
+ * ramp, reds) stay put, so the already-dark nav and white button text are unchanged.
+ * ponytail: a handful of components still use literal text-n500/n600 / bg-white
+ * instead of the semantic tokens; those keep their light values until migrated.
+ */
+:root[data-theme='dark'] {
+  --surface-canvas: var(--neutral-950);
+  --surface-card: var(--neutral-900);
+  --surface-sunken: #161616;
+  --surface-inverse: var(--neutral-50);
+  --surface-overlay: rgba(0, 0, 0, 0.72);
+
+  --text-primary: #ededed;
+  --text-secondary: #a3a3a3;
+  --text-inverse: var(--neutral-950);
+
+  --border-default: #2a2a2a;
+  --border-strong: #e0e0e0;
+
+  /*
+   * The neutral ramp is overwhelmingly used as *text* (text-n400/500/600 as muted
+   * copy). On a dark surface those dark greys are unreadable, so lift the mid/dark
+   * shades to light greys. Only three spots use these as a background/border, and a
+   * lighter chip there is harmless. Backgrounds (n50/n100, n800/900/950) are left as
+   * they are so the dark nav and headers stay dark.
+   */
+  --neutral-300: #c4c4c4;
+  --neutral-400: #a0a0a0;
+  --neutral-500: #b0b0b0;
+  --neutral-600: #c4c4c4;
+  --neutral-700: #d8d8d8;
+
+  /* accent-soft is a very light pink in light mode; dark it to a muted red wash. */
+  --red-50: #2a1416;
+
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
 @theme inline {
   --color-canvas: var(--surface-canvas);
   --color-card: var(--surface-card);

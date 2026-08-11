@@ -3,6 +3,7 @@ import { env } from './env.js';
 import { prisma } from './db.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.js';
 import { ensureNotificationRules } from './services/notify.js';
+import { ensureRoleModules } from './auth/rbac.js';
 
 /**
  * Process entry point. Everything that makes the API *work* lives in app.ts; this file
@@ -25,8 +26,10 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 try {
   const added = await ensureNotificationRules();
   if (added) app.log.info(`added ${added} notification rule(s) for new events`);
+  const patched = await ensureRoleModules();
+  if (patched) app.log.info(`backfilled new permission modules into ${patched} role(s)`);
 } catch (err) {
-  app.log.error(`could not sync notification rules: ${(err as Error).message}`);
+  app.log.error(`could not sync notification rules or role modules: ${(err as Error).message}`);
 }
 
 await app.listen({ port: env.PORT, host: '0.0.0.0' });

@@ -11,6 +11,7 @@ import { corsOrigins, env, isProd } from './env.js';
 import { prisma } from './db.js';
 import { loadSessionUser } from './auth/session.js';
 import { HttpError, sendError } from './lib/http.js';
+import { logSystem } from './services/systemLog.js';
 
 import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
@@ -33,6 +34,7 @@ import renewalRoutes from './routes/renewals.js';
 import priceBookRoutes from './routes/priceBook.js';
 import adminRoutes from './routes/admin.js';
 import integrationRoutes from './routes/integrations.js';
+import systemRoutes from './routes/system.js';
 
 /**
  * Builds the API without starting it.
@@ -43,9 +45,12 @@ import integrationRoutes from './routes/integrations.js';
  */
 export async function buildApp() {
   const app = Fastify({
-    logger: isProd
-      ? { level: 'info' }
-      : { level: 'info', transport: undefined },
+    // Tests drive hundreds of requests; their per-request log lines drown the results.
+    logger: process.env.NODE_ENV === 'test'
+      ? false
+      : isProd
+        ? { level: 'info' }
+        : { level: 'info', transport: undefined },
     bodyLimit: 25 * 1024 * 1024,
     trustProxy: true,
   });
@@ -94,7 +99,13 @@ export async function buildApp() {
     }
     request.log.error(error);
     const err = error as { statusCode?: number; message?: string };
-    return reply.status(err.statusCode ?? 500).send({ error: err.message || 'Something went wrong.' });
+    const status = err.statusCode ?? 500;
+    if (status >= 500) {
+      logSystem('error', 'http', err.message || 'Unhandled error', {
+        method: request.method, url: request.url.split('?')[0], status,
+      });
+    }
+    return reply.status(status).send({ error: err.message || 'Something went wrong.' });
   });
 
   app.get('/api/health', async () => {
@@ -123,6 +134,7 @@ export async function buildApp() {
   await app.register(priceBookRoutes);
   await app.register(adminRoutes);
   await app.register(integrationRoutes);
+  await app.register(systemRoutes);
 
   // In production the API also serves the built SPA, so one container is the whole app.
   const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');

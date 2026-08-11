@@ -341,7 +341,7 @@ function ConvertModal({ lead, onClose }: { lead: LeadFull; onClose: () => void }
           </Field>
         ) : null}
 
-        <label className="flex items-center gap-2 border border-line bg-white px-3 py-2.5 text-[13px]">
+        <label className="flex items-center gap-2 border border-line bg-card px-3 py-2.5 text-[13px]">
           <input type="checkbox" checked={form.createDeal} onChange={(e) => setForm({ ...form, createDeal: e.target.checked })} className="h-4 w-4 accent-[var(--red-500)]" />
           Also create a deal in the default pipeline
         </label>

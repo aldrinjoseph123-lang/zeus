@@ -9,6 +9,7 @@ import { closeChallenge, openChallenge, readChallenge, verifySecondFactor } from
 import * as twoFactor from '../services/twoFactor.js';
 import { badRequest, clientIp, HttpError } from '../lib/http.js';
 import { clearSession, issueSession } from '../auth/session.js';
+import { recordLogin } from '../services/loginTelemetry.js';
 import { authorizeUrl, adminConsentUrl, exchangeCode, verifyState } from '../auth/entra.js';
 import { getM365, markM365 } from '../services/graph.js';
 
@@ -65,6 +66,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await issueSession(reply, user.id);
     await audit({ action: 'login', entity: 'User', entityId: user.id, summary: `${user.name} signed in with a password`, ip: clientIp(request) });
+    recordLogin(user, clientIp(request), request.headers['user-agent']);
     return { ok: true };
   });
 
@@ -96,6 +98,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
       summary: `${user.name} signed in with a password and ${factor === 'recovery' ? 'a recovery code' : 'an authenticator code'}`,
       ip: clientIp(request),
     });
+    recordLogin(user, clientIp(request), request.headers['user-agent']);
 
     // Spending a recovery code is worth saying out loud — it usually means a lost phone.
     return { ok: true, usedRecoveryCode: factor === 'recovery' };
@@ -194,6 +197,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await issueSession(reply, user.id);
     await audit({ action: 'login', entity: 'User', entityId: user.id, summary: `${user.name} signed in with Microsoft`, ip: clientIp(request) });
+    recordLogin(user, clientIp(request), request.headers['user-agent']);
     return reply.redirect(`${env.APP_URL}${state.nextPath}`);
   });
 

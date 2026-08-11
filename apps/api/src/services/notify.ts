@@ -37,6 +37,8 @@ export const NOTIFICATION_EVENTS = [
   { event: 'backup_failed', label: 'Backup failed', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
   { event: 'fx_rate_suspect', label: 'Exchange rate looked wrong and was refused', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
   { event: 'target_at_risk', label: 'Quarterly target at risk', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
+  { event: 'component_down', label: 'A system component went down', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
+  { event: 'component_recovered', label: 'A system component recovered', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number]['event'];
@@ -107,7 +109,7 @@ export async function ensureNotificationRules(): Promise<number> {
         teams: false,
         whatsapp: false,
         thresholdDays: event.thresholdDays,
-        audience: ['deal_won', 'deal_lost', 'backup_failed', 'target_at_risk', 'invoice_overdue'].includes(event.event)
+        audience: ['deal_won', 'deal_lost', 'backup_failed', 'target_at_risk', 'invoice_overdue', 'component_down', 'component_recovered'].includes(event.event)
           ? 'admins'
           : 'owner',
       },

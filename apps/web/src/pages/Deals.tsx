@@ -6,10 +6,11 @@ import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, daysBetween, money, moneyShort, percent } from '../lib/format';
 import {
-  Badge, Button, Card, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal,
+  Badge, Button, Card, ConfirmDialog, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Select, Textarea, useToast, cx, SearchInput, Pagination, useDebounced,
 } from '../components/ui';
 import { CustomFieldInputs, type CustomValues } from '../components/customFields';
+import { SavedViews } from '../components/savedViews';
 import { AccountPicker, ContactPicker, DuplicateWarning, ListSelect, OwnerSelect, Toolbar, type DuplicateMatch } from '../components/pickers';
 import { useUndo } from '../lib/undo';
 
@@ -44,7 +45,7 @@ export default function Deals() {
         description="Drag a card to move it through the pipeline. Every move is recorded."
         actions={
           <>
-            <div className="flex border border-line bg-white">
+            <div className="flex border border-line bg-card">
               <button
                 onClick={() => setView('board')}
                 className={cx('flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]', view === 'board' ? 'bg-n950 text-white' : 'text-muted hover:bg-n50')}
@@ -173,7 +174,7 @@ function DealBoard() {
                       onDragEnd={() => setDragging(null)}
                       onClick={() => navigate(`/deals/${deal.id}`)}
                       className={cx(
-                        'cursor-pointer border border-line bg-white p-2.5 transition-shadow hover:shadow-[var(--shadow-md)]',
+                        'cursor-pointer border border-line bg-card p-2.5 transition-shadow hover:shadow-[var(--shadow-md)]',
                         dragging === deal.id && 'opacity-40',
                         stuck && 'border-l-[3px] border-l-[var(--status-watch)]',
                       )}
@@ -261,7 +262,7 @@ function LostReasonModal({ onClose, onConfirm }: { onClose: () => void; onConfir
 
 function DealList() {
   const navigate = useNavigate();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const toast = useToast();
 
   const [search, setSearch] = useState('');
@@ -273,6 +274,31 @@ function DealList() {
   const [sortBy, setSortBy] = useState('amount');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const debounced = useDebounced(search, 300);
+  const queryClient = useQueryClient();
+
+  // Bulk selection across the visible page.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOwner, setBulkOwner] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const clearSelection = () => setSelected(new Set());
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = (ids: string[]) => setSelected((s) => (ids.every((id) => s.has(id)) ? new Set() : new Set(ids)));
+
+  const afterBulk = (msg: string) => {
+    clearSelection();
+    void queryClient.invalidateQueries({ queryKey: ['deals'] });
+    toast.push(msg);
+  };
+  const bulkAssign = useMutation({
+    mutationFn: () => api.post<{ updated: number; skipped: number }>('/deals/bulk-assign', { ids: [...selected], ownerId: bulkOwner }),
+    onSuccess: (r) => { setBulkOwner(''); afterBulk(`${r.updated} reassigned${r.skipped ? `, ${r.skipped} skipped` : ''}.`); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not reassign.', 'error'),
+  });
+  const bulkDelete = useMutation({
+    mutationFn: () => api.post<{ deleted: number; skipped: number }>('/deals/bulk-delete', { ids: [...selected] }),
+    onSuccess: (r) => { setConfirmDelete(false); afterBulk(`${r.deleted} deleted${r.skipped ? `, ${r.skipped} skipped` : ''}.`); },
+    onError: (err) => { setConfirmDelete(false); toast.push(err instanceof ApiError ? err.message : 'Could not delete.', 'error'); },
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['deals', debounced, status, ownerId, type, channel, page, sortBy, sortDir],
@@ -303,18 +329,50 @@ function DealList() {
         <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1); }} placeholder="All types" options={[{ value: 'PRODUCT', label: 'Reselling' }, { value: 'SERVICE', label: 'Managed service' }, { value: 'MIXED', label: 'Mixed' }]} className="w-[150px]" />
         <Select value={channel} onChange={(e) => { setChannel(e.target.value); setPage(1); }} placeholder="All channels" options={[{ value: 'true', label: 'Partner-sourced' }, { value: 'false', label: 'Direct' }]} className="w-[150px]" />
         <OwnerSelect value={ownerId} onChange={(v) => { setOwnerId(v); setPage(1); }} className="w-[160px]" />
-        {can('deals', 'export') ? (
-          <div className="ml-auto flex gap-2">
-            <Button size="sm" icon={<Download size={13} />} onClick={() => exportList('xlsx')}>Excel</Button>
-            <Button size="sm" icon={<Download size={13} />} onClick={() => exportList('pdf')}>PDF</Button>
-          </div>
-        ) : null}
+        <div className="ml-auto flex gap-2">
+          <SavedViews
+            storageKey={`zeus.views.deals.${user?.id ?? 'anon'}`}
+            current={{ search, status, ownerId, type, channel, sortBy, sortDir }}
+            onApply={(f) => {
+              setSearch((f.search as string) ?? '');
+              setStatus((f.status as string) ?? 'OPEN');
+              setOwnerId((f.ownerId as string) ?? '');
+              setType((f.type as string) ?? '');
+              setChannel((f.channel as string) ?? '');
+              setSortBy((f.sortBy as string) ?? 'amount');
+              setSortDir((f.sortDir as 'asc' | 'desc') ?? 'desc');
+              setPage(1);
+            }}
+          />
+          {can('deals', 'export') ? (
+            <>
+              <Button size="sm" icon={<Download size={13} />} onClick={() => exportList('xlsx')}>Excel</Button>
+              <Button size="sm" icon={<Download size={13} />} onClick={() => exportList('pdf')}>PDF</Button>
+            </>
+          ) : null}
+        </div>
       </Toolbar>
 
       {data?.totals ? (
         <div className="flex flex-wrap gap-6 border-b border-line bg-sunken px-3 py-2">
           <span className="text-[12px] text-muted">Net total <strong className="tabular ml-1 text-[14px] text-ink">{money(data.totals.net)}</strong></span>
           <span className="text-[12px] text-muted">Incl. VAT <strong className="tabular ml-1 text-[14px] text-ink">{money(data.totals.gross)}</strong></span>
+        </div>
+      ) : null}
+
+      {selected.size > 0 && (can('deals', 'update') || can('deals', 'delete')) ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-accent-soft px-3 py-2">
+          <span className="text-[12px] font-semibold">{selected.size} selected</span>
+          {can('deals', 'update') ? (
+            <span className="flex items-center gap-1.5">
+              <OwnerSelect value={bulkOwner} onChange={setBulkOwner} className="w-[170px]" />
+              <Button size="sm" disabled={!bulkOwner || bulkAssign.isPending} loading={bulkAssign.isPending} onClick={() => bulkAssign.mutate()}>Assign</Button>
+            </span>
+          ) : null}
+          {can('deals', 'delete') ? (
+            <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>Delete</Button>
+          ) : null}
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={clearSelection}>Clear</Button>
         </div>
       ) : null}
 
@@ -326,6 +384,7 @@ function DealList() {
             rows={data?.data ?? []}
             rowKey={(row) => row.id}
             onRowClick={(row) => navigate(`/deals/${row.id}`)}
+            selection={can('deals', 'update') || can('deals', 'delete') ? { selected, onToggle: toggle, onToggleAll: toggleAll } : undefined}
             sortBy={sortBy}
             sortDir={sortDir}
             onSort={sort}
@@ -364,6 +423,17 @@ function DealList() {
           <Pagination page={data?.page ?? 1} totalPages={data?.totalPages ?? 1} total={data?.total ?? 0} onPage={setPage} />
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete selected deals?"
+        message={`${selected.size} deal${selected.size === 1 ? '' : 's'} will be removed. You can restore them from the audit trail.`}
+        confirmLabel="Delete"
+        danger
+        loading={bulkDelete.isPending}
+        onConfirm={() => bulkDelete.mutate()}
+        onClose={() => setConfirmDelete(false)}
+      />
     </Card>
   );
 }

@@ -75,7 +75,7 @@ export function Lookup<T extends { id: string }>({
 
   if (value && label && !open) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded-sharp border border-line bg-white px-3 py-2 text-[13px]">
+      <div className="flex items-center justify-between gap-2 rounded-sharp border border-line bg-card px-3 py-2 text-[13px]">
         <span className="truncate">{label}</span>
         <span className="flex shrink-0 items-center gap-1">
           {allowClear && !disabled ? (
@@ -102,7 +102,7 @@ export function Lookup<T extends { id: string }>({
         onChange={(e) => { setTerm(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="w-full rounded-sharp border border-line bg-white px-3 py-2 text-[13px] placeholder:text-n400 focus:border-n900 disabled:bg-n50"
+        className="w-full rounded-sharp border border-line bg-card px-3 py-2 text-[13px] placeholder:text-n400 focus:border-n900 disabled:bg-n50"
       />
       {isFetching ? <span className="absolute right-2.5 top-1/2 -translate-y-1/2"><Spinner size={13} /></span> : null}
 
@@ -110,7 +110,7 @@ export function Lookup<T extends { id: string }>({
         <div
           ref={menuRef}
           style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
-          className="z-50 max-h-64 overflow-y-auto border border-line bg-white shadow-[var(--shadow-lg)]"
+          className="z-50 max-h-64 overflow-y-auto border border-line bg-card shadow-[var(--shadow-lg)]"
         >
           {(data?.data ?? []).length === 0 ? (
             <p className="px-3 py-3 text-center text-xs text-muted">{isFetching ? 'Searching…' : 'No matches.'}</p>

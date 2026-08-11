@@ -171,7 +171,7 @@ export function PaymentLedger({ payments, currency = 'AED', onDeleted }: {
       <ul>
         {payments.map((payment) => (
           <li key={payment.id} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0">
-            <span className={cx('flex h-8 w-8 shrink-0 items-center justify-center border', payment.direction === 'INCOMING' ? 'border-[#b8dfc8] bg-[#e8f5ed] text-secure' : 'border-line bg-white text-muted')}>
+            <span className={cx('flex h-8 w-8 shrink-0 items-center justify-center border', payment.direction === 'INCOMING' ? 'border-[#b8dfc8] bg-[#e8f5ed] text-secure' : 'border-line bg-card text-muted')}>
               <Banknote size={14} />
             </span>
             <span className="min-w-0 flex-1">

@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bell, Building2, CalendarClock, ClipboardList, Contact2, FileText, Gauge, LayoutGrid, LogOut, Menu, Package, Tags, Undo2,
-  Receipt, ScrollText, Settings as SettingsIcon, ShieldCheck, Target, Upload, UserRound, Users, } from 'lucide-react';
+  Receipt, ScrollText, Settings as SettingsIcon, ShieldCheck, Target, Upload, UserRound, Users, Moon, Sun, } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { relative } from '../lib/format';
@@ -91,7 +91,7 @@ function UndoMenu() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-11 z-40 w-[360px] border border-line bg-white shadow-[var(--shadow-lg)]">
+        <div className="absolute right-0 top-11 z-40 w-[360px] border border-line bg-card shadow-[var(--shadow-lg)]">
           <div className="border-b border-line px-3 py-2">
             <span className="eyebrow">Undo a recent change</span>
           </div>
@@ -119,6 +119,25 @@ function UndoMenu() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const [dark, setDark] = useState(() => document.documentElement.getAttribute('data-theme') === 'dark');
+  const set = (d: boolean) => {
+    setDark(d);
+    document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
+    localStorage.setItem('zeus.theme', d ? 'dark' : 'light');
+  };
+  return (
+    <button
+      onClick={() => set(!dark)}
+      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={dark ? 'Light theme' : 'Dark theme'}
+      className="text-n400 transition-colors hover:text-white"
+    >
+      {dark ? <Sun size={17} /> : <Moon size={17} />}
+    </button>
   );
 }
 
@@ -166,7 +185,7 @@ function NotificationBell() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-11 z-40 w-[360px] border border-line bg-white shadow-[var(--shadow-lg)]">
+        <div className="absolute right-0 top-11 z-40 w-[360px] border border-line bg-card shadow-[var(--shadow-lg)]">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="eyebrow">Notifications</span>
             {unread > 0 ? (
@@ -323,6 +342,7 @@ export default function Layout() {
                 New deal
               </Button>
             ) : null}
+            <ThemeToggle />
             <UndoMenu />
             <NotificationBell />
           </div>
@@ -336,13 +356,36 @@ export default function Layout() {
   );
 }
 
-/** One search box across deals, accounts, leads and contacts. */
+/** Every navigable page, so the search box doubles as a command palette. */
+const PAGES = [
+  ...NAV.flatMap((g) => g.items).map((i) => ({ label: i.label, path: i.to, module: i.module })),
+  { label: 'Settings', path: '/settings', module: '*' },
+];
+
+/** One search box across deals, accounts, leads and contacts — and a ⌘K palette. */
 function GlobalSearch() {
   const [term, setTerm] = useState('');
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { can } = useAuth();
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // ⌘K / Ctrl-K from anywhere focuses the palette; Esc closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        setOpen(true);
+      } else if (e.key === 'Escape') {
+        setOpen(false);
+        inputRef.current?.blur();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   const { data, isFetching } = useQuery({
     queryKey: ['global-search', term],
@@ -373,7 +416,16 @@ function GlobalSearch() {
     navigate(path);
   };
 
+  const q = term.trim().toLowerCase();
+  const navRows = q.length >= 1
+    ? PAGES
+        .filter((p) => (p.module === '*' || can(p.module, 'read')) && p.label.toLowerCase().includes(q))
+        .slice(0, 6)
+        .map((p) => ({ id: `nav-${p.path}`, primary: p.label, secondary: 'Go to', path: p.path }))
+    : [];
+
   const groups = [
+    { label: 'Navigate', rows: navRows },
     { label: 'Deals', rows: (data?.deals ?? []).map((d) => ({ id: d.id, primary: `${d.reference} · ${d.name}`, secondary: d.account.name, path: `/deals/${d.id}` })) },
     { label: 'Accounts', rows: (data?.accounts ?? []).map((a) => ({ id: a.id, primary: a.name, secondary: a.type, path: `/accounts/${a.id}` })) },
     { label: 'Leads', rows: (data?.leads ?? []).map((l) => ({ id: l.id, primary: `${l.firstName} ${l.lastName}`, secondary: l.company, path: `/leads/${l.id}` })) },
@@ -383,19 +435,20 @@ function GlobalSearch() {
   return (
     <div className="relative w-full max-w-md" ref={ref}>
       <input
+        ref={inputRef}
         value={term}
         onChange={(e) => {
           setTerm(e.target.value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        placeholder="Search deals, accounts, leads…"
+        placeholder="Search or jump to…  ⌘K"
         className="w-full rounded-sharp border border-n800 bg-n900 px-3 py-1.5 text-[13px] text-white placeholder:text-n500 focus:border-accent"
       />
       {isFetching ? <span className="absolute right-2.5 top-1/2 -translate-y-1/2"><Spinner size={13} /></span> : null}
 
-      {open && term.trim().length >= 2 ? (
-        <div className="absolute left-0 top-10 z-40 w-full border border-line bg-white shadow-[var(--shadow-lg)]">
+      {open && term.trim().length >= 1 ? (
+        <div className="absolute left-0 top-10 z-40 w-full border border-line bg-card shadow-[var(--shadow-lg)]">
           {groups.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-muted">{isFetching ? 'Searching…' : 'No matches.'}</p>
           ) : (

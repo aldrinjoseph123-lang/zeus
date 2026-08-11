@@ -92,7 +92,7 @@ export function ActivityPanel({ activities, links, invalidate }: {
                 onClick={() => setType(option)}
                 className={cx(
                   'rounded-sharp border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors',
-                  type === option ? 'border-n950 bg-n950 text-white' : 'border-line bg-white text-muted hover:text-ink',
+                  type === option ? 'border-n950 bg-n950 text-white' : 'border-line bg-card text-muted hover:text-ink',
                 )}
               >
                 {option === 'NOTE' ? 'Note' : option === 'TASK' ? 'Task' : option.charAt(0) + option.slice(1).toLowerCase()}
@@ -157,7 +157,7 @@ export function ActivityPanel({ activities, links, invalidate }: {
             const overdue = open && activity.dueAt && new Date(activity.dueAt) < new Date();
             return (
               <li key={activity.id} className="flex gap-3 border-b border-line px-4 py-3">
-                <span className={cx('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-sharp border', overdue ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-white text-muted')}>
+                <span className={cx('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-sharp border', overdue ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-card text-muted')}>
                   <Icon size={14} />
                 </span>
                 <div className="min-w-0 flex-1">

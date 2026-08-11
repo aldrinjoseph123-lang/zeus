@@ -460,6 +460,42 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true, undoId };
   });
 
+  /**
+   * Bulk actions from the deals list. Each row is still scope-checked individually —
+   * a rep bulk-selecting cannot touch a deal they could not touch one at a time — so a
+   * mixed selection quietly skips what is not theirs rather than failing the whole call.
+   */
+  app.post('/api/deals/bulk-assign', { preHandler: requirePermission('deals', 'update') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one deal.'), ownerId: z.string().min(1, 'Choose who to assign to.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+    const { ids, ownerId } = parsed.data;
+
+    let updated = 0, skipped = 0;
+    for (const id of ids) {
+      const deal = await prisma.deal.findFirst({ where: { id, deletedAt: null } });
+      if (!deal || !(await ownerAllowed(request.user, 'deals', 'update', deal.ownerId))) { skipped++; continue; }
+      await prisma.deal.update({ where: { id }, data: { ownerId } });
+      await audit({ user: request.user, action: 'update', entity: 'Deal', entityId: id, summary: `${deal.reference} reassigned`, ip: clientIp(request) });
+      updated++;
+    }
+    return { updated, skipped };
+  });
+
+  app.post('/api/deals/bulk-delete', { preHandler: requirePermission('deals', 'delete') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one deal.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    let deleted = 0, skipped = 0;
+    for (const id of parsed.data.ids) {
+      const deal = await prisma.deal.findFirst({ where: { id, deletedAt: null } });
+      if (!deal || !(await ownerAllowed(request.user, 'deals', 'delete', deal.ownerId))) { skipped++; continue; }
+      await prisma.deal.update({ where: { id }, data: { deletedAt: new Date() } });
+      await audit({ user: request.user, action: 'delete', entity: 'Deal', entityId: id, summary: deal.reference, undo: undoSoftDelete('deal', 'deals', id), ip: clientIp(request) });
+      deleted++;
+    }
+    return { deleted, skipped };
+  });
+
   // ── deal registrations, both sides of the channel ────────────────────────────
 
   const registrationSchema = z.object({

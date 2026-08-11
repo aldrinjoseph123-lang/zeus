@@ -33,6 +33,9 @@ model User {
   manager        User?     @relation("UserManager", fields: [managerId], references: [id])
   reports        User[]    @relation("UserManager")
   lastLoginAt    DateTime?
+  /// Where and on what the user last signed in — shown to admins on the Users tab.
+  lastLoginIp     String?
+  lastLoginDevice String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1243,6 +1246,46 @@ model BackupRun {
 model Counter {
   key   String @id
   value Int    @default(0)
+}
+
+/// Application event log for the internal team's status page. Technical events —
+/// unhandled 500s, failed cron jobs, backup and integration errors — as opposed to
+/// AuditLog, which records what *users* did. Pruned by the nightly job.
+model SystemLog {
+  id      String   @id @default(cuid())
+  level   String // info | warn | error
+  source  String // http | backup | cron | integration | auth | app
+  message String
+  context Json?
+  at      DateTime @default(now())
+
+  @@index([at])
+  @@index([level, at])
+  @@index([source, at])
+}
+
+/// One health sample per component per poll, written by the 5-minute monitor.
+/// Feeds the uptime percentages on the status page. Pruned by the nightly job.
+model ComponentCheck {
+  id        String   @id @default(cuid())
+  component String
+  ok        Boolean
+  at        DateTime @default(now())
+
+  @@index([component, at])
+  @@index([at])
+}
+
+/// Compute utilisation sample (CPU / RAM / disk %), written by the 5-minute monitor.
+/// Feeds the utilisation graph on the status page. Pruned by the nightly job.
+model ResourceSample {
+  id      String   @id @default(cuid())
+  cpuPct  Float
+  memPct  Float
+  diskPct Float
+  at      DateTime @default(now())
+
+  @@index([at])
 }
 
 /// A daily photograph of the open pipeline.

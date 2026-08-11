@@ -21,7 +21,7 @@
     "test:api": "npm run test:api --workspace=apps/api"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=26 <27"
   },
   "allowScripts": {
     "prisma": true,
