@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
-import { audit, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
+import { audit, auditRead, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
 import { maskFields } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
@@ -127,6 +127,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string };
     const invoice = await prisma.invoice.findUnique({ where: { id }, include });
     if (!invoice) throw notFound('Invoice not found.');
+    auditRead(request.user, 'Invoice', invoice.id, invoice.number, clientIp(request));
     return { ...maskFields(request.user, 'invoices', invoice), complianceGaps: await complianceGaps(id) };
   });
 

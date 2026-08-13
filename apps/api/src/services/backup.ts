@@ -103,7 +103,10 @@ export async function runBackup(opts: { uploadToOneDrive?: boolean } = {}): Prom
     await prisma.backupRun.update({
       where: { id: run.id },
       data: {
-        status: uploadError ? 'success' : 'success',
+        // Dump succeeded, but an intended OneDrive upload failing is not a full
+        // success — a local-only copy dies with the server. 'partial' keeps it out
+        // of the "last good backup" health check, which only counts 'success'.
+        status: uploadError ? 'partial' : 'success',
         filename,
         sizeBytes: data.byteLength,
         error: uploadError ?? null,

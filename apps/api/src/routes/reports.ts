@@ -4,7 +4,7 @@ import { prisma, num } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, forbidden, listParams, notFound, requirePermission } from '../lib/http.js';
 import { permissionFor, scopeWhere, teamMemberIds, type SessionUser } from '../auth/rbac.js';
-import { pipelineTrend } from '../services/snapshots.js';
+import { pipelineTrend, weeklyDealMovement } from '../services/snapshots.js';
 import { tablePdf, type TableColumn } from '../services/pdf.js';
 import { tableXlsx } from '../services/xlsx.js';
 import { getSetting } from '../lib/settings.js';
@@ -202,6 +202,81 @@ export const REPORTS: ReportDef[] = [
           ['Win rate', rows.length ? `${((won.length / rows.length) * 100).toFixed(1)}%` : '—'],
           ['Avg cycle', won.length ? `${Math.round(won.reduce((s, r) => s + (r.cycleDays ?? 0), 0) / won.length)} days` : '—'],
         ],
+      };
+    },
+  },
+  {
+    key: 'loss-reasons',
+    name: 'Loss reasons',
+    description: 'Lost deals grouped by reason — the systemic blockers, ranked by lost value.',
+    module: 'deals',
+    columns: [
+      { key: 'reason', label: 'Reason', width: 170 },
+      { key: 'deals', label: 'Deals', width: 60, align: 'right' },
+      { key: 'value', label: 'Lost value (AED)', width: 120, align: 'right', format: 'money' },
+      { key: 'share', label: 'Share %', width: 70, align: 'right' },
+      { key: 'avgCycle', label: 'Avg cycle (d)', width: 90, align: 'right' },
+    ],
+    run: async (ctx) => {
+      const deals = await prisma.deal.findMany({
+        where: { deletedAt: null, status: 'LOST', closedAt: { gte: ctx.from, lte: ctx.to }, ...ctx.dealScope },
+        select: { amount: true, lostReason: true, createdAt: true, closedAt: true },
+      });
+      const totalValue = deals.reduce((s, d) => s + num(d.amount), 0);
+      const groups = new Map<string, { deals: number; value: number; cycle: number }>();
+      for (const d of deals) {
+        const key = d.lostReason?.trim() || 'Uncategorised';
+        const g = groups.get(key) ?? { deals: 0, value: 0, cycle: 0 };
+        g.deals += 1;
+        g.value += num(d.amount);
+        g.cycle += d.closedAt ? Math.floor((d.closedAt.getTime() - d.createdAt.getTime()) / 86_400_000) : 0;
+        groups.set(key, g);
+      }
+      const rows = [...groups.entries()]
+        .map(([reason, g]) => ({
+          reason, deals: g.deals, value: g.value,
+          share: totalValue ? Math.round((g.value / totalValue) * 1000) / 10 : 0,
+          avgCycle: g.deals ? Math.round(g.cycle / g.deals) : 0,
+        }))
+        .sort((a, b) => b.value - a.value);
+      return {
+        rows,
+        summary: [
+          ['Lost deals', String(deals.length)],
+          ['Lost value', aed(totalValue)],
+          ['Top blocker', rows[0]?.reason ?? '—'],
+        ],
+      };
+    },
+  },
+  {
+    key: 'deal-movement',
+    name: 'Weekly deal movement',
+    description: 'Week over week: which deals advanced, slipped, grew, shrank, or closed.',
+    module: 'deals',
+    columns: [
+      { key: 'reference', label: 'Ref', width: 70 },
+      { key: 'name', label: 'Deal' },
+      { key: 'owner', label: 'Owner', width: 100 },
+      { key: 'change', label: 'Change', width: 85 },
+      { key: 'fromStage', label: 'From', width: 100 },
+      { key: 'toStage', label: 'To', width: 100 },
+      { key: 'fromAmount', label: 'Was (AED)', width: 90, align: 'right', format: 'money' },
+      { key: 'toAmount', label: 'Now (AED)', width: 90, align: 'right', format: 'money' },
+    ],
+    run: async (ctx) => {
+      const { rows, thisWeek, lastWeek } = await weeklyDealMovement(ctx.to, ctx.dealScope as Record<string, unknown>);
+      const by = (c: string) => rows.filter((r) => r.change === c).length;
+      return {
+        rows: rows as unknown as Record<string, unknown>[],
+        summary: lastWeek
+          ? [
+            ['Week of', thisWeek ? thisWeek.toISOString().slice(0, 10) : '—'],
+            ['Advanced', String(by('Advanced'))],
+            ['Slipped', String(by('Slipped'))],
+            ['Won / Lost', `${by('Won')} / ${by('Lost')}`],
+          ]
+          : [['Status', 'Needs two weekly snapshots — the first comparison is a week after this ships.']],
       };
     },
   },

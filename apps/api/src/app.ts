@@ -35,6 +35,7 @@ import priceBookRoutes from './routes/priceBook.js';
 import adminRoutes from './routes/admin.js';
 import integrationRoutes from './routes/integrations.js';
 import systemRoutes from './routes/system.js';
+import coachingRoutes from './routes/coaching.js';
 
 /**
  * Builds the API without starting it.
@@ -135,6 +136,7 @@ export async function buildApp() {
   await app.register(adminRoutes);
   await app.register(integrationRoutes);
   await app.register(systemRoutes);
+  await app.register(coachingRoutes);
 
   // In production the API also serves the built SPA, so one container is the whole app.
   const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');

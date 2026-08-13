@@ -98,3 +98,88 @@ export async function pipelineTrend(
   }
   return [...byDay.values()];
 }
+
+// ── weekly per-deal movement ────────────────────────────────────────────────────
+
+/** The Monday (date-only, Dubai week) the given moment belongs to. */
+export function mondayOf(now = new Date()): Date {
+  const dubai = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Dubai' }));
+  const sinceMonday = (dubai.getDay() + 6) % 7; // 0=Sun→6, 1=Mon→0 …
+  return new Date(Date.UTC(dubai.getFullYear(), dubai.getMonth(), dubai.getDate() - sinceMonday));
+}
+
+/**
+ * One row per open deal for this week — the raw material for week-over-week movement.
+ * Idempotent: the week's rows are rewritten, so a re-run never double-counts. Only
+ * OPEN deals are captured; a deal that closed is detected by its absence next week.
+ */
+export async function takeWeeklyDealSnapshot(now = new Date()): Promise<{ weekOf: Date; rows: number }> {
+  const weekOf = mondayOf(now);
+  const deals = await prisma.deal.findMany({
+    where: { deletedAt: null, status: 'OPEN' },
+    select: { id: true, stageId: true, ownerId: true, amount: true, status: true, stage: { select: { order: true } } },
+  });
+  await prisma.$transaction([
+    prisma.dealSnapshot.deleteMany({ where: { weekOf } }),
+    prisma.dealSnapshot.createMany({
+      data: deals.map((d) => ({ dealId: d.id, weekOf, stageId: d.stageId, ownerId: d.ownerId, amount: d.amount, status: d.status, stageOrder: d.stage.order })),
+    }),
+  ]);
+  return { weekOf, rows: deals.length };
+}
+
+export interface MovementRow {
+  reference: string; name: string; owner: string; change: string;
+  fromStage: string; toStage: string; fromAmount: number; toAmount: number;
+}
+
+/**
+ * Compare the two most recent weekly snapshots (up to `asOf`) and classify every deal:
+ * new / advanced / slipped / grew / shrank / won / lost / unchanged. `scope` is the
+ * caller's deal visibility filter, so a manager sees only their team's movement.
+ */
+export async function weeklyDealMovement(asOf = new Date(), scope: Record<string, unknown> = {}): Promise<{ rows: MovementRow[]; thisWeek: Date | null; lastWeek: Date | null }> {
+  const weeks = (await prisma.dealSnapshot.findMany({
+    where: { weekOf: { lte: mondayOf(asOf) } },
+    distinct: ['weekOf'], select: { weekOf: true }, orderBy: { weekOf: 'desc' }, take: 2,
+  })).map((w) => w.weekOf);
+  if (weeks.length < 2) return { rows: [], thisWeek: weeks[0] ?? null, lastWeek: null };
+
+  const [thisWeek, lastWeek] = weeks;
+  const [now, prev] = await Promise.all([
+    prisma.dealSnapshot.findMany({ where: { weekOf: thisWeek } }),
+    prisma.dealSnapshot.findMany({ where: { weekOf: lastWeek } }),
+  ]);
+  const nowMap = new Map(now.map((s) => [s.dealId, s]));
+  const prevMap = new Map(prev.map((s) => [s.dealId, s]));
+  const ids = [...new Set([...nowMap.keys(), ...prevMap.keys()])];
+
+  const [deals, stages] = await Promise.all([
+    prisma.deal.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true, reference: true, name: true, status: true, owner: { select: { name: true } } } }),
+    prisma.stage.findMany({ where: { id: { in: [...new Set([...now, ...prev].map((s) => s.stageId))] } }, select: { id: true, name: true } }),
+  ]);
+  const dealMap = new Map(deals.map((d) => [d.id, d]));
+  const stageName = (id?: string) => stages.find((s) => s.id === id)?.name ?? '—';
+
+  const rows: MovementRow[] = [];
+  for (const id of ids) {
+    const d = dealMap.get(id);
+    if (!d) continue; // out of the caller's scope
+    const n = nowMap.get(id);
+    const p = prevMap.get(id);
+    let change: string, fromStage = '—', toStage = '—', fromAmount = 0, toAmount = 0;
+    if (p && !n) {
+      change = d.status === 'WON' ? 'Won' : d.status === 'LOST' ? 'Lost' : 'Closed';
+      fromStage = stageName(p.stageId); fromAmount = num(p.amount);
+    } else if (n && !p) {
+      change = 'New'; toStage = stageName(n.stageId); toAmount = num(n.amount);
+    } else if (n && p) {
+      fromStage = stageName(p.stageId); toStage = stageName(n.stageId); fromAmount = num(p.amount); toAmount = num(n.amount);
+      change = n.stageOrder > p.stageOrder ? 'Advanced' : n.stageOrder < p.stageOrder ? 'Slipped' : toAmount > fromAmount ? 'Grew' : toAmount < fromAmount ? 'Shrank' : 'Unchanged';
+    } else continue;
+    rows.push({ reference: d.reference, name: d.name, owner: d.owner?.name ?? 'Unassigned', change, fromStage, toStage, fromAmount, toAmount });
+  }
+  const order = ['Won', 'Advanced', 'Grew', 'New', 'Slipped', 'Shrank', 'Lost', 'Closed', 'Unchanged'];
+  rows.sort((a, b) => order.indexOf(a.change) - order.indexOf(b.change));
+  return { rows, thisWeek, lastWeek };
+}

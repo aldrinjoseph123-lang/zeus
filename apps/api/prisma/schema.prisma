@@ -56,6 +56,8 @@ model User {
   createdPurchaseOrders     PurchaseOrder[]    @relation("PoCreator")
   dealApprovalsRequested    Deal[]             @relation("DealApprovalRequester")
   dealApprovals             Deal[]             @relation("DealApprover")
+  quoteApprovalsRequested   Quote[]            @relation("QuoteApprovalRequester")
+  quoteApprovals            Quote[]            @relation("QuoteApprover")
   poApprovalsRequested      PurchaseOrder[]    @relation("PoApprovalRequester")
   poApprovals               PurchaseOrder[]    @relation("PoApprover")
   invoiceApprovalsRequested Invoice[]          @relation("InvoiceApprovalRequester")
@@ -611,6 +613,16 @@ model Quote {
   contactId  String?
   contact    Contact?    @relation(fields: [contactId], references: [id])
   status     QuoteStatus @default(DRAFT)
+
+  approvalStatus        ApprovalStatus @default(NOT_REQUIRED)
+  approvalRequestedAt   DateTime?
+  approvalRequestedById String?
+  approvalRequestedBy   User?          @relation("QuoteApprovalRequester", fields: [approvalRequestedById], references: [id])
+  approvalDecidedAt     DateTime?
+  approvalDecidedById   String?
+  approvalDecidedBy     User?          @relation("QuoteApprover", fields: [approvalDecidedById], references: [id])
+  approvalNote          String?
+
   issueDate  DateTime    @default(now())
   validUntil DateTime?
   currency   String      @default("AED")
@@ -1246,6 +1258,43 @@ model BackupRun {
 model Counter {
   key   String @id
   value Int    @default(0)
+}
+
+/// One row per open deal per week — the raw material for week-over-week movement
+/// (which deal advanced, slipped, grew, shrank, or closed). Written by a weekly cron.
+model DealSnapshot {
+  id      String   @id @default(cuid())
+  dealId  String
+  weekOf  DateTime @db.Date // the Monday of the week
+  stageId String
+  ownerId String?
+  amount  Decimal  @db.Decimal(14, 2)
+  status  String
+  stageOrder Int   @default(0) // captured so a later stage rename/reorder cannot rewrite history
+
+  createdAt DateTime @default(now())
+
+  @@unique([dealId, weekOf])
+  @@index([weekOf])
+}
+
+/// Record of an offboarding transfer — reassigning a leaving user's records to
+/// another user, per module. Keeps the moved row ids so the whole thing can be
+/// reversed exactly. Kept relation-free (ids as strings) like an audit row.
+model TransferJob {
+  id          String    @id @default(cuid())
+  fromUserId  String
+  toUserId    String
+  byUserId    String?
+  modules     String[]
+  counts      Json // { module: number }
+  snapshot    Json // { module: string[] } — the exact ids moved, for reversal
+  deactivated Boolean   @default(false)
+  reversedAt  DateTime?
+  at          DateTime  @default(now())
+
+  @@index([fromUserId])
+  @@index([at])
 }
 
 /// Application event log for the internal team's status page. Technical events —

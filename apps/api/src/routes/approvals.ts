@@ -32,6 +32,10 @@ const SELECT = {
     id: true, number: true, total: true, type: true,
     approvalStatus: true, approvalNote: true, approvalRequestedById: true, account: { select: { name: true } },
   },
+  quotes: {
+    id: true, number: true, total: true,
+    approvalStatus: true, approvalNote: true, approvalRequestedById: true, account: { select: { name: true } },
+  },
 } as const;
 
 interface Described {
@@ -65,7 +69,7 @@ function describe(entity: Entity, record: Record<string, unknown>): Described {
 }
 
 const linkFor = (entity: Entity, id: string): string =>
-  entity === 'deals' ? `/deals/${id}` : entity === 'invoices' ? `/invoices/${id}` : `/purchase-orders/${id}`;
+  entity === 'deals' ? `/deals/${id}` : entity === 'invoices' ? `/invoices/${id}` : entity === 'quotes' ? `/quotes/${id}` : `/purchase-orders/${id}`;
 
 export default async function approvalRoutes(app: FastifyInstance): Promise<void> {
   const load = async (entity: Entity, id: string) => {
@@ -168,8 +172,9 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
   app.get('/api/approvals/pending', { preHandler: requirePermission('dashboard', 'read') }, async (request) => {
     const mayDeals = can(request.user, 'deals', 'approve');
     const mayMoney = can(request.user, 'invoices', 'approve');
+    const mayQuotes = can(request.user, 'quotes', 'approve');
 
-    const [deals, purchaseOrders, invoices] = await Promise.all([
+    const [deals, purchaseOrders, invoices, quotes] = await Promise.all([
       mayDeals
         ? prisma.deal.findMany({
             where: { approvalStatus: 'PENDING', deletedAt: null },
@@ -188,6 +193,14 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
         : [],
       mayMoney
         ? prisma.invoice.findMany({
+            where: { approvalStatus: 'PENDING' },
+            select: { id: true, number: true, total: true, approvalRequestedAt: true, account: { select: { name: true } }, approvalRequestedBy: { select: { name: true } } },
+            orderBy: { approvalRequestedAt: 'asc' },
+            take: 25,
+          })
+        : [],
+      mayQuotes
+        ? prisma.quote.findMany({
             where: { approvalStatus: 'PENDING' },
             select: { id: true, number: true, total: true, approvalRequestedAt: true, account: { select: { name: true } }, approvalRequestedBy: { select: { name: true } } },
             orderBy: { approvalRequestedAt: 'asc' },
@@ -221,6 +234,10 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
       ...invoices.map((i) => ({
         entity: 'invoices' as const, id: i.id, reference: i.number, title: 'Invoice',
         account: i.account.name, value: num(i.total), requestedAt: i.approvalRequestedAt, requestedBy: i.approvalRequestedBy?.name ?? null,
+      })),
+      ...quotes.map((q) => ({
+        entity: 'quotes' as const, id: q.id, reference: q.number, title: 'Quote',
+        account: q.account.name, value: num(q.total), requestedAt: q.approvalRequestedAt, requestedBy: q.approvalRequestedBy?.name ?? null,
       })),
     ].sort((a, b) => (a.requestedAt?.getTime() ?? 0) - (b.requestedAt?.getTime() ?? 0));
   });

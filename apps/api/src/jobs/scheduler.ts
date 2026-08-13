@@ -6,7 +6,7 @@ import { runBackup } from '../services/backup.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
 import { sweepRenewals } from '../services/renewals.js';
 import { ratesAreStale, refreshRates } from '../services/fx.js';
-import { takePipelineSnapshot } from '../services/snapshots.js';
+import { takePipelineSnapshot, takeWeeklyDealSnapshot } from '../services/snapshots.js';
 import { logSystem, pruneSystemLogs } from '../services/systemLog.js';
 import { alertOnTransitions } from '../services/healthMonitor.js';
 import { componentStatuses, recordComponentChecks } from '../services/systemStatus.js';
@@ -452,6 +452,12 @@ export function startScheduler(): void {
   tasks.push(cron.schedule('0 19 * * *', () => void safely('pipelineSnapshot', async () => {
     const { takenOn, rows, openNet } = await takePipelineSnapshot();
     console.log(`[scheduler] pipeline photographed for ${takenOn.toISOString().slice(0, 10)}: ${rows} row(s), ${formatAed(openNet)} open`);
+  }), { timezone: TZ }));
+
+  // Weekly per-deal snapshot for week-over-week movement. Monday 06:00 GST.
+  tasks.push(cron.schedule('0 6 * * 1', () => void safely('weeklyDealSnapshot', async () => {
+    const { weekOf, rows } = await takeWeeklyDealSnapshot();
+    console.log(`[scheduler] weekly deal snapshot for ${weekOf.toISOString().slice(0, 10)}: ${rows} open deal(s)`);
   }), { timezone: TZ }));
 
   // Watch component health every 5 minutes: one snapshot, recorded for uptime and

@@ -10,6 +10,7 @@ import { invalidateCustomFields } from '../lib/customFields.js';
 import { NOTIFICATION_EVENTS } from '../services/notify.js';
 import { postToWebhook } from '../services/teams.js';
 import { refreshRates } from '../services/fx.js';
+import { previewTransfer, transferOwnership, reverseTransfer, exportUserBook, TRANSFERABLE_MODULES } from '../services/transfer.js';
 import { checkEgress } from '../lib/egress.js';
 import { encryptJson } from '../lib/crypto.js';
 import { deliverOne, generateSecret as generateWebhookSecret } from '../services/webhooks.js';
@@ -124,6 +125,42 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
     await prisma.user.update({ where: { id }, data: { isActive: false } });
     await audit({ user: request.user, action: 'update', entity: 'User', entityId: id, summary: 'Deactivated', ip: clientIp(request) });
     return { ok: true };
+  });
+
+  // ── offboarding: transfer a leaving user's records to another user ────────────
+
+  /** The transferable modules and how many records the user owns in each. */
+  app.get('/api/users/:id/transfer/preview', { preHandler: requirePermission('users', 'read') }, async (request) => {
+    const { id } = request.params as { id: string };
+    return { modules: TRANSFERABLE_MODULES, counts: await previewTransfer(id) };
+  });
+
+  app.post('/api/users/:id/transfer', { preHandler: requirePermission('users', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const parsed = z.object({
+      toUserId: z.string().min(1, 'Choose who receives the records.'),
+      modules: z.array(z.string()).min(1, 'Select at least one module.'),
+      deactivate: z.boolean().optional().default(false),
+    }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+    return transferOwnership({ fromUserId: id, ...parsed.data, byUser: request.user });
+  });
+
+  app.post('/api/transfers/:jobId/reverse', { preHandler: requirePermission('users', 'update') }, async (request) => {
+    const { jobId } = request.params as { jobId: string };
+    return reverseTransfer(jobId, request.user);
+  });
+
+  /** Download a user's whole book of business as JSON — archive or handover. */
+  app.get('/api/users/:id/export', { preHandler: requirePermission('users', 'read') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const user = await prisma.user.findUnique({ where: { id }, select: { name: true } });
+    const book = await exportUserBook(id);
+    await audit({ user: request.user, action: 'export', entity: 'User', entityId: id, summary: `Exported book of business for ${user?.name ?? id}`, ip: clientIp(request) });
+    return reply
+      .header('content-type', 'application/json')
+      .header('content-disposition', `attachment; filename="zeus-book-${id}-${new Date().toISOString().slice(0, 10)}.json"`)
+      .send(JSON.stringify({ user: user?.name ?? id, exportedAt: new Date().toISOString(), ...book }, null, 2));
   });
 
   // ── roles ───────────────────────────────────────────────────────────────────

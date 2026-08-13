@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bell, Building2, CalendarClock, ClipboardList, Contact2, FileText, Gauge, LayoutGrid, LogOut, Menu, Package, Tags, Undo2,
-  Receipt, ScrollText, Settings as SettingsIcon, ShieldCheck, Target, Upload, UserRound, Users, Moon, Sun, } from 'lucide-react';
+  Receipt, ScrollText, Settings as SettingsIcon, ShieldCheck, Target, Upload, UserRound, Users, Moon, Sun, Presentation, } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { relative } from '../lib/format';
@@ -49,6 +49,7 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
   {
     section: 'Insight',
     items: [
+      { to: '/coaching', label: 'Coaching', icon: Presentation, module: 'deals' },
       { to: '/reports', label: 'Reports', icon: ShieldCheck, module: 'reports' },
       { to: '/imports', label: 'Import', icon: Upload, module: 'imports' },
     ],

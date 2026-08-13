@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
-import { audit, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
+import { audit, auditRead, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { approvalRequired, blockedReason } from '../services/approvals.js';
 import { maskFields, permissionFor } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
 import { formatAed, lineTotals } from '../lib/money.js';
@@ -116,6 +117,19 @@ async function marginFlag(quote: { subtotal: unknown; discountAmt: unknown; tota
   return belowFloor ? { belowFloor: true, negative: marginPct < 0, floorPct: floor } : null;
 }
 
+/** A quote cannot be sent until a manager has signed it off (when approval is on). */
+async function ensureQuoteApproved(id: string): Promise<void> {
+  const q = await prisma.quote.findUnique({ where: { id }, select: { number: true, total: true, approvalStatus: true, approvalNote: true } });
+  if (!q) throw notFound('Quote not found.');
+  const requirement = await approvalRequired('quotes', { total: q.total });
+  if (requirement.required && q.approvalStatus !== 'APPROVED') {
+    throw badRequest(
+      blockedReason(q, 'quotes')
+        ?? `${q.number} needs a manager's approval before it can be sent.${requirement.reason ? ` ${requirement.reason}` : ''}`,
+    );
+  }
+}
+
 export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/quotes', { preHandler: requirePermission('quotes', 'read') }, async (request) => {
     const params = listParams(request.query as Record<string, unknown>, 'createdAt');
@@ -151,6 +165,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
     if (!quote) throw notFound('Quote not found.');
+    auditRead(request.user, 'Quote', quote.id, quote.number, clientIp(request));
     return { ...maskFields(request.user, 'quotes', quote), marginWarning: await marginFlag(quote) };
   });
 
@@ -309,6 +324,8 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const { status } = z.object({ status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']) }).parse(request.body);
 
+    if (status === 'SENT') await ensureQuoteApproved(id);
+
     const quote = await prisma.quote.update({
       where: { id },
       data: {
@@ -378,6 +395,8 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
     const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
     if (!quote) throw notFound('Quote not found.');
+
+    await ensureQuoteApproved(id);
 
     const pdf = await quotePdf(quote as unknown as QuotePdfData);
     const subject = parsed.data.subject ?? `Quotation ${quote.number} — ${quote.account.name}`;

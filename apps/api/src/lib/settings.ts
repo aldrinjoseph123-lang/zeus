@@ -79,6 +79,9 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   /// let small deals and routine invoices through untouched.
   'approvals.dealsEnabled': true,
   'approvals.dealMinAmount': 0,
+  // Every quote needs manager/admin sign-off before it can be sent (min 0 = all).
+  'approvals.quotesEnabled': true,
+  'approvals.quoteMinAmount': 0,
   'approvals.purchaseOrdersEnabled': true,
   'approvals.purchaseOrderMinAmount': 0,
   'approvals.invoicesEnabled': true,
@@ -86,6 +89,10 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   /// Below this margin a deal needs approving whatever it is worth — the discount
   /// giveaway is what a sales manager actually wants to catch.
   'approvals.dealMinMarginPct': 0,
+
+  /// A deal at or above this net value that is also stalling is flagged for escalation
+  /// on the coaching dashboard.
+  'coaching.highValueAmount': 50000,
   /// A manager who owns the deal cannot normally sign off their own submission. On a
   /// small team where the manager carries a bag too, that would deadlock — switch this
   /// on and the audit trail carries who approved what instead.
@@ -172,6 +179,9 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'syslog.host': '',
   'syslog.port': 514,
   'syslog.protocol': 'udp',
+
+  /// Log every record view (who opened which deal/account/contact/…). High volume — off by default.
+  'audit.logReads': false,
 
   'branding.productName': 'Zeus',
   'branding.tagline': 'Revenue command centre',

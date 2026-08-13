@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
+import { getSetting } from './settings.js';
 import type { SessionUser } from '../auth/rbac.js';
 import type { UndoPayload } from '../services/undo.js';
 
@@ -52,6 +53,24 @@ export async function audit(opts: {
     console.error('[audit] failed to write entry', err);
     return null;
   }
+}
+
+/**
+ * Record that a user *viewed* a record — but only when read-logging is switched on
+ * (Settings → Audit trail), because one row per record open is high volume. Fire-and-
+ * forget: reading a record must never wait on, or fail because of, its own audit line.
+ */
+export function auditRead(
+  user: SessionUser | null | undefined,
+  entity: string,
+  entityId: string,
+  summary: string,
+  ip?: string,
+): void {
+  void (async () => {
+    if (!(await getSetting<boolean>('audit.logReads', false))) return;
+    await audit({ user, action: 'read', entity, entityId, summary, ip });
+  })().catch(() => undefined);
 }
 
 /**

@@ -15,12 +15,12 @@ import { notify } from './notify.js';
  * off, or set a threshold so only the deals worth a manager's attention stop.
  */
 
-export type Entity = 'deals' | 'purchase-orders' | 'invoices';
+export type Entity = 'deals' | 'purchase-orders' | 'invoices' | 'quotes';
 
 export const ENTITIES: Record<
   Entity,
   {
-    module: 'deals' | 'invoices';
+    module: 'deals' | 'invoices' | 'quotes';
     /** For people: headings, notification titles, refusal messages. */
     label: string;
     /**
@@ -35,6 +35,7 @@ export const ENTITIES: Record<
   deals: { module: 'deals', label: 'Deal', auditEntity: 'Deal', step: 'closing it won' },
   'purchase-orders': { module: 'invoices', label: 'Purchase order', auditEntity: 'PurchaseOrder', step: 'issuing it to the supplier' },
   invoices: { module: 'invoices', label: 'Invoice', auditEntity: 'Invoice', step: 'sending it to the customer' },
+  quotes: { module: 'quotes', label: 'Quote', auditEntity: 'Quote', step: 'sending it to the customer' },
 };
 
 export interface Requirement {
@@ -55,6 +56,7 @@ export async function approvalRequired(
     deals: ['approvals.dealsEnabled', 'approvals.dealMinAmount'],
     'purchase-orders': ['approvals.purchaseOrdersEnabled', 'approvals.purchaseOrderMinAmount'],
     invoices: ['approvals.invoicesEnabled', 'approvals.invoiceMinAmount'],
+    quotes: ['approvals.quotesEnabled', 'approvals.quoteMinAmount'],
   }[entity];
 
   const [enabled, threshold] = await Promise.all([
@@ -82,8 +84,8 @@ export async function approvalRequired(
   };
 }
 
-type Model = 'deal' | 'purchaseOrder' | 'invoice';
-const MODEL: Record<Entity, Model> = { deals: 'deal', 'purchase-orders': 'purchaseOrder', invoices: 'invoice' };
+type Model = 'deal' | 'purchaseOrder' | 'invoice' | 'quote';
+const MODEL: Record<Entity, Model> = { deals: 'deal', 'purchase-orders': 'purchaseOrder', invoices: 'invoice', quotes: 'quote' };
 
 /** The Prisma delegate for an entity — one place to keep the string-to-model mapping. */
 export const delegateFor = (entity: Entity) => prisma[MODEL[entity]] as unknown as {

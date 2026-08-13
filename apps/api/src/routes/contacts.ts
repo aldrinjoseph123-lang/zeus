@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { sanitizeCustomFields } from '../lib/customFields.js';
-import { audit, diff, undoSoftDelete, undoUpdate } from '../lib/audit.js';
+import { audit, auditRead, diff, undoSoftDelete, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
 import { checkDuplicates } from '../services/dedupe.js';
@@ -72,6 +72,7 @@ export default async function contactRoutes(app: FastifyInstance): Promise<void>
     });
     if (!contact) throw notFound('Contact not found.');
     if (!(await ownerAllowed(request.user, 'contacts', 'read', contact.ownerId))) throw forbidden();
+    auditRead(request.user, 'Contact', contact.id, `${contact.firstName} ${contact.lastName}`, clientIp(request));
     return maskFields(request.user, 'contacts', contact);
   });
 

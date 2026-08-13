@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { sanitizeCustomFields } from '../lib/customFields.js';
-import { audit, diff, undoSoftDelete, undoUpdate } from '../lib/audit.js';
+import { audit, auditRead, diff, undoSoftDelete, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
 import { checkDuplicates, extractDomain } from '../services/dedupe.js';
@@ -83,6 +83,7 @@ export default async function leadRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!lead) throw notFound('Lead not found.');
     if (!(await ownerAllowed(request.user, 'leads', 'read', lead.ownerId))) throw forbidden();
+    auditRead(request.user, 'Lead', lead.id, `${lead.firstName} ${lead.lastName}`, clientIp(request));
     return maskFields(request.user, 'leads', lead);
   });
 

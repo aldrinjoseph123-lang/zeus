@@ -132,6 +132,7 @@ const LABELS: Record<string, string> = {
   'approvals.invoiceMinAmount': 'Invoices above this value need approval (0 = all)',
   'approvals.allowSelfApproval': 'Let a manager approve their own submission',
   'undo.windowHours': 'Undo reaches back (hours)',
+  'audit.logReads': 'Log record views (who opened each record — high volume)',
   'numbering.dealPrefix': 'Deal reference prefix', 'numbering.quotePrefix': 'Quote number prefix',
   'numbering.invoicePrefix': 'Invoice number prefix', 'numbering.padding': 'Number padding',
   'backup.enabled': 'Nightly backup enabled', 'backup.cron': 'Backup schedule (cron)', 'backup.retainLocal': 'Local backups to keep',
@@ -824,6 +825,7 @@ function UsersSection() {
   const { can } = useAuth();
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [creating, setCreating] = useState(false);
+  const [offboarding, setOffboarding] = useState<UserRow | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['users'],
@@ -875,7 +877,13 @@ function UsersSection() {
                 </div>
               ),
             },
-            { key: 'isActive', header: '', width: '90px', render: (row) => row.isActive ? null : <Badge tone="accent">Inactive</Badge> },
+            { key: 'isActive', header: '', width: '80px', render: (row) => row.isActive ? null : <Badge tone="accent">Inactive</Badge> },
+            {
+              key: 'offboard', header: '', width: '110px', align: 'right',
+              render: (row) => can('users', 'update')
+                ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setOffboarding(row); }}>Transfer</Button>
+                : null,
+            },
           ]}
         />
       </Card>
@@ -894,7 +902,84 @@ function UsersSection() {
       </Card>
 
       {creating || editing ? <UserModal user={editing} teams={teams ?? []} onClose={() => { setCreating(false); setEditing(null); }} /> : null}
+      {offboarding ? <OffboardModal user={offboarding} users={data?.data ?? []} onClose={() => setOffboarding(null)} /> : null}
     </>
+  );
+}
+
+/** Offboarding wizard: move a leaving user's records to another, per module. */
+function OffboardModal({ user, users, onClose }: { user: UserRow; users: UserRow[]; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [toUserId, setToUserId] = useState('');
+  const [modules, setModules] = useState<Set<string>>(new Set());
+  const [deactivate, setDeactivate] = useState(true);
+
+  const { data: preview } = useQuery({
+    queryKey: ['transfer-preview', user.id],
+    queryFn: () => api.get<{ modules: Array<{ key: string; label: string }>; counts: Record<string, number> }>(`/users/${user.id}/transfer/preview`),
+  });
+
+  const toggle = (key: string) => setModules((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const recipients = users.filter((u) => u.id !== user.id && u.isActive);
+
+  const transfer = useMutation({
+    mutationFn: () => api.post<{ total: number }>(`/users/${user.id}/transfer`, { toUserId, modules: [...modules], deactivate }),
+    onSuccess: (r) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.push(`Transferred ${r.total} record(s) from ${user.name}.`);
+      onClose();
+    },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Transfer failed.', 'error'),
+  });
+
+  const total = [...modules].reduce((sum, k) => sum + (preview?.counts[k] ?? 0), 0);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Transfer ${user.name}'s records`}
+      width="md"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" loading={transfer.isPending} disabled={!toUserId || modules.size === 0} onClick={() => transfer.mutate()}>
+            Transfer {total} record{total === 1 ? '' : 's'}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4 text-[13px]">
+        <Field label="Give the records to">
+          <Select
+            value={toUserId}
+            onChange={(e) => setToUserId(e.target.value)}
+            placeholder="Choose the recipient…"
+            options={recipients.map((u) => ({ value: u.id, label: `${u.name} · ${u.role.name}` }))}
+          />
+        </Field>
+
+        <div>
+          <p className="eyebrow mb-1.5">What to move</p>
+          <div className="flex flex-col gap-1.5 border border-line">
+            {(preview?.modules ?? []).map((m) => {
+              const count = preview?.counts[m.key] ?? 0;
+              return (
+                <label key={m.key} className={cx('flex items-center gap-2 px-3 py-2', count === 0 && 'opacity-50')}>
+                  <input type="checkbox" checked={modules.has(m.key)} disabled={count === 0} onChange={() => toggle(m.key)} />
+                  <span className="flex-1">{m.label}</span>
+                  <span className="tabular text-muted">{count}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        <Checkbox label={`Deactivate ${user.name} after transferring`} checked={deactivate} onChange={setDeactivate} />
+        <p className="text-[11px] text-muted">Reversible from the audit trail. Recipients must be active users.</p>
+      </div>
+    </Modal>
   );
 }
 
@@ -2098,6 +2183,7 @@ function WhatsappPanel() {
 // ── audit ─────────────────────────────────────────────────────────────────────
 
 function AuditSection() {
+  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [entity, setEntity] = useState('');
   const [action, setAction] = useState('');
@@ -2111,6 +2197,10 @@ function AuditSection() {
   });
 
   return (
+    <div className="flex flex-col gap-3">
+    {can('settings', 'update') ? (
+      <SettingsGroup prefix="audit." title="Read logging" description="Off by default. When on, opening a deal, account, contact, lead, quote or invoice is recorded as a 'read' entry below — useful for compliance, but high volume." />
+    ) : null}
     <Card>
       <CardHeader title="Audit trail" subtitle="Every create, update, delete, export, sign-in and integration change." />
       <Toolbar>
@@ -2125,7 +2215,7 @@ function AuditSection() {
           value={action}
           onChange={(e) => { setAction(e.target.value); setPage(1); }}
           placeholder="All actions"
-          options={['create', 'update', 'delete', 'merge', 'convert', 'export', 'import', 'send', 'login', 'login_failed', 'integration', 'backup'].map((v) => ({ value: v, label: v }))}
+          options={['read', 'create', 'update', 'delete', 'merge', 'convert', 'export', 'import', 'send', 'login', 'login_failed', 'integration', 'backup'].map((v) => ({ value: v, label: v }))}
           className="w-[150px]"
         />
       </Toolbar>
@@ -2169,6 +2259,7 @@ function AuditSection() {
         </>
       )}
     </Card>
+    </div>
   );
 }
 
