@@ -120,8 +120,9 @@ id, dependency-ordered; invoices/POs extra-gated); row-count **parity** per back
 
 ## Resume state (updated after each phase — cold-start handoff)
 
-**Last git commit:** `7db7bb4` (ops/observability suite). **Everything since is UNCOMMITTED**
-(~40 files) — P4, P5 (all), P6 backend, view-audit, and the backup-status bugfix.
+**Last git commit:** `461836a` (offboarding, coaching, loss/movement, quote approval).
+**Working tree CLEAN** — P4, P5 (all), P6 backend, view-audit, and the backup-status
+bugfix are all committed.
 
 **Tests:** 124 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
 (Local Postgres quirk: if it won't boot, `LC_ALL=C pg_ctl -D /opt/homebrew/var/postgresql@17 start`.)
