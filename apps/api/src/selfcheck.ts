@@ -164,7 +164,7 @@ check('CSV parser handles quotes, commas and newlines', () => {
 // ── RBAC ──────────────────────────────────────────────────────────────────────
 const roleByName = (name: string): SessionUser => {
   const role = SYSTEM_ROLES.find((r) => r.name === name)!;
-  return { id: 'u1', email: 'x@y.ae', name, roleId: 'r1', roleName: name, teamId: null, permissions: role.permissions };
+  return { id: 'u1', email: 'x@y.ae', name, roleId: 'r1', roleName: name, teamId: null, permissions: role.permissions, totpEnabledAt: null };
 };
 
 check('every module appears in every shipped role', () => {
@@ -225,7 +225,7 @@ check('Administrator keeps full access to every module', () => {
 
 // ── approvals ─────────────────────────────────────────────────────────────────
 const withPermissions = (name: string, permissions: Record<string, unknown>): SessionUser =>
-  ({ id: 'u2', email: 'x@y.ae', name, roleId: 'r2', roleName: name, teamId: null, permissions: permissions as never });
+  ({ id: 'u2', email: 'x@y.ae', name, roleId: 'r2', roleName: name, teamId: null, permissions: permissions as never, totpEnabledAt: null });
 
 check('approve falls back to whoever can already edit every record', () => {
   // Roles saved before approvals existed carry no `approve` key at all.

@@ -197,6 +197,14 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'auth.autoProvisionEntra': false,
   'auth.defaultRoleName': 'Sales Executive',
   'auth.sessionHours': 12,
+  /// Password guesses against one account, counted regardless of which IP they came
+  /// from — the per-IP rate limit on /auth/login alone does not stop a distributed
+  /// credential-stuffing attempt aimed at a single email.
+  'auth.lockoutThreshold': 10,
+  'auth.lockoutMinutes': 15,
+  /// Administrators and Sales Managers can approve money and reassign the whole
+  /// roster — require them to have 2FA switched on before they can change anything.
+  'auth.require2faForManagers': false,
 };
 
 async function load(): Promise<Map<string, unknown>> {

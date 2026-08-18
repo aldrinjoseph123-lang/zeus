@@ -12,6 +12,7 @@ import { prisma } from './db.js';
 import { loadSessionUser } from './auth/session.js';
 import { HttpError, sendError } from './lib/http.js';
 import { logSystem } from './services/systemLog.js';
+import { getSetting } from './lib/settings.js';
 
 import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
@@ -73,7 +74,19 @@ export async function buildApp() {
   await app.register(cookie, { secret: env.APP_SECRET });
   await app.register(cors, { origin: corsOrigins, credentials: true });
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
-  await app.register(rateLimit, { global: false, max: 300, timeWindow: '1 minute' });
+  /**
+   * `global: false` used to mean only login and 2FA-verify were rate-limited — every
+   * write endpoint (and everything else) was wide open to one client hammering it.
+   * Applied globally now, with those two routes keeping their own tighter override.
+   * Off under the test runner: a full suite legitimately fires far more than 300
+   * requests a minute from the same address, and none of that is testing this library.
+   */
+  await app.register(rateLimit, { global: process.env.NODE_ENV !== 'test', max: 300, timeWindow: '1 minute' });
+
+  /** Roles trusted with money and the roster — 2FA is required for them, not optional. */
+  const ELEVATED_ROLES = new Set(['Administrator', 'Sales Manager']);
+  /** Reachable without 2FA even when it is required, so a nagged user can still fix it. */
+  const TWO_FA_SETUP_PATHS = new Set(['/api/auth/2fa/enrol', '/api/auth/2fa/confirm', '/api/auth/logout', '/api/auth/change-password']);
 
   // One gate for the whole API: resolve the session, then reject anonymous traffic.
   app.addHook('onRequest', async (request, reply) => {
@@ -85,6 +98,13 @@ export async function buildApp() {
     const pathOnly = request.url.split('?')[0];
     if (PUBLIC_PATHS.has(pathOnly)) return;
     if (!user) return reply.status(401).send({ error: 'Sign in required.' });
+
+    const isWrite = request.method !== 'GET' && request.method !== 'HEAD';
+    if (isWrite && !user.totpEnabledAt && ELEVATED_ROLES.has(user.roleName) && !TWO_FA_SETUP_PATHS.has(pathOnly)) {
+      if (await getSetting<boolean>('auth.require2faForManagers', false)) {
+        return reply.status(403).send({ error: 'Two-factor authentication is required for your role. Turn it on in Settings → Security before making changes.' });
+      }
+    }
   });
 
   app.setErrorHandler((error, request, reply) => {

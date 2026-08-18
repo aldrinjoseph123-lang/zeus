@@ -70,5 +70,6 @@ export async function loadSessionUser(request: FastifyRequest): Promise<SessionU
     roleName: user.role.name,
     teamId: user.teamId,
     permissions: user.role.permissions as unknown as PermissionMap,
+    totpEnabledAt: user.totpEnabledAt,
   };
 }

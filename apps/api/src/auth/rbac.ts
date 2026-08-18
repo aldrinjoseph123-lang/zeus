@@ -170,6 +170,7 @@ export interface SessionUser {
   roleName: string;
   teamId: string | null;
   permissions: PermissionMap;
+  totpEnabledAt: Date | null;
 }
 
 export function permissionFor(user: SessionUser, module: Module | string): ModulePermission {

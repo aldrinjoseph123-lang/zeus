@@ -16,8 +16,8 @@ progress · ⬜ pending.
 | P6 | Quote approval — every quote gated before send (backend + editor UI, tested/typechecked) | ✅ |
 | P7 | Renewals — close the "won deal, no renewal" gap | ✅ |
 | P8 | Documents — invoice creator + formatting review | ✅ |
-| P9 | Security hardening | 🔄 |
-| P10 | Data retention & privacy | ⬜ |
+| P9 | Security hardening | ✅ |
+| P10 | Data retention & privacy | 🔄 |
 | P11 | Notifications & scheduled reports | ⬜ |
 | P12 | Search & QoL parity | ⬜ |
 | B1 | Backup engine (logical/config/encrypted/tiers/2nd destination) | ⬜ |
@@ -77,10 +77,24 @@ creator**. **Decision:** add a *Prepared by* line to the invoice PDF (parity), t
 generate sample quote / PO / invoice PDFs and fix any alignment/structure/spacing
 issues found. Verify the creator tagged is correct (`preparedById` / `createdById`).
 
-## P9 — Security hardening ⬜
+## P9 — Security hardening ✅
 
 Rate-limiting is `global:false` (only login/2FA limited). Add sane limits to write
 endpoints; enforce 2FA for admins/managers (policy setting); review session/lockout.
+
+**Shipped:** rate-limit now `global: true` (300/min/IP on every route, login/2FA keep
+their tighter per-route overrides) — off under the test runner only, since a full
+suite legitimately exceeds 300 req/min from one address and that isn't testing our
+code. Account-level lockout added (`auth.lockoutThreshold`/`auth.lockoutMinutes`,
+counts recent `login_failed` audit rows per account regardless of source IP — the
+existing IP rate limit alone doesn't stop a distributed guess against one email).
+2FA enforcement for Administrators/Sales Managers behind `auth.require2faForManagers`
+(off by default): once on, a manager/admin without `totpEnabledAt` gets writes blocked
+with a clear message, reads and the 2FA-enrolment/logout/change-password endpoints stay
+open so they can fix it without being locked out. Session review: JWT cookie
+(httpOnly/sameSite=lax/secure-in-prod, 12h default) already re-checks `user.isActive`
+on every request, so deactivating a user ends their session immediately — no changes
+needed there.
 
 ## P10 — Data retention & privacy ⬜
 
@@ -120,47 +134,54 @@ id, dependency-ordered; invoices/POs extra-gated); row-count **parity** per back
 
 ## Resume state (updated after each phase — cold-start handoff)
 
-**Last git commit:** `c77e3f7` (P7). **P8 below is UNCOMMITTED.** Run `git status` to confirm
-before doing anything destructive. `origin` remote is now set (github.com,
+**Last git commit:** `5df0d23` (P8). **P9 below is UNCOMMITTED.** Run `git status` to confirm
+before doing anything destructive. `origin` remote is set (github.com,
 aldrinjoseph123-lang/zeus) but push only works from the user's own terminal — this session's
 `git push` is blocked by the sandbox classifier regardless of retries; hand the command back
 to the user instead of retrying it.
 
-**Tests:** 126 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
+**Tests:** 132 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
 (Local Postgres quirk: if it won't boot, `LC_ALL=C pg_ctl -D /opt/homebrew/var/postgresql@17 start`.)
 Web typecheck clean: `cd apps/web && npx tsc -b --noEmit`.
 
-**P6 (quote approval) and P7 (renewals gap-closing): DONE, committed (`b6434e1`, `c77e3f7`),
-both browser-verified end-to-end.** See prior entries in git log / this doc's history for detail.
+**P6 (quote approval), P7 (renewals gap-closing), P8 (invoice creator + PDF pagination fix):
+DONE, committed (`b6434e1`, `c77e3f7`, `5df0d23`), all browser-verified end-to-end.** See git
+log / earlier entries in this doc's history for detail.
 
-**P8 — Documents: creator + formatting: DONE, verified by rendering real sample PDFs
-(UNCOMMITTED).**
-- Creator parity: `Invoice.createdBy` already existed in the schema and was already selected
-  in `routes/invoices.ts`'s shared `include` — just needed wiring into the PDF. Added
-  `createdBy: { name }` to `InvoicePdfData` and a "Prepared by" entry in the invoice's meta
-  strip (`services/pdf.ts`), matching quote's "Prepared by" and PO's "Raised by".
-- **Real bug found and fixed while reviewing rendered output**: `stampFooters()` (shared by
-  all three document types) drew its footer text at y=808, but A4 with a 40pt margin only has
-  801.89pt of printable page — every single document was silently growing one or two near-
-  blank trailing pages because pdfkit auto-paginates text that overflows the margin. A clean
-  1-line quote was rendering as 3 pages. Fixed by moving the footer to y=782/790, safely inside
-  the margin. Confirmed via rendered PNGs (`pdftoppm`) that a 2-line quote/invoice/PO now each
-  render as exactly 1 page, and a 40-line quote still paginates correctly across 3 *real*
-  pages with correct "Page N of M" numbering.
-  - Also replaced quote's separate fragile bottom-of-page "Prepared by" block (positioned via
-    `doc.y - 40/-28/-16` relative offsets after the terms/notes/bank section — height depended
-    on how much text rendered above it, risking overlap) with a clean meta-strip entry, the
-    same robust pattern PO already used for "Raised by".
-- Test: `docgen.test.ts`'s existing hostile-data cases extended to exercise `createdBy`/
-  `preparedBy` with nasty strings (`docgen.test.ts` already asserts "never throw, always a
-  real PDF" — the page-count regression itself has no automated test since it's a visual/
-  rendering property, only caught by actually looking at rendered pages).
+**P9 — Security hardening: DONE, browser-verified end-to-end (UNCOMMITTED).**
+- `app.ts` — rate-limit plugin flipped from `global: false` to `global: process.env.NODE_ENV
+  !== 'test'`. Previously only `/auth/login` and `/auth/2fa/verify` had any rate limit at all;
+  every write endpoint in the app was completely unlimited. Now everything gets the 300/min/IP
+  default unless it has its own tighter `config.rateLimit` (login/2FA keep theirs). Disabled
+  under the test runner because a full suite legitimately fires far more than 300 req/min from
+  one address and that isn't testing our own code — verified manually with a standalone script
+  forcing `NODE_ENV=production` that request #301 gets a 429.
+- `routes/auth.ts` login — added account-level lockout: counts recent `login_failed` audit rows
+  for that specific user (`auth.lockoutThreshold`/`auth.lockoutMinutes` settings, default
+  10/15) and blocks with 429 even on a correct password once tripped. The existing per-IP limit
+  alone doesn't stop guesses spread across many IPs at one email.
+- `app.ts` onRequest hook — 2FA enforcement for `Administrator`/`Sales Manager` roles behind
+  `auth.require2faForManagers` (off by default). Once on: a manager/admin whose
+  `SessionUser.totpEnabledAt` is null gets non-GET requests blocked with a clear message; GET
+  requests and the 2FA-enrol/confirm/logout/change-password paths stay open so they can fix it
+  without a lockout. `SessionUser` gained `totpEnabledAt` (`auth/rbac.ts`, populated in
+  `auth/session.ts`'s `loadSessionUser`).
+- Session/lockout review: JWT cookie (httpOnly/sameSite=lax/secure-in-prod, 12h default,
+  `auth.sessionHours`) already re-checks `user.isActive` on every request — deactivating a user
+  ends their session immediately, nothing to change there.
+- All three settings surfaced in Settings → Integrations → Sign-in (the existing generic
+  `SettingsGroup` renderer — just added `LABELS` entries, no new UI code).
+- Test: `security.test.ts` (6 cases — lockout trips and a clean account doesn't, 2FA gate
+  blocks/allows correctly across off/on/enrolled/rep-is-unaffected). Browser-verified live:
+  toggled `auth.require2faForManagers` on in Settings, confirmed via `fetch()` that the
+  *already-2FA-enrolled* dev admin correctly passes through (this dev DB's admin account had
+  2FA from before this session), then reverted the setting and cleaned up the scratch record
+  created during the check.
 
-**NEXT STEP:** commit the P8 changes (not yet committed — ask before committing per standing
-rule; then push is on the user, same as above), then **P9 — security hardening**: rate-limiting
-is `global:false` (only login/2FA limited today) — add sane limits to write endpoints; enforce
-2FA for admins/managers via a policy setting; review session/lockout policy. Then P10…P12, then
-backup track B1–B3.
+**NEXT STEP:** commit the P9 changes (not yet committed — ask before committing per standing
+rule; then push is on the user, same as above), then **P10 — data retention & privacy**:
+right-to-erasure, per-entity retention policies, explicit controls/retention for the login
+IP/ISP/device telemetry now being collected. Then P11…P12, then backup track B1–B3.
 
 ---
 

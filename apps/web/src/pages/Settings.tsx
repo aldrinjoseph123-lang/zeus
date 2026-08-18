@@ -142,6 +142,9 @@ const LABELS: Record<string, string> = {
   'auth.allowLocalLogin': 'Allow password sign-in', 'auth.allowEntraLogin': 'Allow Microsoft sign-in',
   'auth.autoProvisionEntra': 'Create users automatically on first Microsoft sign-in',
   'auth.defaultRoleName': 'Default role for new users', 'auth.sessionHours': 'Session length (hours)',
+  'auth.lockoutThreshold': 'Lock an account after this many failed sign-ins (in the lockout window)',
+  'auth.lockoutMinutes': 'Lockout window (minutes)',
+  'auth.require2faForManagers': 'Require two-factor authentication for Administrators and Sales Managers',
   'dedupe.enabled': 'Duplicate detection on', 'dedupe.blockOnExactDomain': 'Block saves on an exact domain match',
   'branding.productName': 'Product name', 'branding.tagline': 'Tagline',
 };

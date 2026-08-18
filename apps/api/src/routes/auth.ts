@@ -44,6 +44,24 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     const email = parsed.data.email.toLowerCase().trim();
     const user = await prisma.user.findUnique({ where: { email } });
 
+    /**
+     * Locked out regardless of what was just typed. The /auth/login rate limit above
+     * is per IP — nothing stops the same guesses spread across a botnet unless the
+     * account itself remembers how many times it has been wrong lately.
+     */
+    if (user) {
+      const [threshold, minutes] = await Promise.all([
+        getSetting<number>('auth.lockoutThreshold', 10),
+        getSetting<number>('auth.lockoutMinutes', 15),
+      ]);
+      const recentFailures = await prisma.auditLog.count({
+        where: { action: 'login_failed', entity: 'User', entityId: user.id, at: { gte: new Date(Date.now() - Number(minutes) * 60_000) } },
+      });
+      if (recentFailures >= Number(threshold)) {
+        throw new HttpError(429, `Too many failed attempts on this account. Try again in ${minutes} minutes, or ask an administrator to help.`);
+      }
+    }
+
     // Same generic message and a hash comparison either way — no user enumeration,
     // no timing shortcut when the account does not exist.
     const hash = user?.passwordHash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva';
