@@ -483,8 +483,8 @@ export function startScheduler(): void {
     await safely('stuckDeals', stuckDeals);
     await safely('expiringRegistrations', expiringRegistrations);
     await safely('renewals', async () => {
-      const { opened, reminded, lapsed } = await sweepRenewals();
-      if (opened || reminded || lapsed) console.log(`[scheduler] renewals: ${opened} opened, ${reminded} reminded, ${lapsed} lapsed`);
+      const { opened, reminded, lapsed, gaps } = await sweepRenewals();
+      if (opened || reminded || lapsed || gaps) console.log(`[scheduler] renewals: ${opened} opened, ${reminded} reminded, ${lapsed} lapsed, ${gaps} gaps flagged`);
     });
     await safely('overdueInvoices', overdueInvoices);
     await safely('paymentsDueSoon', paymentsDueSoon);

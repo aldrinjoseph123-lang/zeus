@@ -14,8 +14,8 @@ progress · ⬜ pending.
 | P4 | Offboarding: user record transfer | ✅ |
 | P5 | Manager review & coaching (5.1 ✅ · 5.2 ✅ · 5.3 ✅ backend+UI, tested/typechecked) | ✅ |
 | P6 | Quote approval — every quote gated before send (backend + editor UI, tested/typechecked) | ✅ |
-| P7 | Renewals — close the "won deal, no renewal" gap | 🔄 |
-| P8 | Documents — invoice creator + formatting review | ⬜ |
+| P7 | Renewals — close the "won deal, no renewal" gap | ✅ |
+| P8 | Documents — invoice creator + formatting review | 🔄 |
 | P9 | Security hardening | ⬜ |
 | P10 | Data retention & privacy | ⬜ |
 | P11 | Notifications & scheduled reports | ⬜ |
@@ -62,7 +62,7 @@ SENT to the customer — no threshold.** Add a `quotes` entity to the approval s
 (`approvals.quotesEnabled`), submit→approve/reject like the others, block send until
 approved, self-approval off by default. Audited.
 
-## P7 — Renewals gap-closing ⬜
+## P7 — Renewals gap-closing ✅
 
 Renewals already automate: an **issued invoice with termed lines** creates a
 `Subscription`; `sweepRenewals` fires `renewal_due` (90d) + `renewal_lapsed`.
@@ -120,43 +120,44 @@ id, dependency-ordered; invoices/POs extra-gated); row-count **parity** per back
 
 ## Resume state (updated after each phase — cold-start handoff)
 
-**Last git commit:** `ea2b907` (doc pointer only — P6 frontend below is UNCOMMITTED).
-**Working tree:** P6 frontend changes are sitting uncommitted. Run `git status` to confirm
-before doing anything destructive.
+**Last git commit:** `b6434e1` (P6 frontend). **P7 below is UNCOMMITTED.** Run `git status`
+to confirm before doing anything destructive.
 
-**Tests:** 124 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
+**Tests:** 126 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
 (Local Postgres quirk: if it won't boot, `LC_ALL=C pg_ctl -D /opt/homebrew/var/postgresql@17 start`.)
 Web typecheck clean: `cd apps/web && npx tsc -b --noEmit`.
 
-**P6 — Quote approval: DONE, backend + frontend, browser-verified end-to-end.**
-- Backend (already committed in `461836a`): approval fields on `Quote`, `quotes` wired into
-  `services/approvals.ts` + `routes/approvals.ts`, send/status→SENT gated via
-  `ensureQuoteApproved()` in `routes/quotes.ts`. Test: `quoteApproval.test.ts`.
-- Frontend (uncommitted, this session):
-  - `components/approvals.tsx` — widened `ApprovalEntity` and the `module` prop to include
-    `'quotes'`, added its `BLOCKED_STEP` copy. No new component — reused `ApprovalBar` as-is.
-  - `pages/QuoteEditor.tsx` — `QuoteFull` now extends `ApprovalState`; renders `<ApprovalBar
-    entity="quotes" module="quotes" .../>` inside the lifecycle card when `status === 'DRAFT'`,
-    same placement pattern as `InvoiceEditor.tsx`.
-  - `pages/Dashboard.tsx` — **bug found + fixed during browser verification**: the "Waiting on
-    you" queue widget's entity union and its `enabled` gate (`can('deals'/'invoices','approve')`)
-    didn't know about `'quotes'`, and the row-link ternary fell through to
-    `/purchase-orders/:id` for any quote — silently sending an approver to the wrong record.
-    Fixed: type now includes `'quotes'`, `enabled` also checks `can('quotes','approve')`, link
-    ternary has an explicit `/quotes/:id` branch.
-  - Verified live in the browser as admin: created a draft quote → "Send for approval" →
-    badge went to Awaiting sign-off → appeared correctly in the dashboard's "Waiting on you"
-    tab as `Quote · from Zeus Administrator`, clicking it opened `/quotes/:id` (not
-    `/purchase-orders/:id`) → Approve → badge went green/Approved. Two scratch quotes
-    (`ZEU-Q-000009`, `ZEU-Q-000010`) were created against Gulf Systems / Emirates NBD in the
-    local dev DB during this check — harmless, not cleaned up.
+**P6 — Quote approval: DONE, committed (`b6434e1`), browser-verified end-to-end.** Same
+`ApprovalBar` component deals/invoices/POs use, now also on `QuoteEditor.tsx`. Also fixed a bug
+found while verifying: the dashboard's "Waiting on you" queue widget didn't know about the
+`quotes` entity (missing from its `enabled` gate and its row-link ternary, which fell through
+to `/purchase-orders/:id`) — both fixed in `pages/Dashboard.tsx`.
 
-**NEXT STEP:** commit the P6 frontend changes (not yet committed — ask before committing per
-standing rule), then **P7 — renewals gap-closing**: keep the existing invoice-driven
-`Subscription` creation, add a watch-list/notification surfacing WON deals that produced no
-renewal (no termed invoice line). Look at `sweepRenewals` and wherever `Subscription` gets
-created off an invoice line today as the starting point. Then P8 (invoice creator +
-formatting) … P12, then backup track B1–B3.
+**P7 — Renewals gap-closing: DONE, browser-verified end-to-end (UNCOMMITTED).**
+- Decision from the doc: keep the existing invoice-driven `Subscription` creation as-is, and
+  add a watch-list + notification surfacing WON deals with no entitlement at all.
+- `services/renewals.ts` — new `wonDealsWithoutRenewal(scope?)`: WON deals, `closedAt` past a
+  grace period (`renewals.gapGraceDays` setting, default 14 days) and within the last 365 days,
+  with `soldSubscriptions: { none: {} }` (the `Deal.soldSubscriptions` relation is
+  `sourceDealId` on `Subscription` — set both by `createFromInvoice` for a first sale and by
+  `markRenewed` for a won renewal, so both paths correctly clear the gap). New
+  `flagRenewalGaps()` notifies the deal owner once per gap deal, deduped by checking for an
+  existing `Notification` row with `type: 'renewal_gap'` and the same `link` — no new schema
+  field needed. Wired into `sweepRenewals()`, which now also returns `gaps`.
+  `notify.ts` gained the `renewal_gap` event; `settings.ts` gained `renewals.gapGraceDays`.
+- `routes/renewals.ts` — `/api/subscriptions/summary` now also returns `renewalGaps: { count,
+  value, rows }`.
+- `pages/Renewals.tsx` — sixth `StatTile` ("Won, no renewal") + a watch-list card listing each
+  gap deal, linking to `/deals/:id`.
+- Test: `renewalGap.test.ts` (grace-window boundary, subscription-clears-the-gap, notify-once
+  dedupe). Browser-verified live: backdated a WON deal past the grace period via a one-off
+  script (cleaned up after), confirmed the tile, the card, and the deal link all render
+  correctly; also confirmed the empty state (0 gaps) renders cleanly against real dev data.
+
+**NEXT STEP:** commit the P7 changes (not yet committed — ask before committing per standing
+rule), then **P8 — invoice creator + document formatting review**: quote PDF shows "Prepared
+by", PO shows "Raised by", the invoice PDF shows no creator — add parity, then generate sample
+quote/PO/invoice PDFs and review alignment/structure. Then P9…P12, then backup track B1–B3.
 
 ---
 

@@ -42,6 +42,10 @@ interface Summary {
   lapsed12m: { count: number; value: number };
   byMonth: Array<{ month: string; value: number; count: number; worked: number }>;
   leadDays: number;
+  renewalGaps: {
+    count: number; value: number;
+    rows: Array<{ id: string; reference: string; name: string; amount: number; closedAt: string; account: string; owner: string | null }>;
+  };
 }
 
 const STATUS_TONE: Record<string, 'neutral' | 'secure' | 'watch' | 'accent' | 'info'> = {
@@ -125,7 +129,7 @@ export default function Renewals() {
       />
 
       {summary ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
           <StatTile label="Under cover" value={money(summary.underCover.value)} sub={`${summary.underCover.count} live entitlement${summary.underCover.count === 1 ? '' : 's'}`} />
           <StatTile label="Next 30 days" value={money(summary.next30.value)} sub={`${summary.next30.count} expiring`} tone={summary.next30.count ? 'watch' : 'default'} />
           <StatTile label="Next 90 days" value={money(summary.next90.value)} sub={`${summary.next90.count} expiring`} />
@@ -136,7 +140,33 @@ export default function Renewals() {
             tone={summary.unworked.count ? 'accent' : 'secure'}
           />
           <StatTile label="Lapsed (12m)" value={money(summary.lapsed12m.value)} sub={`${summary.lapsed12m.count} let go`} tone={summary.lapsed12m.count ? 'accent' : 'default'} />
+          <StatTile
+            label="Won, no renewal"
+            value={money(summary.renewalGaps.value)}
+            sub={`${summary.renewalGaps.count} deal${summary.renewalGaps.count === 1 ? '' : 's'} with nothing on file`}
+            tone={summary.renewalGaps.count ? 'accent' : 'secure'}
+          />
         </div>
+      ) : null}
+
+      {summary?.renewalGaps.rows.length ? (
+        <Card className="mt-3">
+          <CardHeader
+            title="Won, no renewal on file"
+            subtitle="Closed won with no termed invoice line — nothing here will ever remind anyone to renew it"
+          />
+          <div className="divide-y divide-line">
+            {summary.renewalGaps.rows.map((d) => (
+              <Link key={d.id} to={`/deals/${d.id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-sunken">
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-semibold">{d.reference} · {d.name}</span>
+                  <span className="block text-[11px] text-muted">{d.account} · won {date(d.closedAt)}{d.owner ? ` · ${d.owner}` : ''}</span>
+                </span>
+                <span className="tabular shrink-0 text-[13px] font-semibold">{money(d.amount)}</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
       ) : null}
 
       {summary?.byMonth.length ? (

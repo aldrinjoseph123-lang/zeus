@@ -110,6 +110,10 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'renewals.upliftPct': 0,
   /// Source recorded on renewal deals, so the pipeline can be split new vs renewal.
   'renewals.dealSource': 'Renewal',
+  /// A deal can close won for a one-off sale that was never meant to recur — this is
+  /// how long to wait after close before a deal with no entitlement at all counts as
+  /// a gap worth chasing, rather than an invoice just not raised yet.
+  'renewals.gapGraceDays': 14,
 
   /// How far back the undo button reaches. Past this the change stands and has to be
   /// corrected by hand — undo is a safety net for a mis-click, not a time machine.

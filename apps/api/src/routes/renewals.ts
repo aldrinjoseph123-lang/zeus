@@ -7,7 +7,7 @@ import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, 
 import { maskFields, ownerAllowed, scopeWhere } from '../auth/rbac.js';
 import { round2 } from '../lib/money.js';
 import { getSetting } from '../lib/settings.js';
-import { createFromInvoice, createSubscription, openRenewalDeal, sweepRenewals, termEnd } from '../services/renewals.js';
+import { createFromInvoice, createSubscription, openRenewalDeal, sweepRenewals, termEnd, wonDealsWithoutRenewal } from '../services/renewals.js';
 
 /**
  * Renewals sit under the `deals` permission rather than a module of their own: an
@@ -113,7 +113,7 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
         _count: true,
       });
 
-    const [next30, next60, next90, unworked, lapsed, all] = await Promise.all([
+    const [next30, next60, next90, unworked, lapsed, all, renewalGaps] = await Promise.all([
       window(30),
       window(60),
       window(90),
@@ -128,6 +128,7 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
         _count: true,
       }),
       prisma.subscription.aggregate({ where: live, _sum: { termValue: true, termCost: true }, _count: true }),
+      wonDealsWithoutRenewal(scope),
     ]);
 
     // Twelve months of expiries, so the shape of next year is visible at a glance.
@@ -155,6 +156,14 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
       lapsed12m: { count: lapsed._count, value: round2(num(lapsed._sum.termValue)) },
       byMonth: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
       leadDays: Number(await getSetting<number>('renewals.leadDays', 90)),
+      renewalGaps: {
+        count: renewalGaps.length,
+        value: round2(renewalGaps.reduce((sum, d) => sum + num(d.amount), 0)),
+        rows: renewalGaps.map((d) => ({
+          id: d.id, reference: d.reference, name: d.name, amount: num(d.amount),
+          closedAt: d.closedAt, account: d.account.name, owner: d.owner?.name ?? null,
+        })),
+      },
     };
   });
 
@@ -309,7 +318,7 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
     const result = await sweepRenewals();
     await audit({
       user: request.user, action: 'update', entity: 'Subscription',
-      summary: `Renewal sweep: ${result.opened} opened, ${result.reminded} reminded, ${result.lapsed} lapsed`,
+      summary: `Renewal sweep: ${result.opened} opened, ${result.reminded} reminded, ${result.lapsed} lapsed, ${result.gaps} gaps flagged`,
       ip: clientIp(request),
     });
     return result;

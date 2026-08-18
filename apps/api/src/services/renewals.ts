@@ -215,10 +215,61 @@ export async function openRenewalDeal(subscriptionId: string, actorId?: string |
 }
 
 /**
- * The nightly pass. Opens what is due, reminds on the configured steps, and marks
- * what has actually run out.
+ * Won deals that never produced an entitlement — no termed invoice line was ever
+ * issued against them. Some of these are genuinely one-off sales; the grace period
+ * is what keeps a deal that closed yesterday off the list while the invoice is still
+ * being raised.
  */
-export async function sweepRenewals(): Promise<{ opened: number; reminded: number; lapsed: number }> {
+export async function wonDealsWithoutRenewal(scope: Record<string, unknown> = {}) {
+  const graceDays = Number(await getSetting<number>('renewals.gapGraceDays', 14));
+  const cutoff = new Date(Date.now() - graceDays * 86_400_000);
+  const lookback = new Date(Date.now() - 365 * 86_400_000);
+
+  return prisma.deal.findMany({
+    where: { ...scope, deletedAt: null, status: 'WON', closedAt: { lte: cutoff, gte: lookback }, soldSubscriptions: { none: {} } },
+    select: {
+      id: true, reference: true, name: true, amount: true, closedAt: true, ownerId: true,
+      account: { select: { name: true } }, owner: { select: { name: true } },
+    },
+    orderBy: { closedAt: 'desc' },
+    take: 100,
+  });
+}
+
+/** Tell the owner once per gap deal — deduped against the notification already sent. */
+async function flagRenewalGaps(): Promise<number> {
+  const gaps = await wonDealsWithoutRenewal();
+  let flagged = 0;
+
+  for (const deal of gaps) {
+    const link = `/deals/${deal.id}`;
+    const already = await prisma.notification.findFirst({ where: { type: 'renewal_gap', link } });
+    if (already) continue;
+
+    await notify({
+      event: 'renewal_gap',
+      title: `${deal.account.name} — ${deal.reference} won with no renewal on file`,
+      body: `Closed ${deal.closedAt!.toLocaleDateString('en-GB')} · ${formatAed(num(deal.amount))} · no termed invoice line has created an entitlement yet.`,
+      link,
+      severity: 'warn',
+      ownerId: deal.ownerId,
+      facts: [
+        { title: 'Deal', value: deal.reference },
+        { title: 'Customer', value: deal.account.name },
+        { title: 'Won', value: deal.closedAt!.toLocaleDateString('en-GB') },
+        { title: 'Value', value: formatAed(num(deal.amount)) },
+      ],
+    });
+    flagged += 1;
+  }
+  return flagged;
+}
+
+/**
+ * The nightly pass. Opens what is due, reminds on the configured steps, marks what
+ * has actually run out, and flags won deals nothing was ever set up to renew.
+ */
+export async function sweepRenewals(): Promise<{ opened: number; reminded: number; lapsed: number; gaps: number }> {
   const [leadDays, reminderSteps] = await Promise.all([
     getSetting<number>('renewals.leadDays', 90),
     getSetting<number[]>('renewals.reminderDays', [90, 30, 7]),
@@ -311,7 +362,9 @@ export async function sweepRenewals(): Promise<{ opened: number; reminded: numbe
     data: { status: 'LAPSED' },
   });
 
-  return { opened, reminded, lapsed: lapsed.count };
+  const gaps = await flagRenewalGaps();
+
+  return { opened, reminded, lapsed: lapsed.count, gaps };
 }
 
 /**
