@@ -130,6 +130,7 @@ export async function quotePdf(quote: QuotePdfData): Promise<Buffer> {
     ['Valid until', date(quote.validUntil)],
     ['Currency', quote.currency],
     ['Reference', quote.deal?.reference ?? '—'],
+    ['Prepared by', quote.preparedBy?.name ?? '—'],
   ];
   meta.forEach(([k, v], i) => {
     const x = PAGE.margin + 12 + (CONTENT_WIDTH / meta.length) * i;
@@ -246,27 +247,22 @@ export async function quotePdf(quote: QuotePdfData): Promise<Buffer> {
     );
   }
 
-  if (quote.preparedBy) {
-    doc.fillColor(GREY).font('Helvetica').fontSize(8)
-      .text('Prepared by', PAGE.margin + CONTENT_WIDTH - 180, doc.y - 40, { width: 180, align: 'right' });
-    doc.fillColor(BLACK).font('Helvetica-Bold').fontSize(9)
-      .text(quote.preparedBy.name, PAGE.margin + CONTENT_WIDTH - 180, doc.y - 28, { width: 180, align: 'right' });
-    doc.fillColor(GREY).font('Helvetica').fontSize(8)
-      .text(quote.preparedBy.email, PAGE.margin + CONTENT_WIDTH - 180, doc.y - 16, { width: 180, align: 'right' });
-  }
-
   stampFooters(doc, `${company['company.name'] ?? 'Protect24x7'} · ${quote.number}`);
   return toBuffer(doc);
 }
 
 function stampFooters(doc: PDFKit.PDFDocument, left: string): void {
+  // A4 is 841.89pt tall; a 40pt margin leaves 801.89pt of printable page. Text drawn
+  // any lower than that has pdfkit silently start a fresh page to finish rendering it
+  // — every document was quietly growing a near-blank trailing page from its own
+  // footer. 782/790 sit comfortably inside the margin instead.
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(range.start + i);
-    doc.moveTo(PAGE.margin, 800).lineTo(PAGE.margin + CONTENT_WIDTH, 800).lineWidth(0.5).stroke(LINE);
-    doc.fillColor(GREY).font('Helvetica').fontSize(7.5).text(left, PAGE.margin, 808, { width: CONTENT_WIDTH / 2 });
+    doc.moveTo(PAGE.margin, 782).lineTo(PAGE.margin + CONTENT_WIDTH, 782).lineWidth(0.5).stroke(LINE);
+    doc.fillColor(GREY).font('Helvetica').fontSize(7.5).text(left, PAGE.margin, 790, { width: CONTENT_WIDTH / 2 });
     doc.fillColor(GREY).font('Helvetica').fontSize(7.5)
-      .text(`Page ${i + 1} of ${range.count}`, PAGE.margin + CONTENT_WIDTH / 2, 808, { width: CONTENT_WIDTH / 2, align: 'right' });
+      .text(`Page ${i + 1} of ${range.count}`, PAGE.margin + CONTENT_WIDTH / 2, 790, { width: CONTENT_WIDTH / 2, align: 'right' });
   }
 }
 
@@ -430,6 +426,7 @@ export interface InvoicePdfData {
   deal: { reference: string } | null;
   originalInvoice: { number: string; issueDate: Date } | null;
   customerPo: { number: string } | null;
+  createdBy: { name: string } | null;
   lines: TaxDocLine[];
 }
 
@@ -506,6 +503,7 @@ export async function invoicePdf(doc: InvoicePdfData): Promise<Buffer> {
     ['Currency', doc.currency],
     ...(doc.placeOfSupply ? ([['Place of supply', doc.placeOfSupply]] as Array<[string, string]>) : []),
     ...(doc.customerPo?.number ? ([['Your PO', doc.customerPo.number]] as Array<[string, string]>) : doc.poNumber ? ([['Your PO', doc.poNumber]] as Array<[string, string]>) : []),
+    ['Prepared by', doc.createdBy?.name ?? '—'],
   ];
   const rows = Math.ceil(meta.length / 4);
   const stripHeight = rows * 30;

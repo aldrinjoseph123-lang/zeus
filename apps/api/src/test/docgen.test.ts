@@ -47,7 +47,7 @@ function invoice(over: Partial<InvoicePdfData> = {}): InvoicePdfData {
     currency: 'AED', exchangeRate: 1, subtotal: 1000, discountPct: 0, discountAmt: 0, vatAmount: 50, total: 1050, amountPaid: 0,
     poNumber: null, terms: LONG, notes: NASTY, creditReason: null, reverseCharge: false, placeOfSupply: null,
     supplierName: NASTY, supplierTrn: null, supplierAddress: NASTY, recipientName: NASTY, recipientTrn: null, recipientAddress: null,
-    account, contact: null, deal: null, originalInvoice: null, customerPo: null,
+    account, contact: null, deal: null, originalInvoice: null, customerPo: null, createdBy: null,
     lines: [{ description: NASTY, quantity: 1, unit: 'ea', unitPrice: 1000, discountPct: 0, taxable: true, vatRate: 5, lineTotal: 1000, lineVat: 50, termMonths: 12 }],
     ...over,
   };
@@ -75,7 +75,7 @@ after(async () => { await prisma.$disconnect(); });
 
 describe('PDF generation survives hostile data', () => {
   it('quote: nasty strings, long terms, missing optionals', async () => {
-    assert.ok(isPdf(await quotePdf(quote())));
+    assert.ok(isPdf(await quotePdf(quote({ preparedBy: { name: NASTY, email: 'rep@example.com', phone: null } }))));
   });
 
   it('quote: empty line list and null money fields', async () => {
@@ -83,7 +83,7 @@ describe('PDF generation survives hostile data', () => {
   });
 
   it('invoice: tax invoice with everything awkward', async () => {
-    assert.ok(isPdf(await invoicePdf(invoice())));
+    assert.ok(isPdf(await invoicePdf(invoice({ createdBy: { name: NASTY } }))));
   });
 
   it('invoice: credit note with no original and empty lines', async () => {

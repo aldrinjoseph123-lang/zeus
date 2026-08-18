@@ -15,8 +15,8 @@ progress · ⬜ pending.
 | P5 | Manager review & coaching (5.1 ✅ · 5.2 ✅ · 5.3 ✅ backend+UI, tested/typechecked) | ✅ |
 | P6 | Quote approval — every quote gated before send (backend + editor UI, tested/typechecked) | ✅ |
 | P7 | Renewals — close the "won deal, no renewal" gap | ✅ |
-| P8 | Documents — invoice creator + formatting review | 🔄 |
-| P9 | Security hardening | ⬜ |
+| P8 | Documents — invoice creator + formatting review | ✅ |
+| P9 | Security hardening | 🔄 |
 | P10 | Data retention & privacy | ⬜ |
 | P11 | Notifications & scheduled reports | ⬜ |
 | P12 | Search & QoL parity | ⬜ |
@@ -70,7 +70,7 @@ Renewals already automate: an **issued invoice with termed lines** creates a
 surface WON deals that produced **no renewal** (no termed invoice line) so nothing
 silently falls out of the renewal pipeline. A watch-list + notification.
 
-## P8 — Documents: creator + formatting ⬜
+## P8 — Documents: creator + formatting ✅
 
 Quote PDF shows **Prepared by**, PO shows **Raised by**; the **invoice PDF shows no
 creator**. **Decision:** add a *Prepared by* line to the invoice PDF (parity), then
@@ -120,44 +120,47 @@ id, dependency-ordered; invoices/POs extra-gated); row-count **parity** per back
 
 ## Resume state (updated after each phase — cold-start handoff)
 
-**Last git commit:** `b6434e1` (P6 frontend). **P7 below is UNCOMMITTED.** Run `git status`
-to confirm before doing anything destructive.
+**Last git commit:** `c77e3f7` (P7). **P8 below is UNCOMMITTED.** Run `git status` to confirm
+before doing anything destructive. `origin` remote is now set (github.com,
+aldrinjoseph123-lang/zeus) but push only works from the user's own terminal — this session's
+`git push` is blocked by the sandbox classifier regardless of retries; hand the command back
+to the user instead of retrying it.
 
 **Tests:** 126 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
 (Local Postgres quirk: if it won't boot, `LC_ALL=C pg_ctl -D /opt/homebrew/var/postgresql@17 start`.)
 Web typecheck clean: `cd apps/web && npx tsc -b --noEmit`.
 
-**P6 — Quote approval: DONE, committed (`b6434e1`), browser-verified end-to-end.** Same
-`ApprovalBar` component deals/invoices/POs use, now also on `QuoteEditor.tsx`. Also fixed a bug
-found while verifying: the dashboard's "Waiting on you" queue widget didn't know about the
-`quotes` entity (missing from its `enabled` gate and its row-link ternary, which fell through
-to `/purchase-orders/:id`) — both fixed in `pages/Dashboard.tsx`.
+**P6 (quote approval) and P7 (renewals gap-closing): DONE, committed (`b6434e1`, `c77e3f7`),
+both browser-verified end-to-end.** See prior entries in git log / this doc's history for detail.
 
-**P7 — Renewals gap-closing: DONE, browser-verified end-to-end (UNCOMMITTED).**
-- Decision from the doc: keep the existing invoice-driven `Subscription` creation as-is, and
-  add a watch-list + notification surfacing WON deals with no entitlement at all.
-- `services/renewals.ts` — new `wonDealsWithoutRenewal(scope?)`: WON deals, `closedAt` past a
-  grace period (`renewals.gapGraceDays` setting, default 14 days) and within the last 365 days,
-  with `soldSubscriptions: { none: {} }` (the `Deal.soldSubscriptions` relation is
-  `sourceDealId` on `Subscription` — set both by `createFromInvoice` for a first sale and by
-  `markRenewed` for a won renewal, so both paths correctly clear the gap). New
-  `flagRenewalGaps()` notifies the deal owner once per gap deal, deduped by checking for an
-  existing `Notification` row with `type: 'renewal_gap'` and the same `link` — no new schema
-  field needed. Wired into `sweepRenewals()`, which now also returns `gaps`.
-  `notify.ts` gained the `renewal_gap` event; `settings.ts` gained `renewals.gapGraceDays`.
-- `routes/renewals.ts` — `/api/subscriptions/summary` now also returns `renewalGaps: { count,
-  value, rows }`.
-- `pages/Renewals.tsx` — sixth `StatTile` ("Won, no renewal") + a watch-list card listing each
-  gap deal, linking to `/deals/:id`.
-- Test: `renewalGap.test.ts` (grace-window boundary, subscription-clears-the-gap, notify-once
-  dedupe). Browser-verified live: backdated a WON deal past the grace period via a one-off
-  script (cleaned up after), confirmed the tile, the card, and the deal link all render
-  correctly; also confirmed the empty state (0 gaps) renders cleanly against real dev data.
+**P8 — Documents: creator + formatting: DONE, verified by rendering real sample PDFs
+(UNCOMMITTED).**
+- Creator parity: `Invoice.createdBy` already existed in the schema and was already selected
+  in `routes/invoices.ts`'s shared `include` — just needed wiring into the PDF. Added
+  `createdBy: { name }` to `InvoicePdfData` and a "Prepared by" entry in the invoice's meta
+  strip (`services/pdf.ts`), matching quote's "Prepared by" and PO's "Raised by".
+- **Real bug found and fixed while reviewing rendered output**: `stampFooters()` (shared by
+  all three document types) drew its footer text at y=808, but A4 with a 40pt margin only has
+  801.89pt of printable page — every single document was silently growing one or two near-
+  blank trailing pages because pdfkit auto-paginates text that overflows the margin. A clean
+  1-line quote was rendering as 3 pages. Fixed by moving the footer to y=782/790, safely inside
+  the margin. Confirmed via rendered PNGs (`pdftoppm`) that a 2-line quote/invoice/PO now each
+  render as exactly 1 page, and a 40-line quote still paginates correctly across 3 *real*
+  pages with correct "Page N of M" numbering.
+  - Also replaced quote's separate fragile bottom-of-page "Prepared by" block (positioned via
+    `doc.y - 40/-28/-16` relative offsets after the terms/notes/bank section — height depended
+    on how much text rendered above it, risking overlap) with a clean meta-strip entry, the
+    same robust pattern PO already used for "Raised by".
+- Test: `docgen.test.ts`'s existing hostile-data cases extended to exercise `createdBy`/
+  `preparedBy` with nasty strings (`docgen.test.ts` already asserts "never throw, always a
+  real PDF" — the page-count regression itself has no automated test since it's a visual/
+  rendering property, only caught by actually looking at rendered pages).
 
-**NEXT STEP:** commit the P7 changes (not yet committed — ask before committing per standing
-rule), then **P8 — invoice creator + document formatting review**: quote PDF shows "Prepared
-by", PO shows "Raised by", the invoice PDF shows no creator — add parity, then generate sample
-quote/PO/invoice PDFs and review alignment/structure. Then P9…P12, then backup track B1–B3.
+**NEXT STEP:** commit the P8 changes (not yet committed — ask before committing per standing
+rule; then push is on the user, same as above), then **P9 — security hardening**: rate-limiting
+is `global:false` (only login/2FA limited today) — add sane limits to write endpoints; enforce
+2FA for admins/managers via a policy setting; review session/lockout policy. Then P10…P12, then
+backup track B1–B3.
 
 ---
 
