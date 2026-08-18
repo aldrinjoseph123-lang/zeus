@@ -12,8 +12,9 @@ import {
 } from '../components/ui';
 import { AccountPicker, ContactPicker, Lookup } from '../components/pickers';
 import { LifecycleRail, quoteHint, quoteTrack } from '../components/lifecycle';
+import { ApprovalBar, type ApprovalState } from '../components/approvals';
 
-interface QuoteFull {
+interface QuoteFull extends ApprovalState {
   id: string; number: string; version: number; status: string; issueDate: string; validUntil: string | null;
   discountPct: string | number; vatRate: string | number; terms: string | null; notes: string | null;
   account: { id: string; name: string }; contact: { id: string; firstName: string; lastName: string; email: string | null } | null;
@@ -234,6 +235,15 @@ export default function QuoteEditor() {
             <p className="border-t border-line px-4 py-2 text-[11px] text-muted">
               Accepted quotes are locked so the invoice can never disagree with what the customer signed. Create a new version to re-price.
             </p>
+          ) : null}
+          {quote.status === 'DRAFT' ? (
+            <ApprovalBar
+              entity="quotes"
+              id={quote.id}
+              module="quotes"
+              record={quote}
+              onChanged={() => void queryClient.invalidateQueries({ queryKey: ['quote', id] })}
+            />
           ) : null}
         </Card>
       ) : null}

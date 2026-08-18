@@ -95,11 +95,11 @@ export default function Dashboard() {
   const { data: approvals } = useQuery({
     queryKey: ['pending-approvals'],
     queryFn: () => api.get<Array<{
-      entity: 'deals' | 'purchase-orders' | 'invoices'; id: string; reference: string; title: string;
+      entity: 'deals' | 'purchase-orders' | 'invoices' | 'quotes'; id: string; reference: string; title: string;
       account: string; value: number; requestedAt: string | null; requestedBy: string | null;
       marginPct?: number; marginBelowFloor?: boolean;
     }>>('/approvals/pending'),
-    enabled: can('deals', 'approve') || can('invoices', 'approve'),
+    enabled: can('deals', 'approve') || can('invoices', 'approve') || can('quotes', 'approve'),
   });
 
   // Reads the report rather than a second endpoint: it is already scoped to the reader.
@@ -393,7 +393,12 @@ export default function Dashboard() {
                 approvals.map((a) => (
                   <Link
                     key={`${a.entity}-${a.id}`}
-                    to={a.entity === 'deals' ? `/deals/${a.id}` : a.entity === 'invoices' ? `/invoices/${a.id}` : `/purchase-orders/${a.id}`}
+                    to={
+                      a.entity === 'deals' ? `/deals/${a.id}`
+                      : a.entity === 'invoices' ? `/invoices/${a.id}`
+                      : a.entity === 'quotes' ? `/quotes/${a.id}`
+                      : `/purchase-orders/${a.id}`
+                    }
                     className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5 transition-colors hover:bg-sunken"
                   >
                     <span className="min-w-0">

@@ -13,8 +13,8 @@ progress · ⬜ pending.
 |---|---|---|
 | P4 | Offboarding: user record transfer | ✅ |
 | P5 | Manager review & coaching (5.1 ✅ · 5.2 ✅ · 5.3 ✅ backend+UI, tested/typechecked) | ✅ |
-| P6 | Quote approval — every quote gated before send (backend ✅ enforced; editor UI pending) | 🔄 |
-| P7 | Renewals — close the "won deal, no renewal" gap | ⬜ |
+| P6 | Quote approval — every quote gated before send (backend + editor UI, tested/typechecked) | ✅ |
+| P7 | Renewals — close the "won deal, no renewal" gap | 🔄 |
 | P8 | Documents — invoice creator + formatting review | ⬜ |
 | P9 | Security hardening | ⬜ |
 | P10 | Data retention & privacy | ⬜ |
@@ -54,7 +54,7 @@ export, optional deactivate. Users-tab wizard; admin-only; 4 tests.
   (rot-days, slipped close, high-value stalls), activity & win/loss trend. Reuses
   existing data + the 5.2 movement data.
 
-## P6 — Quote approval ⬜
+## P6 — Quote approval ✅
 
 Today: deals (close-won), invoices (before send), POs all have manager sign-off; quotes
 have only a margin *warning*. **Decision: every quote requires approval before it can be
@@ -120,34 +120,43 @@ id, dependency-ordered; invoices/POs extra-gated); row-count **parity** per back
 
 ## Resume state (updated after each phase — cold-start handoff)
 
-**Last git commit:** `461836a` (offboarding, coaching, loss/movement, quote approval).
-**Working tree CLEAN** — P4, P5 (all), P6 backend, view-audit, and the backup-status
-bugfix are all committed.
+**Last git commit:** `ea2b907` (doc pointer only — P6 frontend below is UNCOMMITTED).
+**Working tree:** P6 frontend changes are sitting uncommitted. Run `git status` to confirm
+before doing anything destructive.
 
 **Tests:** 124 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
 (Local Postgres quirk: if it won't boot, `LC_ALL=C pg_ctl -D /opt/homebrew/var/postgresql@17 start`.)
+Web typecheck clean: `cd apps/web && npx tsc -b --noEmit`.
 
-**Done & tested (uncommitted):**
-- P4 offboarding — `services/transfer.ts`, routes in `admin.ts`, `TransferJob` model, Users-tab wizard. Tests: `transfer.test.ts`.
-- P5.1 loss report — `loss-reasons` report def in `routes/reports.ts`. Test: `lossReport.test.ts`.
-- P5.2 weekly movement — `DealSnapshot` model; `mondayOf`/`takeWeeklyDealSnapshot`/`weeklyDealMovement` in `services/snapshots.ts`; Monday-06:00 cron in `jobs/scheduler.ts`; `deal-movement` report. Test: `dealMovement.test.ts`.
-- P5.3 coaching — **backend** `routes/coaching.ts` (`GET /api/coaching/:userId`, registered in `app.ts`), setting `coaching.highValueAmount` (50000). Test: `coaching.test.ts`. **Frontend** `pages/Coaching.tsx` + route in `App.tsx` + nav item in `Layout.tsx` (Insight → Coaching). **Typechecks clean; browser-verify still pending.**
-- Also uncommitted: view-audit (`auditRead` in `lib/audit.ts` + 6 detail routes + `audit.logReads` setting + `auditRead.test.ts`); backup-status bugfix (`partial` on upload failure) + `backupStatus.test.ts`; `.gitignore` `*.tsbuildinfo`.
+**P6 — Quote approval: DONE, backend + frontend, browser-verified end-to-end.**
+- Backend (already committed in `461836a`): approval fields on `Quote`, `quotes` wired into
+  `services/approvals.ts` + `routes/approvals.ts`, send/status→SENT gated via
+  `ensureQuoteApproved()` in `routes/quotes.ts`. Test: `quoteApproval.test.ts`.
+- Frontend (uncommitted, this session):
+  - `components/approvals.tsx` — widened `ApprovalEntity` and the `module` prop to include
+    `'quotes'`, added its `BLOCKED_STEP` copy. No new component — reused `ApprovalBar` as-is.
+  - `pages/QuoteEditor.tsx` — `QuoteFull` now extends `ApprovalState`; renders `<ApprovalBar
+    entity="quotes" module="quotes" .../>` inside the lifecycle card when `status === 'DRAFT'`,
+    same placement pattern as `InvoiceEditor.tsx`.
+  - `pages/Dashboard.tsx` — **bug found + fixed during browser verification**: the "Waiting on
+    you" queue widget's entity union and its `enabled` gate (`can('deals'/'invoices','approve')`)
+    didn't know about `'quotes'`, and the row-link ternary fell through to
+    `/purchase-orders/:id` for any quote — silently sending an approver to the wrong record.
+    Fixed: type now includes `'quotes'`, `enabled` also checks `can('quotes','approve')`, link
+    ternary has an explicit `/quotes/:id` branch.
+  - Verified live in the browser as admin: created a draft quote → "Send for approval" →
+    badge went to Awaiting sign-off → appeared correctly in the dashboard's "Waiting on you"
+    tab as `Quote · from Zeus Administrator`, clicking it opened `/quotes/:id` (not
+    `/purchase-orders/:id`) → Approve → badge went green/Approved. Two scratch quotes
+    (`ZEU-Q-000009`, `ZEU-Q-000010`) were created against Gulf Systems / Emirates NBD in the
+    local dev DB during this check — harmless, not cleaned up.
 
-**Migrations added (in `apps/api/prisma/migrations/`):** `transfer_job`, `deal_snapshot`.
-
-**P5 DONE.** (P5.3 browser-verify deferred — backend tested + UI typechecks.)
-
-**P6 BACKEND DONE + TESTED** (`quoteApproval.test.ts`). Migration `quote_approval` added
-approval fields to Quote. `quotes` wired into `services/approvals.ts` (Entity/keys/MODEL/
-ENTITIES) + `routes/approvals.ts` (SELECT/linkFor/pending queue). Send + status→SENT gated
-in `routes/quotes.ts` via `ensureQuoteApproved()`. Settings `approvals.quotesEnabled`/
-`quoteMinAmount`. **Server enforces it regardless of UI.**
-
-**NEXT STEP: P6 frontend** — in the quote editor (`apps/web/src/pages/QuoteEditor.tsx`):
-show approval status badge, a "Submit for approval" button (`POST /api/approvals/quotes/:id/submit`),
-and surface the block on the SEND button; confirm quotes render in the approvals queue UI
-(they now come through `GET /api/approvals/pending`). Then P7 (renewals gap), P8…P12, then B1–B3.
+**NEXT STEP:** commit the P6 frontend changes (not yet committed — ask before committing per
+standing rule), then **P7 — renewals gap-closing**: keep the existing invoice-driven
+`Subscription` creation, add a watch-list/notification surfacing WON deals that produced no
+renewal (no termed invoice line). Look at `sweepRenewals` and wherever `Subscription` gets
+created off an invoice line today as the starting point. Then P8 (invoice creator +
+formatting) … P12, then backup track B1–B3.
 
 ---
 

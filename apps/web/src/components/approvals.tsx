@@ -13,7 +13,7 @@ import { Badge, Button, Field, Modal, Textarea, cx, useToast } from './ui';
  * says plainly which step is blocked.
  */
 
-export type ApprovalEntity = 'deals' | 'purchase-orders' | 'invoices';
+export type ApprovalEntity = 'deals' | 'purchase-orders' | 'invoices' | 'quotes';
 
 export interface ApprovalState {
   approvalStatus: 'NOT_REQUIRED' | 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -28,14 +28,15 @@ const BLOCKED_STEP: Record<ApprovalEntity, string> = {
   deals: 'closing this deal won',
   'purchase-orders': 'issuing this order to the supplier',
   invoices: 'sending this invoice to the customer',
+  quotes: 'sending this quote to the customer',
 };
 
 export function ApprovalBar({ entity, id, record, module, onChanged }: {
   entity: ApprovalEntity;
   id: string;
   record: ApprovalState;
-  /** RBAC module the approve right lives on — deals for deals, invoices for money. */
-  module: 'deals' | 'invoices';
+  /** RBAC module the approve right lives on — deals for deals, invoices/quotes for the rest. */
+  module: 'deals' | 'invoices' | 'quotes';
   onChanged: () => void;
 }) {
   const toast = useToast();
