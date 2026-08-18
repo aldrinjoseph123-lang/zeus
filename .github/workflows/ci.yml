@@ -33,6 +33,10 @@ jobs:
       # here too, before the harness ever gets a chance to run.
       DATABASE_URL: postgresql://zeus:zeus@localhost:5432/zeus_test?schema=public
       APP_SECRET: ci-test-secret-not-used-anywhere-else-0123456789abcdef
+      # ubuntu-latest ships pg_dump 16.x by default; pg_dump refuses to dump a server
+      # newer than itself, and the service above runs 17 to match production. Points
+      # at the matching client installed below instead of whatever is on PATH.
+      PG_DUMP_PATH: /usr/lib/postgresql/17/bin/pg_dump
 
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +46,14 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+
+      # Matches the server version in the postgres service above — see PG_DUMP_PATH.
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
 
       - run: npm ci
       - run: npm run db:generate
