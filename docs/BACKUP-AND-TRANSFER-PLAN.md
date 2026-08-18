@@ -17,8 +17,8 @@ progress · ⬜ pending.
 | P7 | Renewals — close the "won deal, no renewal" gap | ✅ |
 | P8 | Documents — invoice creator + formatting review | ✅ |
 | P9 | Security hardening | ✅ |
-| P10 | Data retention & privacy | 🔄 |
-| P11 | Notifications & scheduled reports | ⬜ |
+| P10 | Data retention & privacy | ✅ |
+| P11 | Notifications & scheduled reports | 🔄 |
 | P12 | Search & QoL parity | ⬜ |
 | B1 | Backup engine (logical/config/encrypted/tiers/2nd destination) | ⬜ |
 | B2 | Backup automation & control | ⬜ |
@@ -96,10 +96,43 @@ open so they can fix it without being locked out. Session review: JWT cookie
 on every request, so deactivating a user ends their session immediately — no changes
 needed there.
 
-## P10 — Data retention & privacy ⬜
+## P10 — Data retention & privacy ✅
 
 Right-to-erasure and per-entity retention policies; explicit controls + retention for
 the login IP/ISP/device telemetry now collected (personal data). Documented handling.
+
+**Shipped:**
+- **Right to erasure** — `POST /api/contacts/:id/erase` and `POST /api/leads/:id/erase`
+  (require a `reason`, gated on the same `delete` permission as the entity). Scrubs PII
+  fields in place (name/email/phone/LinkedIn/notes/custom fields) rather than deleting
+  the row — a contact can still be the "attn:" on an already-issued quote or invoice,
+  and that document has to keep meaning what it meant the day it was issued. New
+  `erasedAt` column on both models (migration `right_to_erasure`). No undo — an
+  erasure that can be silently reversed is not one. UI: "Erase data" button on
+  `LeadDetail.tsx` (Contact has the backend capability only — no page in the app
+  deletes a Contact today either, so adding erase-only UI there would have been a new
+  surface out of proportion to this phase; noted here rather than silently skipped).
+- **Per-entity retention** — `retention.deletedLeadDays` (default 0/off). Nightly sweep
+  hard-deletes soft-deleted Leads past that age, but only ones with zero Activities and
+  zero Attachments — deliberately narrow scope. Accounts/Contacts/Deals stay archived
+  rather than auto-destroyed: they can carry invoices and other legal-document
+  relations downstream that a blind purge would orphan or break the trail for.
+- **Login telemetry retention** — `auth.loginAuditRetentionDays` (default 180). The
+  system log already pruned at 30 days; the audit trail's `login`/`login_failed`/
+  `login_pending_2fa` rows — which also carry an IP — did not, and the rest of the
+  audit trail is intentionally kept forever, so this prunes only that family of
+  actions, nightly.
+- Both sweeps live in `services/retention.ts`, wired into `jobs/scheduler.ts` at
+  03:15 GST (right after the existing 03:00 log prune).
+- All three settings surface automatically in Settings → Audit trail → Data
+  retention / Sign-in, via the existing generic settings renderer.
+- Test: `retention.test.ts` (erase scrubs PII + keeps business fields, double-erase
+  guarded, requires a reason, login-audit prune respects the 0=off setting and only
+  touches login-family rows, lead purge skips ones with activity/attachments).
+  Browser-verified live: created a scratch lead, erased it through the UI, confirmed
+  in the database that PII was scrubbed and `erasedAt`/`deletedAt` were stamped while
+  `company`/`status` survived, confirmed the audit-trail entry, confirmed the new
+  Settings card renders — then cleaned up the scratch lead.
 
 ## P11 — Notifications & scheduled reports ⬜
 
@@ -134,54 +167,43 @@ id, dependency-ordered; invoices/POs extra-gated); row-count **parity** per back
 
 ## Resume state (updated after each phase — cold-start handoff)
 
-**Last git commit:** `5df0d23` (P8). **P9 below is UNCOMMITTED.** Run `git status` to confirm
-before doing anything destructive. `origin` remote is set (github.com,
-aldrinjoseph123-lang/zeus) but push only works from the user's own terminal — this session's
-`git push` is blocked by the sandbox classifier regardless of retries; hand the command back
-to the user instead of retrying it.
+**Last git commit:** `aebf947` (P9, pushed to origin/main). **P10 below is UNCOMMITTED,**
+including a new migration. Run `git status` to confirm before doing anything destructive.
+`origin` is github.com/aldrinjoseph123-lang/zeus — pushing works from the user's own terminal
+(confirmed working after clearing a stale osxkeychain credential); this session's own
+`git push` gets blocked or hangs regardless of retries — hand the command back to the user.
 
-**Tests:** 132 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
+**Tests:** 138 integration + 27 unit, all green. Run: `cd apps/api && LC_ALL=C npm test`.
 (Local Postgres quirk: if it won't boot, `LC_ALL=C pg_ctl -D /opt/homebrew/var/postgresql@17 start`.)
 Web typecheck clean: `cd apps/web && npx tsc -b --noEmit`.
 
-**P6 (quote approval), P7 (renewals gap-closing), P8 (invoice creator + PDF pagination fix):
-DONE, committed (`b6434e1`, `c77e3f7`, `5df0d23`), all browser-verified end-to-end.** See git
-log / earlier entries in this doc's history for detail.
+**P6–P9: DONE, committed and pushed (`b6434e1`, `c77e3f7`, `5df0d23`, `aebf947`), all
+browser-verified end-to-end.** See git log / earlier entries in this doc's history for detail.
 
-**P9 — Security hardening: DONE, browser-verified end-to-end (UNCOMMITTED).**
-- `app.ts` — rate-limit plugin flipped from `global: false` to `global: process.env.NODE_ENV
-  !== 'test'`. Previously only `/auth/login` and `/auth/2fa/verify` had any rate limit at all;
-  every write endpoint in the app was completely unlimited. Now everything gets the 300/min/IP
-  default unless it has its own tighter `config.rateLimit` (login/2FA keep theirs). Disabled
-  under the test runner because a full suite legitimately fires far more than 300 req/min from
-  one address and that isn't testing our own code — verified manually with a standalone script
-  forcing `NODE_ENV=production` that request #301 gets a 429.
-- `routes/auth.ts` login — added account-level lockout: counts recent `login_failed` audit rows
-  for that specific user (`auth.lockoutThreshold`/`auth.lockoutMinutes` settings, default
-  10/15) and blocks with 429 even on a correct password once tripped. The existing per-IP limit
-  alone doesn't stop guesses spread across many IPs at one email.
-- `app.ts` onRequest hook — 2FA enforcement for `Administrator`/`Sales Manager` roles behind
-  `auth.require2faForManagers` (off by default). Once on: a manager/admin whose
-  `SessionUser.totpEnabledAt` is null gets non-GET requests blocked with a clear message; GET
-  requests and the 2FA-enrol/confirm/logout/change-password paths stay open so they can fix it
-  without a lockout. `SessionUser` gained `totpEnabledAt` (`auth/rbac.ts`, populated in
-  `auth/session.ts`'s `loadSessionUser`).
-- Session/lockout review: JWT cookie (httpOnly/sameSite=lax/secure-in-prod, 12h default,
-  `auth.sessionHours`) already re-checks `user.isActive` on every request — deactivating a user
-  ends their session immediately, nothing to change there.
-- All three settings surfaced in Settings → Integrations → Sign-in (the existing generic
-  `SettingsGroup` renderer — just added `LABELS` entries, no new UI code).
-- Test: `security.test.ts` (6 cases — lockout trips and a clean account doesn't, 2FA gate
-  blocks/allows correctly across off/on/enrolled/rep-is-unaffected). Browser-verified live:
-  toggled `auth.require2faForManagers` on in Settings, confirmed via `fetch()` that the
-  *already-2FA-enrolled* dev admin correctly passes through (this dev DB's admin account had
-  2FA from before this session), then reverted the setting and cleaned up the scratch record
-  created during the check.
+**P10 — Data retention & privacy: DONE, browser-verified end-to-end (UNCOMMITTED).**
+- Migration `right_to_erasure` — adds `erasedAt DateTime?` to `Contact` and `Lead`.
+- `routes/contacts.ts` / `routes/leads.ts` — `POST /api/{contacts,leads}/:id/erase` (reason
+  required, `delete` permission, PII scrubbed in place, `erasedAt`+`deletedAt` stamped, no
+  undo). Contact has backend-only (no Contact-delete UI exists anywhere in the app today
+  either — deliberately not building erase-only UI ahead of that).
+- `services/retention.ts` (new) — `pruneLoginAudit()` (deletes `login`/`login_failed`/
+  `login_pending_2fa` `AuditLog` rows past `auth.loginAuditRetentionDays`, default 180; rest of
+  the audit trail stays forever) and `purgeExpiredLeads()` (hard-deletes soft-deleted Leads
+  past `retention.deletedLeadDays`, default 0/off, only when they have zero Activities/
+  Attachments — Accounts/Contacts/Deals deliberately excluded, can carry invoices downstream).
+  Wired into `jobs/scheduler.ts` at 03:15 GST.
+- Three new setting keys, auto-rendered in Settings → Audit trail (new "Data retention" card)
+  and → Sign-in (existing card) via the generic settings renderer — no new settings-UI code.
+- UI: "Erase data" button + reason modal on `LeadDetail.tsx`.
+- Test: `retention.test.ts` (6 cases). Browser-verified live: created and erased a scratch
+  lead through the UI, confirmed in the database that PII was scrubbed correctly while
+  `company`/`status` survived, confirmed the audit-trail entry, confirmed the new Settings
+  card renders — then cleaned up the scratch lead.
 
-**NEXT STEP:** commit the P9 changes (not yet committed — ask before committing per standing
-rule; then push is on the user, same as above), then **P10 — data retention & privacy**:
-right-to-erasure, per-entity retention policies, explicit controls/retention for the login
-IP/ISP/device telemetry now being collected. Then P11…P12, then backup track B1–B3.
+**NEXT STEP:** commit the P10 changes (not yet committed — ask before committing per standing
+rule; push is on the user, same as always), then **P11 — notifications & scheduled reports**:
+per-user digest + quiet hours, email a report on a cron (extends the existing reports +
+notify systems). Then P12, then backup track B1–B3.
 
 ---
 

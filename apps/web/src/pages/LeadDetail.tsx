@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRightLeft, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, Pencil, ShieldOff, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, money, relative } from '../lib/format';
@@ -23,7 +23,7 @@ interface LeadFull {
   interestArea: string | null; estimatedValue: string | number | null; description: string | null;
   emirate: string | null; country: string; createdAt: string; lastActivityAt: string | null;
   convertedAt: string | null; convertedAccountId: string | null; convertedDealId: string | null;
-  disqualifyReason: string | null; customFields: CustomValues;
+  disqualifyReason: string | null; customFields: CustomValues; erasedAt: string | null;
   owner: { id: string; name: string } | null;
   convertedAccount: { id: string; name: string } | null;
   activities: ActivityRecord[];
@@ -40,6 +40,7 @@ export default function LeadDetail() {
   const [editing, setEditing] = useState(false);
   const [converting, setConverting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [erasing, setErasing] = useState(false);
 
   const { data: lead, isLoading, error } = useQuery({
     queryKey: ['lead', id],
@@ -82,6 +83,7 @@ export default function LeadDetail() {
               <Button variant="accent" icon={<ArrowRightLeft size={14} />} onClick={() => setConverting(true)}>Convert</Button>
             ) : null}
             {!converted && can('leads', 'update') ? <Button icon={<Pencil size={14} />} onClick={() => setEditing(true)}>Edit</Button> : null}
+            {can('leads', 'delete') ? <Button icon={<ShieldOff size={14} />} onClick={() => setErasing(true)}>Erase data</Button> : null}
             {can('leads', 'delete') ? <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => setConfirmDelete(true)}>Delete</Button> : null}
           </>
         }
@@ -184,6 +186,7 @@ export default function LeadDetail() {
 
       {editing ? <EditLeadModal lead={lead} onClose={() => setEditing(false)} onSaved={invalidate} /> : null}
       {converting ? <ConvertModal lead={lead} onClose={() => setConverting(false)} /> : null}
+      {erasing ? <EraseLeadModal lead={lead} onClose={() => setErasing(false)} /> : null}
 
       <ConfirmDialog
         open={confirmDelete}
@@ -367,6 +370,42 @@ function ConvertModal({ lead, onClose }: { lead: LeadFull; onClose: () => void }
             </Field>
           </div>
         ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+function EraseLeadModal({ lead, onClose }: { lead: LeadFull; onClose: () => void }) {
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const erase = useMutation({
+    mutationFn: () => api.post(`/leads/${lead.id}/erase`, { reason }),
+    onSuccess: () => { toast.push('Personal data erased.'); navigate('/leads'); },
+    onError: (err) => setError(err instanceof Error ? err.message : 'Could not erase.'),
+  });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Erase personal data?"
+      subtitle="Name, email, phone and LinkedIn are permanently scrubbed. Company and pipeline history stay so the deal record still means what it meant. There is no undo."
+      width="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" disabled={!reason.trim()} loading={erase.isPending} onClick={() => erase.mutate()}>Erase data</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {error ? <ErrorNote error={error} /> : null}
+        <Field label="Reason" required hint="For the audit trail — e.g. a right-to-erasure request.">
+          <Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Customer requested deletion of their data." />
+        </Field>
       </div>
     </Modal>
   );

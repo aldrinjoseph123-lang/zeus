@@ -198,6 +198,38 @@ export default async function leadRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Right to erasure. Scrubs the PII fields in place — the company/source/status
+   * history stays, since that is business record rather than personal data, and a
+   * converted lead's account/deal must not go dangling. No undo: an erasure that can
+   * be silently reversed is not one.
+   */
+  app.post('/api/leads/:id/erase', { preHandler: requirePermission('leads', 'delete') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const parsed = z.object({ reason: z.string().min(1, 'Say why this is being erased.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    const existing = await prisma.lead.findUnique({ where: { id } });
+    if (!existing) throw notFound('Lead not found.');
+    if (existing.erasedAt) throw badRequest('This lead has already been erased.');
+    if (!(await ownerAllowed(request.user, 'leads', 'delete', existing.ownerId))) throw forbidden();
+
+    const now = new Date();
+    await prisma.lead.update({
+      where: { id },
+      data: {
+        firstName: 'Erased', lastName: 'lead', email: null, phone: null, linkedinUrl: null,
+        description: null, customFields: {}, deletedAt: now, erasedAt: now,
+      },
+    });
+    await audit({
+      user: request.user, action: 'update', entity: 'Lead', entityId: id,
+      summary: `Personal data erased for ${existing.firstName} ${existing.lastName} at ${existing.company} — ${parsed.data.reason}`,
+      ip: clientIp(request),
+    });
+    return { ok: true };
+  });
+
+  /**
    * Convert: lead -> account + contact + (optionally) deal, in one transaction.
    * Reuses an existing account when the domain already matches, which is how a
    * second lead from the same customer stops becoming a second account.

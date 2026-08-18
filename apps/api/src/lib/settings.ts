@@ -205,6 +205,16 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   /// Administrators and Sales Managers can approve money and reassign the whole
   /// roster — require them to have 2FA switched on before they can change anything.
   'auth.require2faForManagers': false,
+
+  /// A signed-in IP address is personal data. The system log already prunes at 30
+  /// days; the audit trail's login/login_failed rows did not — this closes that gap.
+  /// Set to 0 to keep them forever (the rest of the audit trail is never pruned).
+  'auth.loginAuditRetentionDays': 180,
+  /// A soft-deleted lead that nobody ever touched again (no activity, no file) is
+  /// hard-purged past this many days. 0 = never, an admin has to opt in. Deliberately
+  /// scoped to leads only — accounts, contacts and deals can carry invoices and other
+  /// legal records downstream, so those stay archived rather than auto-destroyed.
+  'retention.deletedLeadDays': 0,
 };
 
 async function load(): Promise<Map<string, unknown>> {

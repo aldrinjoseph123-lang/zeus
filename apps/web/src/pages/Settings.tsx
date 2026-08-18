@@ -145,6 +145,8 @@ const LABELS: Record<string, string> = {
   'auth.lockoutThreshold': 'Lock an account after this many failed sign-ins (in the lockout window)',
   'auth.lockoutMinutes': 'Lockout window (minutes)',
   'auth.require2faForManagers': 'Require two-factor authentication for Administrators and Sales Managers',
+  'auth.loginAuditRetentionDays': 'Delete sign-in IP history after this many days (0 = keep forever)',
+  'retention.deletedLeadDays': 'Hard-delete an abandoned lead this many days after it was deleted (0 = never)',
   'dedupe.enabled': 'Duplicate detection on', 'dedupe.blockOnExactDomain': 'Block saves on an exact domain match',
   'branding.productName': 'Product name', 'branding.tagline': 'Tagline',
 };
@@ -2203,6 +2205,9 @@ function AuditSection() {
     <div className="flex flex-col gap-3">
     {can('settings', 'update') ? (
       <SettingsGroup prefix="audit." title="Read logging" description="Off by default. When on, opening a deal, account, contact, lead, quote or invoice is recorded as a 'read' entry below — useful for compliance, but high volume." />
+    ) : null}
+    {can('settings', 'update') ? (
+      <SettingsGroup prefix="retention." title="Data retention" description="Right to erasure lives on each contact/lead record itself (Erase data). These control what gets purged automatically." />
     ) : null}
     <Card>
       <CardHeader title="Audit trail" subtitle="Every create, update, delete, export, sign-in and integration change." />

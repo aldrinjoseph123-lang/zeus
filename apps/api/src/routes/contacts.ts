@@ -152,4 +152,37 @@ export default async function contactRoutes(app: FastifyInstance): Promise<void>
       undo: undoSoftDelete('contact', 'contacts', id), ip: clientIp(request) });
     return { ok: true, undoId };
   });
+
+  /**
+   * Right to erasure. Scrubs the PII fields in place rather than deleting the row —
+   * the contact may still be the "attn:" on a quote or invoice that has to keep
+   * meaning what it meant on the day it was issued. There is deliberately no undo:
+   * an erasure that can be silently reversed is not one.
+   */
+  app.post('/api/contacts/:id/erase', { preHandler: requirePermission('contacts', 'delete') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const parsed = z.object({ reason: z.string().min(1, 'Say why this is being erased.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    const existing = await prisma.contact.findUnique({ where: { id } });
+    if (!existing) throw notFound('Contact not found.');
+    if (existing.erasedAt) throw badRequest('This contact has already been erased.');
+    if (!(await ownerAllowed(request.user, 'contacts', 'delete', existing.ownerId))) throw forbidden();
+
+    const now = new Date();
+    await prisma.contact.update({
+      where: { id },
+      data: {
+        firstName: 'Erased', lastName: 'contact', email: null, phone: null, mobile: null,
+        jobTitle: null, department: null, linkedinUrl: null, description: null, customFields: {},
+        deletedAt: now, erasedAt: now,
+      },
+    });
+    await audit({
+      user: request.user, action: 'update', entity: 'Contact', entityId: id,
+      summary: `Personal data erased for ${existing.firstName} ${existing.lastName} — ${parsed.data.reason}`,
+      ip: clientIp(request),
+    });
+    return { ok: true };
+  });
 }

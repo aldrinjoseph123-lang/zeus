@@ -11,6 +11,7 @@ import { logSystem, pruneSystemLogs } from '../services/systemLog.js';
 import { alertOnTransitions } from '../services/healthMonitor.js';
 import { componentStatuses, recordComponentChecks } from '../services/systemStatus.js';
 import { recordResourceSample, pruneResourceSamples } from '../services/resources.js';
+import { pruneLoginAudit, purgeExpiredLeads } from '../services/retention.js';
 import { formatAed } from '../lib/money.js';
 
 /**
@@ -475,6 +476,13 @@ export function startScheduler(): void {
     const { count } = await prisma.componentCheck.deleteMany({ where: { at: { lt: new Date(Date.now() - 30 * 86_400_000) } } });
     const resources = await pruneResourceSamples(7);
     if (removed || count || resources) console.log(`[scheduler] pruned ${removed} log + ${count} health + ${resources} resource rows`);
+  }), { timezone: TZ }));
+
+  // Data retention: login IP history and long-abandoned leads. 03:15 GST.
+  tasks.push(cron.schedule('15 3 * * *', () => void safely('retention', async () => {
+    const loginRows = await pruneLoginAudit();
+    const leads = await purgeExpiredLeads();
+    if (loginRows || leads) console.log(`[scheduler] retention: ${loginRows} login-audit rows, ${leads} abandoned leads purged`);
   }), { timezone: TZ }));
 
   // Morning digest, 08:30 GST on working days (Mon-Fri in the UAE).
