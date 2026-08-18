@@ -28,6 +28,11 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgresql://zeus:zeus@localhost:5432/zeus_test?schema=public
+      # env.ts validates these eagerly at import time — test:unit imports it directly
+      # (not through the harness, which sets its own defaults), so it needs them set
+      # here too, before the harness ever gets a chance to run.
+      DATABASE_URL: postgresql://zeus:zeus@localhost:5432/zeus_test?schema=public
+      APP_SECRET: ci-test-secret-not-used-anywhere-else-0123456789abcdef
 
     steps:
       - uses: actions/checkout@v4
