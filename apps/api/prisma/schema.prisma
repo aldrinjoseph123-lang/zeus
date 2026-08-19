@@ -66,6 +66,7 @@ model User {
   attachments               Attachment[]
   importJobs                ImportJob[]
   pipelineSnapshots         PipelineSnapshot[] @relation("SnapshotOwner")
+  scheduledReports          ScheduledReport[]
 
   /// TOTP shared secret, AES-256-GCM at rest. Null until the user enrols.
   totpSecret    String?
@@ -1136,7 +1137,16 @@ model Notification {
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
+  /// Whether the rule behind this notification also wanted an email. False for
+  /// events with email off entirely — those rows are never digest candidates.
+  wantsEmail Boolean   @default(false)
+  /// Set the moment an email carrying this notification actually went out — either
+  /// immediately, or later by the quiet-hours digest sweep. Null + wantsEmail=true is
+  /// exactly the digest queue: nothing else has to track that separately.
+  emailedAt  DateTime?
+
   @@index([userId, readAt])
+  @@index([wantsEmail, emailedAt])
 }
 
 /// One row per notification event type. Everything about when and where alerts fire
@@ -1171,6 +1181,30 @@ model TeamsWebhook {
   isActive  Boolean            @default(true)
   createdAt DateTime           @default(now())
   rules     NotificationRule[]
+}
+
+/// A report from the registry in routes/reports.ts, run on a schedule and emailed out
+/// as a PDF or Excel attachment — the same export a person could pull by hand, just
+/// delivered before anyone asks. Runs with the scheduling admin's own read scope, so
+/// it never emails a rep's numbers to someone who couldn't see them on screen.
+model ScheduledReport {
+  id              String    @id @default(cuid())
+  /// Key into the REPORTS registry — not a foreign key, the registry is code.
+  reportKey       String
+  label           String?
+  frequency       String // daily | weekly
+  /// 0 (Sun) .. 6 (Sat). Required for weekly, ignored for daily.
+  weekday         Int?
+  /// Hour of day it goes out, Gulf time.
+  hour            Int       @default(7)
+  format          String    @default("pdf") // pdf | xlsx
+  recipientEmails String[]
+  enabled         Boolean   @default(true)
+  createdById     String?
+  createdBy       User?     @relation(fields: [createdById], references: [id])
+  lastRunAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 // ---------------------------------------------------------------- targets, views, config
@@ -1249,14 +1283,37 @@ model ImportJob {
 }
 
 model BackupRun {
-  id          String    @id @default(cuid())
-  status      String    @default("running") // running | success | failed
-  destination String    @default("onedrive")
-  filename    String?
-  sizeBytes   Int?
-  error       String?
-  startedAt   DateTime  @default(now())
-  finishedAt  DateTime?
+  id     String @id @default(cuid())
+  status String @default("running") // running | success | partial | failed | skipped
+
+  /// physical (pg_dump, whole DB) | logical (per-module NDJSON) | config (settings/
+  /// roles/pipelines/etc as data). Physical runs on its own admin-set cron; logical
+  /// (daily) and config (weekly) run automatically inside the maintenance window.
+  kind String @default("physical")
+  /// Grandfather-father-son bucket, assigned at run time from the calendar (Gulf
+  /// time): 1st of the month → monthly, Sunday → weekly, otherwise daily. Pruning
+  /// keeps a separate count per bucket rather than one flat "keep newest N".
+  tier String @default("daily")
+
+  /// Which destinations this specific run actually landed on — local is attempted
+  /// unconditionally, nas/onedrive only when configured, and each is independent:
+  /// a NAS write failing does not fail a OneDrive upload's chance to succeed.
+  destinations String[] @default([])
+  encrypted    Boolean  @default(false)
+  /// sha256 of the exact bytes written to disk (post-encryption when encrypted),
+  /// so a copied/downloaded file's integrity can be checked without decrypting it.
+  checksum     String?
+  /// Per-model row counts for logical/config kinds — the material a future parity
+  /// check (B3) compares against, and a human-readable summary of what got exported.
+  rowCounts    Json?
+
+  filename   String?
+  sizeBytes  Int?
+  error      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([kind, tier, status])
 }
 
 /// Monotonic counters behind ZEU-D-000001 style references.

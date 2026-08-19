@@ -11,6 +11,7 @@ import {
 } from '../components/ui';
 import { CustomFieldInputs, type CustomValues } from '../components/customFields';
 import { DuplicateWarning, ListSelect, OwnerSelect, Toolbar, type DuplicateMatch } from '../components/pickers';
+import { BulkActionBar, useBulkSelection } from '../components/bulkActions';
 
 export interface Account {
   id: string; name: string; type: string; domain: string | null; industry: string | null;
@@ -37,6 +38,7 @@ export default function Accounts() {
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const debounced = useDebounced(search, 300);
+  const bulk = useBulkSelection();
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounts', debounced, type, industry, ownerId, stale, page],
@@ -92,6 +94,18 @@ export default function Accounts() {
           ) : null}
         </Toolbar>
 
+        {can('accounts', 'update') || can('accounts', 'delete') ? (
+          <BulkActionBar
+            basePath="/accounts"
+            selected={bulk.selected}
+            onClear={bulk.clear}
+            canAssign={can('accounts', 'update')}
+            canDelete={can('accounts', 'delete')}
+            queryKey="accounts"
+            noun="account"
+          />
+        ) : null}
+
         {isLoading ? (
           <Loading />
         ) : (
@@ -100,6 +114,7 @@ export default function Accounts() {
               rows={data?.data ?? []}
               rowKey={(row) => row.id}
               onRowClick={(row) => navigate(`/accounts/${row.id}`)}
+              selection={can('accounts', 'update') || can('accounts', 'delete') ? { selected: bulk.selected, onToggle: bulk.toggle, onToggleAll: bulk.toggleAll } : undefined}
               empty={<EmptyState title="No accounts match" message="Create one, or import your existing list." />}
               columns={[
                 {

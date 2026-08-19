@@ -198,6 +198,42 @@ export default async function leadRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Bulk actions from the leads list. Each row is still scope-checked individually —
+   * a mixed selection quietly skips what is not touchable rather than failing the
+   * whole call.
+   */
+  app.post('/api/leads/bulk-assign', { preHandler: requirePermission('leads', 'update') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one lead.'), ownerId: z.string().min(1, 'Choose who to assign to.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+    const { ids, ownerId } = parsed.data;
+
+    let updated = 0, skipped = 0;
+    for (const id of ids) {
+      const lead = await prisma.lead.findFirst({ where: { id, deletedAt: null } });
+      if (!lead || !(await ownerAllowed(request.user, 'leads', 'update', lead.ownerId))) { skipped++; continue; }
+      await prisma.lead.update({ where: { id }, data: { ownerId } });
+      await audit({ user: request.user, action: 'update', entity: 'Lead', entityId: id, summary: `${lead.company} reassigned`, ip: clientIp(request) });
+      updated++;
+    }
+    return { updated, skipped };
+  });
+
+  app.post('/api/leads/bulk-delete', { preHandler: requirePermission('leads', 'delete') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one lead.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    let deleted = 0, skipped = 0;
+    for (const id of parsed.data.ids) {
+      const lead = await prisma.lead.findFirst({ where: { id, deletedAt: null } });
+      if (!lead || !(await ownerAllowed(request.user, 'leads', 'delete', lead.ownerId))) { skipped++; continue; }
+      await prisma.lead.update({ where: { id }, data: { deletedAt: new Date() } });
+      await audit({ user: request.user, action: 'delete', entity: 'Lead', entityId: id, summary: lead.company, undo: undoSoftDelete('lead', 'leads', id), ip: clientIp(request) });
+      deleted++;
+    }
+    return { deleted, skipped };
+  });
+
+  /**
    * Right to erasure. Scrubs the PII fields in place — the company/source/status
    * history stays, since that is business record rather than personal data, and a
    * converted lead's account/deal must not go dangling. No undo: an erasure that can

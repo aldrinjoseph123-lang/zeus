@@ -10,6 +10,7 @@ import {
 } from '../components/ui';
 import { CustomFieldInputs, type CustomValues } from '../components/customFields';
 import { AccountPicker, DuplicateWarning, OwnerSelect, Toolbar, type DuplicateMatch } from '../components/pickers';
+import { BulkActionBar, useBulkSelection } from '../components/bulkActions';
 
 interface Contact {
   id: string; firstName: string; lastName: string; email: string | null; phone: string | null;
@@ -26,6 +27,7 @@ export default function Contacts() {
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const debounced = useDebounced(search, 300);
+  const bulk = useBulkSelection();
 
   const { data, isLoading } = useQuery({
     queryKey: ['contacts', debounced, ownerId, page],
@@ -46,6 +48,18 @@ export default function Contacts() {
           <OwnerSelect value={ownerId} onChange={(v) => { setOwnerId(v); setPage(1); }} className="w-[160px]" />
         </Toolbar>
 
+        {can('contacts', 'update') || can('contacts', 'delete') ? (
+          <BulkActionBar
+            basePath="/contacts"
+            selected={bulk.selected}
+            onClear={bulk.clear}
+            canAssign={can('contacts', 'update')}
+            canDelete={can('contacts', 'delete')}
+            queryKey="contacts"
+            noun="contact"
+          />
+        ) : null}
+
         {isLoading ? (
           <Loading />
         ) : (
@@ -54,6 +68,7 @@ export default function Contacts() {
               rows={data?.data ?? []}
               rowKey={(row) => row.id}
               onRowClick={(row) => row.account && navigate(`/accounts/${row.account.id}`)}
+              selection={can('contacts', 'update') || can('contacts', 'delete') ? { selected: bulk.selected, onToggle: bulk.toggle, onToggleAll: bulk.toggleAll } : undefined}
               empty={<EmptyState title="No contacts" message="Contacts arrive when you convert a lead, or add them to an account." />}
               columns={[
                 {

@@ -154,6 +154,42 @@ export default async function contactRoutes(app: FastifyInstance): Promise<void>
   });
 
   /**
+   * Bulk actions from the contacts list. Each row is still scope-checked
+   * individually — a mixed selection quietly skips what is not touchable rather
+   * than failing the whole call.
+   */
+  app.post('/api/contacts/bulk-assign', { preHandler: requirePermission('contacts', 'update') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one contact.'), ownerId: z.string().min(1, 'Choose who to assign to.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+    const { ids, ownerId } = parsed.data;
+
+    let updated = 0, skipped = 0;
+    for (const id of ids) {
+      const contact = await prisma.contact.findFirst({ where: { id, deletedAt: null } });
+      if (!contact || !(await ownerAllowed(request.user, 'contacts', 'update', contact.ownerId))) { skipped++; continue; }
+      await prisma.contact.update({ where: { id }, data: { ownerId } });
+      await audit({ user: request.user, action: 'update', entity: 'Contact', entityId: id, summary: `${contact.firstName} ${contact.lastName} reassigned`, ip: clientIp(request) });
+      updated++;
+    }
+    return { updated, skipped };
+  });
+
+  app.post('/api/contacts/bulk-delete', { preHandler: requirePermission('contacts', 'delete') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one contact.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    let deleted = 0, skipped = 0;
+    for (const id of parsed.data.ids) {
+      const contact = await prisma.contact.findFirst({ where: { id, deletedAt: null } });
+      if (!contact || !(await ownerAllowed(request.user, 'contacts', 'delete', contact.ownerId))) { skipped++; continue; }
+      await prisma.contact.update({ where: { id }, data: { deletedAt: new Date() } });
+      await audit({ user: request.user, action: 'delete', entity: 'Contact', entityId: id, summary: `${contact.firstName} ${contact.lastName}`, undo: undoSoftDelete('contact', 'contacts', id), ip: clientIp(request) });
+      deleted++;
+    }
+    return { deleted, skipped };
+  });
+
+  /**
    * Right to erasure. Scrubs the PII fields in place rather than deleting the row —
    * the contact may still be the "attn:" on a quote or invoice that has to keep
    * meaning what it meant on the day it was issued. There is deliberately no undo:

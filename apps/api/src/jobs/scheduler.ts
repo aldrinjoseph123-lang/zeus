@@ -1,8 +1,9 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import { prisma, num } from '../db.js';
 import { getSetting } from '../lib/settings.js';
-import { notify } from '../services/notify.js';
-import { runBackup } from '../services/backup.js';
+import { notify, sendPendingDigests } from '../services/notify.js';
+import { runDueScheduledReports } from '../services/scheduledReports.js';
+import { runScheduledBackup, checkMissedBackups, weeklyAutoVerify } from '../services/backup.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
 import { sweepRenewals } from '../services/renewals.js';
 import { ratesAreStale, refreshRates } from '../services/fx.js';
@@ -485,6 +486,20 @@ export function startScheduler(): void {
     if (loginRows || leads) console.log(`[scheduler] retention: ${loginRows} login-audit rows, ${leads} abandoned leads purged`);
   }), { timezone: TZ }));
 
+  // Quiet-hours catch-up: everything notify() held overnight goes out as one email
+  // per person right as the default window ends. 07:00 GST.
+  tasks.push(cron.schedule('0 7 * * *', () => void safely('notificationDigest', async () => {
+    const sent = await sendPendingDigests();
+    if (sent) console.log(`[scheduler] sent ${sent} quiet-hours digest email(s)`);
+  }), { timezone: TZ }));
+
+  // Scheduled reports: whatever is due this hour, checked hourly. :05 to sit clear of
+  // the top-of-hour jobs above.
+  tasks.push(cron.schedule('5 * * * *', () => void safely('scheduledReports', async () => {
+    const sent = await runDueScheduledReports();
+    if (sent) console.log(`[scheduler] emailed ${sent} scheduled report(s)`);
+  }), { timezone: TZ }));
+
   // Morning digest, 08:30 GST on working days (Mon-Fri in the UAE).
   tasks.push(cron.schedule('30 8 * * 1-5', async () => {
     await safely('staleAccounts', staleAccounts);
@@ -497,26 +512,51 @@ export function startScheduler(): void {
     await safely('overdueInvoices', overdueInvoices);
     await safely('paymentsDueSoon', paymentsDueSoon);
     await safely('overduePayables', overduePayables);
+    await safely('missedBackupCheck', checkMissedBackups);
   }, { timezone: TZ }));
 
   // Sunday evening, before the UAE working week starts.
   tasks.push(cron.schedule('0 18 * * 0', () => void safely('targetCheck', targetCheck), { timezone: TZ }));
 
-  // Backup, on the schedule set in Settings.
-  // Reading the setting hits the database. If that is briefly unreachable at boot, an
+  // Backup, three kinds on their own cadence: physical on the admin-set
+  // `backup.cron` (nightly by default), logical daily and config weekly — both
+  // fixed at a quarter and three-quarters past the maintenance window's start hour,
+  // so moving `backup.windowStartHour` shifts all three together. Each goes through
+  // `runScheduledBackup`, which applies the overlap/window/skip-if-unchanged guards
+  // a manual "Back up now" click deliberately bypasses.
+  // Reading settings hits the database. If that is briefly unreachable at boot, an
   // unhandled rejection here would take the whole API down — so it is caught and the
   // API starts anyway, with backups simply not scheduled.
   void (async () => {
     try {
       const enabled = await getSetting<boolean>('backup.enabled', false);
-      const expression = String(await getSetting<string>('backup.cron', '0 2 * * *'));
       if (!enabled) return;
-      if (!cron.validate(expression)) {
-        console.error(`[scheduler] backup.cron "${expression}" is not a valid cron expression — backups disabled.`);
-        return;
-      }
-      tasks.push(cron.schedule(expression, () => void safely('backup', async () => { await runBackup(); }), { timezone: TZ }));
-      console.log(`[scheduler] nightly backup scheduled (${expression} ${TZ})`);
+
+      const physicalExpr = String(await getSetting<string>('backup.cron', '0 2 * * *'));
+      const windowStart = Number(await getSetting<number>('backup.windowStartHour', 1)) % 24;
+      const logicalExpr = `15 ${windowStart} * * *`;
+      const configExpr = `45 ${windowStart} * * 0`;
+
+      const schedule = (kind: 'physical' | 'logical' | 'config', expression: string): void => {
+        if (!cron.validate(expression)) {
+          console.error(`[scheduler] ${kind} backup cron "${expression}" is not a valid cron expression — disabled.`);
+          return;
+        }
+        tasks.push(cron.schedule(expression, () => void safely(`backup:${kind}`, async () => {
+          const result = await runScheduledBackup(kind);
+          if ('skipped' in result) console.log(`[scheduler] ${kind} backup skipped: ${result.skipped}`);
+        }), { timezone: TZ }));
+        console.log(`[scheduler] ${kind} backup scheduled (${expression} ${TZ})`);
+      };
+
+      schedule('physical', physicalExpr);
+      schedule('logical', logicalExpr);
+      schedule('config', configExpr);
+
+      // Weekly proof the backups are actually restorable, well clear of the
+      // maintenance window so it checks that week's fresh files, not last week's.
+      tasks.push(cron.schedule('0 6 * * 1', () => void safely('weeklyAutoVerify', weeklyAutoVerify), { timezone: TZ }));
+      console.log(`[scheduler] weekly backup verification scheduled (0 6 * * 1 ${TZ})`);
     } catch (err) {
       console.error('[scheduler] could not read the backup schedule — backups not scheduled:', (err as Error).message);
     }

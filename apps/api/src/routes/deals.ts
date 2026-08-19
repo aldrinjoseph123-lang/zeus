@@ -265,6 +265,55 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(201).send(maskFields(request.user, 'deals', deal));
   });
 
+  /**
+   * Clone: a fresh OPEN deal seeded from this one's commercial shape — customer,
+   * partner, value, cost, type. Left out on purpose: stage progress, close date and
+   * probability reset to the pipeline's starting values, because a clone is a new
+   * opportunity, not a copy of how far the old one got. Owned by whoever clicked
+   * Clone, not the source deal's owner.
+   */
+  app.post('/api/deals/:id/clone', { preHandler: requirePermission('deals', 'create') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const source = await prisma.deal.findFirst({ where: { id, deletedAt: null } });
+    if (!source) throw notFound('Deal not found.');
+    if (!(await ownerAllowed(request.user, 'deals', 'read', source.ownerId))) throw forbidden();
+
+    const pipeline = await prisma.pipeline.findUnique({ where: { id: source.pipelineId }, include: { stages: { orderBy: { order: 'asc' } } } });
+    const stage = pipeline?.stages[0];
+    if (!pipeline || !stage) throw badRequest('The source deal\'s pipeline no longer has stages.');
+
+    const money = withVat(num(source.amount), num(source.vatRate));
+    const deal = await prisma.deal.create({
+      data: {
+        reference: await nextReference('deal'),
+        name: `${source.name} (Copy)`,
+        accountId: source.accountId,
+        partnerAccountId: source.partnerAccountId,
+        primaryContactId: source.primaryContactId,
+        pipelineId: pipeline.id,
+        stageId: stage.id,
+        type: source.type,
+        ...money,
+        cost: source.cost,
+        probability: stage.probability,
+        closeDate: new Date(Date.now() + 30 * 86_400_000),
+        source: source.source,
+        sourcePartnerId: source.sourcePartnerId,
+        description: source.description,
+        ownerId: request.user.id,
+        customFields: source.customFields as never,
+        lastActivityAt: new Date(),
+      },
+      include: dealInclude,
+    });
+
+    await prisma.stageHistory.create({
+      data: { dealId: deal.id, toStageId: stage.id, toStatus: 'OPEN', amount: num(deal.amount), changedById: request.user.id },
+    });
+    await audit({ user: request.user, action: 'create', entity: 'Deal', entityId: deal.id, summary: `${deal.reference} cloned from ${source.reference}`, ip: clientIp(request) });
+    return reply.status(201).send(maskFields(request.user, 'deals', deal));
+  });
+
   app.patch('/api/deals/:id', { preHandler: requirePermission('deals', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
     const existing = await prisma.deal.findFirst({ where: { id, deletedAt: null } });

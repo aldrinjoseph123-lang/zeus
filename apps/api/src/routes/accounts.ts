@@ -200,6 +200,44 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     return { ok: true, undoId };
   });
 
+  /**
+   * Bulk actions from the accounts list. Each row is still scope-checked (and, for
+   * delete, still blocked while it has an open deal) individually — a mixed selection
+   * quietly skips what is not touchable rather than failing the whole call.
+   */
+  app.post('/api/accounts/bulk-assign', { preHandler: requirePermission('accounts', 'update') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one account.'), ownerId: z.string().min(1, 'Choose who to assign to.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+    const { ids, ownerId } = parsed.data;
+
+    let updated = 0, skipped = 0;
+    for (const id of ids) {
+      const account = await prisma.account.findFirst({ where: { id, deletedAt: null } });
+      if (!account || !(await ownerAllowed(request.user, 'accounts', 'update', account.ownerId))) { skipped++; continue; }
+      await prisma.account.update({ where: { id }, data: { ownerId } });
+      await audit({ user: request.user, action: 'update', entity: 'Account', entityId: id, summary: `${account.name} reassigned`, ip: clientIp(request) });
+      updated++;
+    }
+    return { updated, skipped };
+  });
+
+  app.post('/api/accounts/bulk-delete', { preHandler: requirePermission('accounts', 'delete') }, async (request) => {
+    const parsed = z.object({ ids: z.array(z.string()).min(1, 'Select at least one account.') }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+
+    let deleted = 0, skipped = 0;
+    for (const id of parsed.data.ids) {
+      const account = await prisma.account.findFirst({ where: { id, deletedAt: null } });
+      if (!account || !(await ownerAllowed(request.user, 'accounts', 'delete', account.ownerId))) { skipped++; continue; }
+      const openDeals = await prisma.deal.count({ where: { accountId: id, status: 'OPEN', deletedAt: null } });
+      if (openDeals > 0) { skipped++; continue; }
+      await prisma.account.update({ where: { id }, data: { deletedAt: new Date() } });
+      await audit({ user: request.user, action: 'delete', entity: 'Account', entityId: id, summary: account.name, undo: undoSoftDelete('account', 'accounts', id), ip: clientIp(request) });
+      deleted++;
+    }
+    return { deleted, skipped };
+  });
+
   /** Merge a duplicate into a survivor: move children across, soft-delete the loser. */
   app.post('/api/accounts/:id/merge', { preHandler: requirePermission('accounts', 'delete') }, async (request) => {
     const { id } = request.params as { id: string };

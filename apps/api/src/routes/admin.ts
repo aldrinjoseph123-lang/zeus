@@ -14,6 +14,7 @@ import { previewTransfer, transferOwnership, reverseTransfer, exportUserBook, TR
 import { checkEgress } from '../lib/egress.js';
 import { encryptJson } from '../lib/crypto.js';
 import { deliverOne, generateSecret as generateWebhookSecret } from '../services/webhooks.js';
+import { REPORTS } from './reports.js';
 
 export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── users ───────────────────────────────────────────────────────────────────
@@ -611,6 +612,62 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     await prisma.notificationRule.updateMany({ where: { teamsWebhookId: id }, data: { teamsWebhookId: null, teams: false } });
     await prisma.teamsWebhook.delete({ where: { id } });
+    return { ok: true };
+  });
+
+  // ── scheduled reports ────────────────────────────────────────────────────────
+
+  const scheduledReportBase = z.object({
+    reportKey: z.string().min(1),
+    label: z.string().optional().nullable(),
+    frequency: z.enum(['daily', 'weekly']),
+    weekday: z.number().int().min(0).max(6).optional().nullable(),
+    hour: z.number().int().min(0).max(23).default(7),
+    format: z.enum(['pdf', 'xlsx']).default('pdf'),
+    recipientEmails: z.array(z.string().email()).min(1, 'Add at least one recipient.'),
+    enabled: z.boolean().optional(),
+  });
+  const scheduledReportSchema = scheduledReportBase
+    .refine((b) => b.frequency !== 'weekly' || b.weekday != null, { message: 'Pick a day of the week.', path: ['weekday'] });
+
+  app.get('/api/scheduled-reports', { preHandler: requirePermission('settings', 'read') }, async () => ({
+    schedules: await prisma.scheduledReport.findMany({ include: { createdBy: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' } }),
+    reports: REPORTS.map(({ key, name }) => ({ key, name })),
+  }));
+
+  app.post('/api/scheduled-reports', { preHandler: requirePermission('settings', 'create') }, async (request, reply) => {
+    const parsed = scheduledReportSchema.safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+    const body = parsed.data;
+    if (!REPORTS.some((r) => r.key === body.reportKey)) throw badRequest(`No report named "${body.reportKey}".`);
+
+    const schedule = await prisma.scheduledReport.create({
+      data: { ...body, weekday: body.frequency === 'weekly' ? body.weekday : null, createdById: request.user.id },
+    });
+    await audit({ user: request.user, action: 'create', entity: 'ScheduledReport', entityId: schedule.id, summary: schedule.label || schedule.reportKey, ip: clientIp(request) });
+    return reply.status(201).send(schedule);
+  });
+
+  app.patch('/api/scheduled-reports/:id', { preHandler: requirePermission('settings', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const body = scheduledReportBase.partial().parse(request.body);
+    const existing = await prisma.scheduledReport.findUnique({ where: { id } });
+    if (!existing) throw notFound('Schedule not found.');
+
+    const schedule = await prisma.scheduledReport.update({
+      where: { id },
+      data: { ...body, weekday: (body.frequency ?? existing.frequency) === 'weekly' ? (body.weekday ?? existing.weekday) : null },
+    });
+    await audit({ user: request.user, action: 'update', entity: 'ScheduledReport', entityId: id, summary: schedule.label || schedule.reportKey, ip: clientIp(request) });
+    return schedule;
+  });
+
+  app.delete('/api/scheduled-reports/:id', { preHandler: requirePermission('settings', 'delete') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const existing = await prisma.scheduledReport.findUnique({ where: { id } });
+    if (!existing) throw notFound('Schedule not found.');
+    await prisma.scheduledReport.delete({ where: { id } });
+    await audit({ user: request.user, action: 'delete', entity: 'ScheduledReport', entityId: id, summary: existing.label || existing.reportKey, ip: clientIp(request) });
     return { ok: true };
   });
 

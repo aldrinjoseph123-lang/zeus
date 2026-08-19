@@ -12,6 +12,7 @@ import {
 import { CustomFieldInputs, type CustomValues } from '../components/customFields';
 import { AccountPicker, DuplicateWarning, ListSelect, OwnerSelect, Toolbar, type DuplicateMatch } from '../components/pickers';
 import { LifecycleMini, leadTrack } from '../components/lifecycle';
+import { BulkActionBar, useBulkSelection } from '../components/bulkActions';
 
 export interface Lead {
   id: string; firstName: string; lastName: string; company: string; domain: string | null;
@@ -35,6 +36,7 @@ export default function Leads() {
   const [ownerId, setOwnerId] = useState('');
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
+  const bulk = useBulkSelection();
   const debounced = useDebounced(search, 300);
 
   const { data, isLoading } = useQuery({
@@ -78,6 +80,18 @@ export default function Leads() {
           ) : null}
         </Toolbar>
 
+        {can('leads', 'update') || can('leads', 'delete') ? (
+          <BulkActionBar
+            basePath="/leads"
+            selected={bulk.selected}
+            onClear={bulk.clear}
+            canAssign={can('leads', 'update')}
+            canDelete={can('leads', 'delete')}
+            queryKey="leads"
+            noun="lead"
+          />
+        ) : null}
+
         {isLoading ? (
           <Loading />
         ) : (
@@ -86,6 +100,7 @@ export default function Leads() {
               rows={data?.data ?? []}
               rowKey={(row) => row.id}
               onRowClick={(row) => navigate(`/leads/${row.id}`)}
+              selection={can('leads', 'update') || can('leads', 'delete') ? { selected: bulk.selected, onToggle: bulk.toggle, onToggleAll: bulk.toggleAll } : undefined}
               empty={<EmptyState title="No leads yet" message="Add leads by hand, or bring a spreadsheet in through Import." />}
               columns={[
                 {

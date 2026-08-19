@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, FileText, Mail, Pencil, Plus, ShieldCheck, Tags, Trash2 } from 'lucide-react';
+import { ArrowLeft, Copy, FileText, Mail, Pencil, Plus, ShieldCheck, Tags, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, dateInput, daysBetween, money, percent, relative } from '../lib/format';
@@ -95,6 +95,12 @@ export default function DealDetail() {
     onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not delete.', 'error'),
   });
 
+  const clone = useMutation({
+    mutationFn: () => api.post<{ id: string; reference: string }>(`/deals/${id}/clone`, {}),
+    onSuccess: (copy) => { toast.push(`${copy.reference} created.`); navigate(`/deals/${copy.id}`); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not clone the deal.', 'error'),
+  });
+
   // Special prices agreed for this opportunity. Kept beside the registrations, because
   // an SPA is what a registration is *for* — the approval is only the paperwork.
   const { data: specialPrices } = useQuery({
@@ -149,6 +155,7 @@ export default function DealDetail() {
               </Link>
             ) : null}
             {can('deals', 'update') ? <Button icon={<Pencil size={14} />} onClick={() => setEditing(true)}>Edit</Button> : null}
+            {can('deals', 'create') ? <Button icon={<Copy size={14} />} loading={clone.isPending} onClick={() => clone.mutate()}>Clone</Button> : null}
             {can('deals', 'delete') ? <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => setConfirmDelete(true)}>Delete</Button> : null}
           </>
         }

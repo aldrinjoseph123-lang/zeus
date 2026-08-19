@@ -3,10 +3,12 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
 import { audit } from '../lib/audit.js';
-import { badRequest, clientIp, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, requirePermission } from '../lib/http.js';
+import { can } from '../auth/rbac.js';
 import { getM365, saveM365, testConnection, resetTokenCache, sendMail, pingM365, REQUIRED_APP_PERMISSIONS } from '../services/graph.js';
 import { adminConsentUrl, redirectUri } from '../auth/entra.js';
-import { lastBackups, localBackupSize, runBackup, verifyLatestBackup, validateLatestBackup } from '../services/backup.js';
+import { lastBackups, localBackupSize, runBackup, verifyLatestBackup, validateLatestBackup, checkBackupParity } from '../services/backup.js';
+import { restoreModules, needsElevatedPermission } from '../services/restore.js';
 import { emailTemplate } from '../services/notify.js';
 import { getWhatsapp, saveWhatsapp, testWhatsapp, pingWhatsapp } from '../services/whatsapp.js';
 
@@ -208,8 +210,11 @@ export default async function integrationRoutes(app: FastifyInstance): Promise<v
   }));
 
   app.post('/api/backups/run', { preHandler: requirePermission('backups', 'update') }, async (request) => {
-    const { uploadToOneDrive } = z.object({ uploadToOneDrive: z.boolean().default(true) }).parse(request.body ?? {});
-    const result = await runBackup({ uploadToOneDrive });
+    const { uploadToOneDrive, kind } = z.object({
+      uploadToOneDrive: z.boolean().default(true),
+      kind: z.enum(['physical', 'logical', 'config']).default('physical'),
+    }).parse(request.body ?? {});
+    const result = await runBackup({ uploadToOneDrive, kind });
     await audit({ user: request.user, action: 'backup', entity: 'BackupRun', entityId: result.id, summary: result.filename, ip: clientIp(request) });
     return result;
   });
@@ -225,6 +230,49 @@ export default async function integrationRoutes(app: FastifyInstance): Promise<v
   app.post('/api/backups/verify', { preHandler: requirePermission('backups', 'delete') }, async (request) => {
     const result = await verifyLatestBackup();
     await audit({ user: request.user, action: 'integration', entity: 'BackupRun', summary: `Backup verify (restore): ${result.ok ? 'restorable' : 'FAILED'} (${result.filename ?? 'none'})`, ip: clientIp(request) });
+    return result;
+  });
+
+  // Row-count parity — logical/config's analogue of Validate. No database touched.
+  app.post('/api/backups/:id/parity', { preHandler: requirePermission('backups', 'read') }, async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const result = await checkBackupParity(id);
+    await audit({ user: request.user, action: 'integration', entity: 'BackupRun', entityId: id, summary: `Backup parity: ${result.ok ? 'matches' : 'FAILED'} (${result.filename ?? 'none'})`, ip: clientIp(request) });
+    return result;
+  });
+
+  /**
+   * Module-into-live restore. Without `confirm` this only reads and returns a
+   * dry-run diff; `confirm: true` takes a safety backup first, then upserts.
+   * Invoices/purchase orders need the same elevated permission Verify does, checked
+   * here rather than via `preHandler` because it only applies to *some* requests to
+   * this route, not all of it.
+   */
+  app.post('/api/backups/:id/restore', { preHandler: requirePermission('backups', 'update') }, async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const { models, confirm } = z.object({
+      models: z.array(z.string()).min(1, 'Select at least one module.'),
+      confirm: z.boolean().default(false),
+    }).parse(request.body);
+
+    if (needsElevatedPermission(models) && !can(request.user, 'backups', 'delete')) {
+      throw forbidden('Restoring invoices or purchase orders needs the privileged Backups permission.');
+    }
+
+    let result;
+    try {
+      result = await restoreModules(id, models, confirm);
+    } catch (err) {
+      throw badRequest((err as Error).message);
+    }
+
+    await audit({
+      user: request.user, action: 'integration', entity: 'BackupRun', entityId: id,
+      summary: result.applied
+        ? `Restored ${models.join(', ')}: ${result.created} created, ${result.updated} updated${result.failed?.length ? `, ${result.failed.length} failed` : ''} (safety backup ${result.safetyBackupFilename})`
+        : `Previewed restore of ${models.join(', ')} (not applied)`,
+      ip: clientIp(request),
+    });
     return result;
   });
 }

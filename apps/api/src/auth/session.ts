@@ -52,14 +52,10 @@ async function userIdFromRequest(request: FastifyRequest): Promise<string | null
   }
 }
 
-export async function loadSessionUser(request: FastifyRequest): Promise<SessionUser | null> {
-  const userId = await userIdFromRequest(request);
-  if (!userId) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { role: true },
-  });
+/** Same shape a cookie resolves to, built directly from a user id — for background
+ * jobs (a scheduled report, say) that have no request to read a cookie from. */
+export async function sessionUserById(userId: string): Promise<SessionUser | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { role: true } });
   if (!user || !user.isActive) return null;
 
   return {
@@ -72,4 +68,10 @@ export async function loadSessionUser(request: FastifyRequest): Promise<SessionU
     permissions: user.role.permissions as unknown as PermissionMap,
     totpEnabledAt: user.totpEnabledAt,
   };
+}
+
+export async function loadSessionUser(request: FastifyRequest): Promise<SessionUser | null> {
+  const userId = await userIdFromRequest(request);
+  if (!userId) return null;
+  return sessionUserById(userId);
 }

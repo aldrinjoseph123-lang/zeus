@@ -2,8 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, Building2, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
-  ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, Plus, RefreshCw, X,
+  Activity, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
+  ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, Plus, RefreshCw, RotateCcw, ShieldCheck, X,
 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -135,8 +135,11 @@ const LABELS: Record<string, string> = {
   'audit.logReads': 'Log record views (who opened each record — high volume)',
   'numbering.dealPrefix': 'Deal reference prefix', 'numbering.quotePrefix': 'Quote number prefix',
   'numbering.invoicePrefix': 'Invoice number prefix', 'numbering.padding': 'Number padding',
-  'backup.enabled': 'Nightly backup enabled', 'backup.cron': 'Backup schedule (cron)', 'backup.retainLocal': 'Local backups to keep',
-  'backup.folder': 'OneDrive folder',
+  'backup.enabled': 'Nightly backup enabled', 'backup.cron': 'Backup schedule (cron)',
+  'backup.retainDaily': 'Daily backups to keep', 'backup.retainWeekly': 'Weekly backups to keep', 'backup.retainMonthly': 'Monthly backups to keep',
+  'backup.folder': 'OneDrive folder', 'backup.nasPath': 'Second destination — a mounted local/NAS path (blank = off)',
+  'backup.encrypted': 'Encrypt backup files at rest (AES-256-GCM)',
+  'backup.windowStartHour': 'Maintenance window start (Gulf hour, 0-23)', 'backup.windowEndHour': 'Maintenance window end (Gulf hour, 0-23)',
   'syslog.enabled': 'Forward system log to SIEM', 'syslog.host': 'Syslog server host', 'syslog.port': 'Syslog port',
   'syslog.protocol': 'Protocol (udp or tcp)',
   'auth.allowLocalLogin': 'Allow password sign-in', 'auth.allowEntraLogin': 'Allow Microsoft sign-in',
@@ -147,6 +150,9 @@ const LABELS: Record<string, string> = {
   'auth.require2faForManagers': 'Require two-factor authentication for Administrators and Sales Managers',
   'auth.loginAuditRetentionDays': 'Delete sign-in IP history after this many days (0 = keep forever)',
   'retention.deletedLeadDays': 'Hard-delete an abandoned lead this many days after it was deleted (0 = never)',
+  'notify.quietHoursEnabled': 'Hold non-critical emails during quiet hours, then send one digest',
+  'notify.quietHoursStart': 'Quiet hours start (0-23, Gulf time)',
+  'notify.quietHoursEnd': 'Quiet hours end (0-23, Gulf time)',
   'dedupe.enabled': 'Duplicate detection on', 'dedupe.blockOnExactDomain': 'Block saves on an exact domain match',
   'branding.productName': 'Product name', 'branding.tagline': 'Tagline',
 };
@@ -1432,7 +1438,11 @@ function NotificationsSection() {
 
   return (
     <>
-      <Card>
+      {can('settings', 'update') ? (
+        <SettingsGroup prefix="notify.quietHours" title="Quiet hours" description="Off by default. While on, non-critical emails are held and sent as one digest per person when the window ends — in-app and Teams alerts are unaffected, and a critical alert always sends immediately." />
+      ) : null}
+
+      <Card className="mt-3">
         <CardHeader
           title="Teams channels"
           subtitle="Paste an Incoming Webhook URL from the Teams channel you want alerts in."
@@ -1548,6 +1558,8 @@ function NotificationsSection() {
         </p>
       </Card>
 
+      <ScheduledReportsCard />
+
       {addingHook ? <WebhookModal onClose={() => setAddingHook(false)} /> : null}
 
       <ConfirmDialog
@@ -1560,6 +1572,173 @@ function NotificationsSection() {
         message="Rules pointing at it will stop posting to Teams."
       />
     </>
+  );
+}
+
+interface ScheduledReport {
+  id: string; reportKey: string; label: string | null; frequency: string; weekday: number | null;
+  hour: number; format: string; recipientEmails: string[]; enabled: boolean;
+  createdBy: { id: string; name: string } | null; lastRunAt: string | null;
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function ScheduledReportsCard() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState<ScheduledReport | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['scheduled-reports'],
+    queryFn: () => api.get<{ schedules: ScheduledReport[]; reports: Array<{ key: string; name: string }> }>('/scheduled-reports'),
+  });
+
+  const toggle = useMutation({
+    mutationFn: (input: { id: string; enabled: boolean }) => api.patch(`/scheduled-reports/${input.id}`, { enabled: input.enabled }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['scheduled-reports'] }),
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not update.', 'error'),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/scheduled-reports/${id}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['scheduled-reports'] });
+      setDeleting(null);
+      toast.push('Schedule removed.');
+    },
+  });
+
+  if (isLoading || !data) return <Loading />;
+  const reportName = (key: string) => data.reports.find((r) => r.key === key)?.name ?? key;
+
+  return (
+    <>
+      <Card className="mt-3">
+        <CardHeader
+          title="Scheduled reports"
+          subtitle="Any report from the library, emailed on a cron instead of pulled by hand. Runs with the scheduling admin's own read scope."
+          actions={can('settings', 'create') ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setAdding(true)}>New schedule</Button> : undefined}
+        />
+        {!data.schedules.length ? (
+          <EmptyState
+            title="Nothing scheduled"
+            message="Pick a report, a cadence and who gets it."
+            icon={<CalendarClock size={22} />}
+            action={can('settings', 'create') ? <Button variant="accent" size="sm" onClick={() => setAdding(true)}>New schedule</Button> : undefined}
+          />
+        ) : (
+          <div className="divide-y divide-line">
+            {data.schedules.map((s) => (
+              <div key={s.id} className={cx('flex flex-wrap items-center gap-3 px-4 py-2.5', !s.enabled && 'opacity-55')}>
+                <input
+                  type="checkbox" checked={s.enabled} disabled={!can('settings', 'update')}
+                  onChange={(e) => toggle.mutate({ id: s.id, enabled: e.target.checked })}
+                  className="h-4 w-4 accent-[var(--red-500)]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-semibold">{s.label || reportName(s.reportKey)}</span>
+                  <span className="block text-[11px] text-muted">
+                    {reportName(s.reportKey)} · {s.frequency === 'weekly' ? `${WEEKDAYS[s.weekday ?? 0]}s at` : 'Daily at'} {String(s.hour).padStart(2, '0')}:00 Gulf ·{' '}
+                    {s.format.toUpperCase()} · {s.recipientEmails.join(', ')}
+                  </span>
+                </span>
+                <span className="ml-auto flex shrink-0 items-center gap-3">
+                  <span className="text-[11px] text-n400">{s.lastRunAt ? `last sent ${relative(s.lastRunAt)}` : 'never sent yet'}</span>
+                  {can('settings', 'delete') ? (
+                    <button onClick={() => setDeleting(s)} aria-label="Remove schedule" className="text-n300 hover:text-accent"><Trash2 size={14} /></button>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {adding ? <ScheduledReportModal reports={data.reports} onClose={() => setAdding(false)} /> : null}
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => remove.mutate(deleting!.id)}
+        loading={remove.isPending}
+        title="Remove this schedule?"
+        confirmLabel="Remove"
+        message="It stops emailing immediately. This does not affect the report itself."
+      />
+    </>
+  );
+}
+
+function ScheduledReportModal({ reports, onClose }: { reports: Array<{ key: string; name: string }>; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [form, setForm] = useState({
+    reportKey: reports[0]?.key ?? '', label: '', frequency: 'daily', weekday: 1, hour: 7, format: 'pdf', recipients: '',
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => api.post('/scheduled-reports', {
+      reportKey: form.reportKey,
+      label: form.label || undefined,
+      frequency: form.frequency,
+      weekday: form.frequency === 'weekly' ? form.weekday : undefined,
+      hour: form.hour,
+      format: form.format,
+      recipientEmails: form.recipients.split(',').map((e) => e.trim()).filter(Boolean),
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['scheduled-reports'] });
+      toast.push('Schedule created.');
+      onClose();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not save.'),
+  });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="New scheduled report"
+      width="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="accent" disabled={!form.recipients.trim()} loading={save.isPending} onClick={() => save.mutate()}>Create schedule</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {error ? <ErrorNote error={error} /> : null}
+        <Field label="Report">
+          <Select value={form.reportKey} onChange={(e) => setForm({ ...form, reportKey: e.target.value })} options={reports.map((r) => ({ value: r.key, label: r.name }))} />
+        </Field>
+        <Field label="Label" hint="Optional — shown in place of the report name in the list.">
+          <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder={reports.find((r) => r.key === form.reportKey)?.name} />
+        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Frequency">
+            <Select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })} options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }]} />
+          </Field>
+          {form.frequency === 'weekly' ? (
+            <Field label="Day">
+              <Select value={String(form.weekday)} onChange={(e) => setForm({ ...form, weekday: Number(e.target.value) })} options={WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))} />
+            </Field>
+          ) : null}
+          <Field label="Hour (Gulf)">
+            <Select value={String(form.hour)} onChange={(e) => setForm({ ...form, hour: Number(e.target.value) })} options={Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: `${String(h).padStart(2, '0')}:00` }))} />
+          </Field>
+          <Field label="Format">
+            <Select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })} options={[{ value: 'pdf', label: 'PDF' }, { value: 'xlsx', label: 'Excel' }]} />
+          </Field>
+        </div>
+        <Field label="Recipients" required hint="Comma-separated. Does not have to be a Zeus user.">
+          <Input value={form.recipients} onChange={(e) => setForm({ ...form, recipients: e.target.value })} placeholder="manager@protect24x7.ae, ceo@protect24x7.ae" />
+        </Field>
+      </div>
+    </Modal>
   );
 }
 
@@ -1672,21 +1851,41 @@ function CollapsibleCard({
   );
 }
 
+const BACKUP_KIND_LABEL: Record<string, string> = { physical: 'Physical', logical: 'Logical', config: 'Config' };
+
+const LOGICAL_MODEL_LABELS: Record<string, string> = {
+  account: 'Accounts', contact: 'Contacts', lead: 'Leads', deal: 'Deals', quote: 'Quotes',
+  invoice: 'Invoices', purchaseOrder: 'Purchase orders', product: 'Products', subscription: 'Subscriptions', activity: 'Activities',
+};
+const CONFIG_MODEL_LABELS: Record<string, string> = {
+  setting: 'Settings', role: 'Roles', pipeline: 'Pipelines', stage: 'Stages', customField: 'Custom fields',
+  notificationRule: 'Notification rules', teamsWebhook: 'Teams webhooks', scheduledReport: 'Scheduled reports',
+};
+
+interface BackupRunRow {
+  id: string; status: string; kind: string; tier: string; destinations: string[]; encrypted: boolean;
+  filename: string | null; sizeBytes: number | null; error: string | null; startedAt: string;
+  rowCounts: Record<string, number> | null;
+}
+
 function BackupsSection() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
+  const [restoring, setRestoring] = useState<BackupRunRow | null>(null);
 
   const { data: backups } = useQuery({
     queryKey: ['backups'],
-    queryFn: () => api.get<{ runs: Array<{ id: string; status: string; filename: string | null; sizeBytes: number | null; error: string | null; startedAt: string }>; local: { count: number; bytes: number } }>('/backups'),
+    queryFn: () => api.get<{ runs: BackupRunRow[]; local: { count: number; bytes: number } }>('/backups'),
   });
 
   const backupNow = useMutation({
-    mutationFn: () => api.post<{ filename: string; uploaded: boolean; error?: string }>('/backups/run', { uploadToOneDrive: true }),
+    mutationFn: (kind: 'physical' | 'logical' | 'config') =>
+      api.post<{ filename: string; destinations: string[]; error?: string }>('/backups/run', { uploadToOneDrive: true, kind }),
     onSuccess: (r) => {
       void queryClient.invalidateQueries({ queryKey: ['backups'] });
-      toast.push(r.uploaded ? `${r.filename} uploaded to OneDrive.` : `${r.filename} saved locally. ${r.error ?? ''}`, r.uploaded ? 'success' : 'error');
+      const landed = r.destinations.join(', ');
+      toast.push(r.error ? `${r.filename} saved to ${landed}. ${r.error}` : `${r.filename} saved to ${landed}.`, r.error ? 'error' : 'success');
     },
     onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Backup failed.', 'error'),
   });
@@ -1703,23 +1902,34 @@ function BackupsSection() {
     onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Verify failed.', 'error'),
   });
 
+  const parity = useMutation({
+    mutationFn: (id: string) => api.post<{ ok: boolean; filename: string | null; note: string }>(`/backups/${id}/parity`, {}),
+    onSuccess: (r) => toast.push(r.ok ? `Matches — ${r.note}` : `Parity failed: ${r.note}`, r.ok ? 'success' : 'error'),
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Parity check failed.', 'error'),
+  });
+
   return (
     <>
       <Card>
         <CardHeader
           title="Backups"
-          subtitle={`${backups?.local.count ?? 0} local copies (${fileSize(backups?.local.bytes ?? 0)}). Nightly pg_dump, gzipped, uploaded to the OneDrive folder set in Integrations.`}
+          subtitle={`${backups?.local.count ?? 0} local copies (${fileSize(backups?.local.bytes ?? 0)}). Physical is a full pg_dump; logical and config export the business data and the app's own settings separately, as NDJSON.`}
           actions={
             <span className="flex flex-wrap gap-2">
               {can('backups', 'read') ? <Button size="sm" loading={validate.isPending} onClick={() => validate.mutate()}>Validate</Button> : null}
               {can('backups', 'delete') ? <Button size="sm" loading={verify.isPending} onClick={() => verify.mutate()}>Verify (restore)</Button> : null}
-              {can('backups', 'update') ? <Button size="sm" variant="accent" loading={backupNow.isPending} onClick={() => backupNow.mutate()}>Back up now</Button> : null}
+              {can('backups', 'update') ? (
+                <>
+                  <Button size="sm" variant="accent" loading={backupNow.isPending} onClick={() => backupNow.mutate('physical')}>Back up now</Button>
+                  <Button size="sm" loading={backupNow.isPending} onClick={() => backupNow.mutate('logical')}>Logical</Button>
+                  <Button size="sm" loading={backupNow.isPending} onClick={() => backupNow.mutate('config')}>Config</Button>
+                </>
+              ) : null}
             </span>
           }
         />
         <div className="border-b border-line bg-sunken px-4 py-2 text-[11px] text-muted">
-          <strong>Validate</strong> checks the file is a genuine gzip’d dump — no database touched.{' '}
-          <strong>Verify (restore)</strong> restores it into a throwaway database to prove it is genuinely restorable, then drops it. Restore needs the privileged Backups permission.
+          <strong>Validate</strong> and <strong>Verify (restore)</strong> operate on the latest <strong>physical</strong> backup — the whole-database dump they need to restore-check. <strong>Validate</strong> checks the file is a genuine gzip’d dump, no database touched. <strong>Verify (restore)</strong> restores it into a throwaway database to prove it is genuinely restorable, then drops it — needs the privileged Backups permission.
         </div>
         {(backups?.runs ?? []).length === 0 ? (
           <EmptyState title="No backups yet" message="Run one now, or enable the nightly schedule below." />
@@ -1729,11 +1939,31 @@ function BackupsSection() {
             rows={backups!.runs}
             rowKey={(row) => row.id}
             columns={[
-              { key: 'startedAt', header: 'When', width: '180px', render: (row) => <span className="text-[12px]">{dateTime(row.startedAt)}</span> },
-              { key: 'status', header: 'Status', width: '100px', render: (row) => <Badge tone={row.status === 'success' ? 'secure' : row.status === 'failed' ? 'accent' : 'neutral'}>{row.status}</Badge> },
-              { key: 'filename', header: 'File', render: (row) => <span className="text-[12px]">{row.filename ?? '—'}</span> },
-              { key: 'sizeBytes', header: 'Size', align: 'right', width: '90px', render: (row) => <span className="tabular text-[12px]">{row.sizeBytes ? fileSize(row.sizeBytes) : '—'}</span> },
+              { key: 'startedAt', header: 'When', width: '160px', render: (row) => <span className="text-[12px]">{dateTime(row.startedAt)}</span> },
+              { key: 'status', header: 'Status', width: '90px', render: (row) => <Badge tone={row.status === 'success' ? 'secure' : row.status === 'failed' ? 'accent' : row.status === 'running' ? 'info' : row.status === 'skipped' ? 'neutral' : 'watch'}>{row.status}</Badge> },
+              { key: 'kind', header: 'Kind', width: '80px', render: (row) => <span className="text-[12px]">{BACKUP_KIND_LABEL[row.kind] ?? row.kind}</span> },
+              { key: 'tier', header: 'Tier', width: '80px', render: (row) => <span className="text-[11px] uppercase tracking-[0.04em] text-muted">{row.tier}</span> },
+              { key: 'filename', header: 'File', render: (row) => <span className="text-[12px]">{row.filename ?? '—'}{row.encrypted ? <span title="Encrypted"> 🔒</span> : null}</span> },
+              { key: 'destinations', header: 'Where', width: '150px', render: (row) => <span className="text-[11px] text-muted">{row.destinations.length ? row.destinations.join(', ') : '—'}</span> },
+              { key: 'sizeBytes', header: 'Size', align: 'right', width: '80px', render: (row) => <span className="tabular text-[12px]">{row.sizeBytes ? fileSize(row.sizeBytes) : '—'}</span> },
               { key: 'error', header: 'Note', render: (row) => row.error ? <span className="text-[11px] text-accent">{row.error}</span> : null },
+              {
+                key: 'actions', header: '', width: '80px', align: 'right',
+                render: (row) => {
+                  const restorable = row.kind !== 'physical' && ['success', 'partial'].includes(row.status) && row.destinations.includes('local');
+                  if (!restorable || !can('backups', 'update')) return null;
+                  return (
+                    <span className="flex justify-end gap-1">
+                      <IconButtonGhost label="Check row-count parity" loading={parity.isPending} onClick={() => parity.mutate(row.id)}>
+                        <ShieldCheck size={14} />
+                      </IconButtonGhost>
+                      <IconButtonGhost label={`Restore from ${row.filename}`} onClick={() => setRestoring(row)}>
+                        <RotateCcw size={14} />
+                      </IconButtonGhost>
+                    </span>
+                  );
+                },
+              },
             ]}
           />
         )}
@@ -1741,10 +1971,150 @@ function BackupsSection() {
 
       {can('settings', 'update') ? (
         <div className="mt-3">
-          <SettingsGroup prefix="backup." title="Backup schedule" description="Cron runs on Gulf time. Backups upload to the OneDrive folder set in Integrations." />
+          <SettingsGroup prefix="backup." title="Backup schedule & retention" description="Physical runs nightly on the cron below. Logical (daily) and config (weekly) run automatically inside the maintenance window and skip themselves if nothing changed since the last run. Retention keeps a separate count per grandfather/father/son tier rather than one flat number." />
         </div>
       ) : null}
+
+      {restoring ? <RestoreModal run={restoring} onClose={() => setRestoring(null)} /> : null}
     </>
+  );
+}
+
+function IconButtonGhost({ label, loading, onClick, children }: { label: string; loading?: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      aria-label={label} title={label} disabled={loading}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="rounded-sharp p-1 text-n300 transition-colors hover:bg-sunken hover:text-ink disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+interface RestorePlan { model: string; toCreate: number; toUpdate: number }
+interface RestoreResult {
+  filename: string; plans: RestorePlan[]; applied: boolean;
+  safetyBackupId?: string; safetyBackupFilename?: string;
+  created?: number; updated?: number; failed?: Array<{ model: string; id: string; error: string }>;
+}
+
+const FINANCIAL_MODELS = new Set(['invoice', 'purchaseOrder']);
+
+/**
+ * Module-into-live restore: pick which model(s) from this one backup to bring back,
+ * preview what would change, then confirm. The preview and the apply are the same
+ * request with `confirm` flipped — the modal just gates the button on having seen
+ * a preview first, mirroring what the backend itself allows.
+ */
+function RestoreModal({ run, onClose }: { run: BackupRunRow; onClose: () => void }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const registry = run.kind === 'logical' ? LOGICAL_MODEL_LABELS : CONFIG_MODEL_LABELS;
+  const available = Object.keys(run.rowCounts ?? {}).filter((m) => registry[m]);
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [preview, setPreview] = useState<RestoreResult | null>(null);
+
+  const toggle = (model: string) => {
+    setPreview(null);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(model) ? next.delete(model) : next.add(model);
+      return next;
+    });
+  };
+
+  const needsElevated = [...selected].some((m) => FINANCIAL_MODELS.has(m));
+  const blocked = needsElevated && !can('backups', 'delete');
+
+  const previewMutation = useMutation({
+    mutationFn: () => api.post<RestoreResult>(`/backups/${run.id}/restore`, { models: [...selected], confirm: false }),
+    onSuccess: setPreview,
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Preview failed.', 'error'),
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: () => api.post<RestoreResult>(`/backups/${run.id}/restore`, { models: [...selected], confirm: true }),
+    onSuccess: (r) => {
+      setPreview(r);
+      void queryClient.invalidateQueries({ queryKey: ['backups'] });
+      const failedNote = r.failed?.length ? `, ${r.failed.length} failed` : '';
+      toast.push(`Restored: ${r.created} created, ${r.updated} updated${failedNote}. Safety backup: ${r.safetyBackupFilename}.`, r.failed?.length ? 'error' : 'success');
+    },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Restore failed.', 'error'),
+  });
+
+  return (
+    <Modal
+      open onClose={onClose} width="md"
+      title="Restore from backup"
+      subtitle={run.filename ?? undefined}
+      footer={
+        preview?.applied ? (
+          <Button onClick={onClose}>Close</Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button disabled={!selected.size} loading={previewMutation.isPending} onClick={() => previewMutation.mutate()}>Preview</Button>
+            <Button
+              variant="danger"
+              disabled={!preview || preview.applied || blocked}
+              loading={applyMutation.isPending}
+              onClick={() => applyMutation.mutate()}
+            >
+              Confirm & restore
+            </Button>
+          </>
+        )
+      }
+    >
+      <div className="space-y-3 text-[13px]">
+        <p className="text-muted">
+          Only the modules checked below are touched. Existing live records are matched by id and updated in place —
+          nothing is deleted, and nothing not present in this backup is affected. A fresh safety backup of this same
+          kind is taken automatically right before anything is applied.
+        </p>
+
+        <div className="divide-y divide-line border border-line">
+          {available.length === 0 ? (
+            <p className="p-3 text-muted">This backup recorded no modules to restore.</p>
+          ) : available.map((model) => (
+            <label key={model} className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-sunken">
+              <span className="flex items-center gap-2">
+                <Checkbox label={registry[model] ?? model} checked={selected.has(model)} onChange={() => toggle(model)} />
+                {FINANCIAL_MODELS.has(model) ? <Badge tone="watch">Financial</Badge> : null}
+              </span>
+              <span className="tabular text-muted">{run.rowCounts?.[model] ?? 0} row(s)</span>
+            </label>
+          ))}
+        </div>
+
+        {blocked ? (
+          <ErrorNote error="Invoices and purchase orders are financial records — restoring them needs the privileged Backups permission." />
+        ) : null}
+
+        {preview ? (
+          <div className="border border-line bg-sunken p-3">
+            <p className="eyebrow mb-2">{preview.applied ? 'Applied' : 'Preview — nothing has been written yet'}</p>
+            <ul className="space-y-1">
+              {preview.plans.map((p) => (
+                <li key={p.model} className="flex justify-between tabular">
+                  <span>{registry[p.model] ?? p.model}</span>
+                  <span className="text-muted">{p.toCreate} to create, {p.toUpdate} to update</span>
+                </li>
+              ))}
+            </ul>
+            {preview.applied && preview.failed?.length ? (
+              <div className="mt-2 border-t border-line pt-2 text-accent">
+                {preview.failed.length} row(s) failed — first: {preview.failed[0].model} {preview.failed[0].id}: {preview.failed[0].error}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </Modal>
   );
 }
 

@@ -28,7 +28,8 @@ describe('backup run status', () => {
     const row = await prisma.backupRun.findUnique({ where: { id: r.id } });
     assert.equal(row?.status, 'partial', 'upload failure must not be recorded as success');
     assert.ok(row?.error, 'the upload error is kept on the row');
-    assert.equal(r.uploaded, false);
+    assert.ok(!r.destinations.includes('onedrive'), 'the failed destination is not counted as landed');
+    assert.ok(r.destinations.includes('local'), 'the local copy still exists');
   });
 
   it('marks a local-only run success', async () => {

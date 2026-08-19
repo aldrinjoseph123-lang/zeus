@@ -176,7 +176,25 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
 
   'backup.enabled': false,
   'backup.cron': '0 2 * * *',
-  'backup.retainLocal': 7,
+  /// Grandfather-father-son local retention: how many of each tier to keep before
+  /// the oldest is pruned. A run is tiered at creation time from the calendar (1st
+  /// of the month → monthly, Sunday → weekly, else daily), not reclassified later.
+  'backup.retainDaily': 7,
+  'backup.retainWeekly': 4,
+  'backup.retainMonthly': 12,
+  /// A mounted path (NAS, external volume) that also receives every backup file.
+  /// Empty = off. Treated as a plain filesystem destination — the OS/network layer
+  /// already handles the actual NAS protocol once it is mounted.
+  'backup.nasPath': '',
+  /// AES-256-GCM, keyed from APP_SECRET. On by default — there is no downside to an
+  /// encrypted-at-rest backup, and restoring it needs nothing beyond the same
+  /// APP_SECRET the server already requires to run at all.
+  'backup.encrypted': true,
+  /// Automatic logical (daily) and config (weekly) backups only fire inside this
+  /// Gulf-time hour window (0-23) — physical keeps its own admin-set `backup.cron`
+  /// and is not re-gated by this. Equal start/end means no restriction.
+  'backup.windowStartHour': 1,
+  'backup.windowEndHour': 5,
 
   // System-log forwarding to a syslog server / SIEM (RFC5424 over UDP or TCP).
   'syslog.enabled': false,
@@ -215,6 +233,15 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   /// scoped to leads only — accounts, contacts and deals can carry invoices and other
   /// legal records downstream, so those stay archived rather than auto-destroyed.
   'retention.deletedLeadDays': 0,
+
+  /// Off by default — nothing about email timing changes unless an admin opts in.
+  /// While on, a non-critical notification's email is held rather than sent at 2am;
+  /// everything held goes out as one digest per person when the window ends.
+  /// Critical severity (backup failed, component down) always sends immediately.
+  'notify.quietHoursEnabled': false,
+  /// Hour of day, Gulf time, 0-23. Wraps midnight when start > end (the normal case).
+  'notify.quietHoursStart': 21,
+  'notify.quietHoursEnd': 7,
 };
 
 async function load(): Promise<Map<string, unknown>> {

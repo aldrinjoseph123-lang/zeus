@@ -15,7 +15,7 @@ import { getSetting } from '../lib/settings.js';
  * object rather than three code paths.
  */
 
-interface ReportContext {
+export interface ReportContext {
   user: SessionUser;
   filters: Record<string, string>;
   from: Date;
@@ -39,12 +39,12 @@ interface ReportContext {
   visibleOwnerIds: string[] | null;
 }
 
-interface ReportResult {
+export interface ReportResult {
   rows: Array<Record<string, unknown>>;
   summary?: Array<[string, string]>;
 }
 
-interface ReportDef {
+export interface ReportDef {
   key: string;
   name: string;
   description: string;
@@ -959,7 +959,9 @@ export const REPORTS: ReportDef[] = [
   },
 ];
 
-async function buildContext(request: FastifyRequest): Promise<ReportContext> {
+/** Exported for the scheduled-report cron, which has no HTTP request to read a
+ * query string from — only `request.query` and `request.user` are ever touched. */
+export async function buildContext(request: Pick<FastifyRequest, 'query' | 'user'>): Promise<ReportContext> {
   const params = listParams(request.query as Record<string, unknown>);
   const f = params.filters;
 
