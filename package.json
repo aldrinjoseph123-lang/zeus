@@ -23,6 +23,10 @@
   "engines": {
     "node": ">=26 <27"
   },
+  "overrides": {
+    "deepmerge-ts": "^8.0.1",
+    "uuid": "^11.1.1"
+  },
   "allowScripts": {
     "prisma": true,
     "@prisma/client": true,

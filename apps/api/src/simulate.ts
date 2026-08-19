@@ -33,7 +33,7 @@ if (!/zeus_(audit|demo|sim)/.test(url)) {
   process.exit(1);
 }
 
-const PASSWORD = 'Simulate#2026';
+const PASSWORD = process.env.SIMULATE_PASSWORD ?? 'Simulate#2026';
 const DAY = 86_400_000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
 const ahead = (days: number) => new Date(Date.now() + days * DAY);
