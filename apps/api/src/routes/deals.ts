@@ -36,6 +36,9 @@ const dealSchema = z.object({
   ownerId: z.string().optional().nullable(),
   customFields: z.record(z.unknown()).optional(),
   ignoreDuplicates: z.boolean().optional(),
+  /// Only meaningful when the chosen stage is a lost stage — e.g. an import or a
+  /// historical backfill landing straight into "Closed Lost".
+  lostReason: z.string().optional().nullable(),
 });
 
 const dealInclude = {
@@ -216,6 +219,14 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
 
     const stage = body.stageId ? pipeline.stages.find((s) => s.id === body.stageId) : pipeline.stages[0];
     if (!stage) throw badRequest('That stage does not belong to the chosen pipeline.');
+    if (stage.isLost && !body.lostReason) throw badRequest('A lost reason is required when creating a deal directly into a lost stage.');
+
+    // Landing a deal straight into a won/lost stage (an import, a historical backfill)
+    // must leave it in the same state the drag-to-move endpoint would have — status,
+    // probability and closedAt derived from the stage, not left at the OPEN default.
+    // Deliberately does not replicate move's won-approval gate: that gate is about
+    // *closing* a deal live, not about recording one that is already closed.
+    const status = stage.isWon ? 'WON' : stage.isLost ? 'LOST' : 'OPEN';
 
     const rate = body.vatRate ?? (await vatRate());
     const money = withVat(body.amount ?? 0, rate);
@@ -229,11 +240,14 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
         primaryContactId: body.primaryContactId ?? null,
         pipelineId: pipeline.id,
         stageId: stage.id,
+        status,
         type: body.type ?? 'PRODUCT',
         ...money,
         cost: body.cost ?? 0,
-        probability: body.probability ?? stage.probability,
+        probability: body.probability ?? (stage.isWon ? 100 : stage.isLost ? 0 : stage.probability),
         closeDate: body.closeDate ? new Date(body.closeDate) : new Date(Date.now() + 30 * 86_400_000),
+        closedAt: status === 'OPEN' ? null : new Date(),
+        lostReason: stage.isLost ? body.lostReason : null,
         source: body.source ?? 'Database',
         sourcePartnerId: body.sourcePartnerId ?? null,
         competitor: body.competitor ?? null,
@@ -247,7 +261,7 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     });
 
     await prisma.stageHistory.create({
-      data: { dealId: deal.id, toStageId: stage.id, toStatus: 'OPEN', amount: num(deal.amount), changedById: request.user.id },
+      data: { dealId: deal.id, toStageId: stage.id, toStatus: status, amount: num(deal.amount), changedById: request.user.id },
     });
     await touch({ accountId: deal.accountId });
 

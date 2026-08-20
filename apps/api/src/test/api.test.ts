@@ -390,6 +390,50 @@ describe('permissions', () => {
   });
 });
 
+// ── deal creation: a deal landed straight into a terminal stage (import, backfill) ──
+// must come out in the same state the drag-to-move endpoint would leave it in, not
+// silently stuck at the OPEN default.
+
+describe('deal creation into a terminal stage', () => {
+  it('derives WON status, 100% probability and closedAt from the stage', async () => {
+    const won = fx.pipeline.stages.find((s) => s.isWon)!;
+    const res = await request(app, fx.rep).post('/api/deals', {
+      name: 'Backfilled won deal', accountId: fx.customer.id, stageId: won.id, amount: 50_000, ignoreDuplicates: true,
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'WON');
+    assert.equal(res.body.probability, 100);
+    assert.ok(res.body.closedAt);
+  });
+
+  it('derives LOST status and 0% probability, and requires a lost reason', async () => {
+    const lost = fx.pipeline.stages.find((s) => s.isLost)!;
+    const missingReason = await request(app, fx.rep).post('/api/deals', {
+      name: 'Backfilled lost deal', accountId: fx.customer.id, stageId: lost.id, ignoreDuplicates: true,
+    });
+    assert.equal(missingReason.status, 400);
+
+    const res = await request(app, fx.rep).post('/api/deals', {
+      name: 'Backfilled lost deal', accountId: fx.customer.id, stageId: lost.id, lostReason: 'Price', ignoreDuplicates: true,
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'LOST');
+    assert.equal(res.body.probability, 0);
+    assert.ok(res.body.closedAt);
+    assert.equal(res.body.lostReason, 'Price');
+  });
+
+  it('leaves an ordinary open-stage create alone', async () => {
+    const open = fx.pipeline.stages.find((s) => !s.isWon && !s.isLost)!;
+    const res = await request(app, fx.rep).post('/api/deals', {
+      name: 'Ordinary deal', accountId: fx.customer.id, stageId: open.id, ignoreDuplicates: true,
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'OPEN');
+    assert.equal(res.body.closedAt, null);
+  });
+});
+
 // ── money: the rules that protect a filed document ────────────────────────────
 
 describe('invoices', () => {

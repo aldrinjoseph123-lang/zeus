@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { ZodError } from 'zod';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
@@ -109,6 +110,14 @@ export async function buildApp() {
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof HttpError) return sendError(reply, error);
+    // Most routes check `.safeParse().success` themselves and throw a proper
+    // `badRequest()`, but a bare `.parse()` — used in ~19 places across the routes —
+    // throws a raw ZodError straight past that, which otherwise falls through to the
+    // generic 500 below. Bad input is a 400 everywhere, not just where a route
+    // remembered to check it by hand.
+    if (error instanceof ZodError) {
+      return reply.status(400).send({ error: error.issues[0]?.message ?? 'Invalid request.', details: error.issues });
+    }
     if ((error as { statusCode?: number }).statusCode === 429) {
       return reply.status(429).send({ error: 'Too many attempts. Wait a minute and try again.' });
     }

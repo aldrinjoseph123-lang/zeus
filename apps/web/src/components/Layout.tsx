@@ -135,7 +135,7 @@ function ThemeToggle() {
       onClick={() => set(!dark)}
       aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
       title={dark ? 'Light theme' : 'Dark theme'}
-      className="text-n400 transition-colors hover:text-white"
+      className="flex h-9 w-9 items-center justify-center text-n400 transition-colors hover:text-white"
     >
       {dark ? <Sun size={17} /> : <Moon size={17} />}
     </button>
