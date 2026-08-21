@@ -1,5 +1,11 @@
+// Must come first: TEST_URL below is derived from DATABASE_URL, and without .env
+// loaded that read returns undefined and falls through to a default with no username.
+// Prisma 6 hid this — its Rust engine defaulted the user the way libpq does — but the
+// Prisma 7 pg adapter does not, and the connection is refused outright.
+import 'dotenv/config';
 import { execFileSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
 import type { FastifyInstance } from 'fastify';
 
@@ -30,7 +36,10 @@ process.env.NODE_ENV = 'test';
 process.env.APP_SECRET ??= 'test-secret-not-used-anywhere-else-0123456789';
 process.env.APP_URL ??= 'http://localhost:4000';
 
-export const prisma = new PrismaClient({ datasources: { db: { url: TEST_URL } } });
+// Prisma 7 dropped the `datasources` override in favour of a driver adapter, so the
+// test database is targeted by pointing the adapter at TEST_URL rather than by
+// overriding a URL the client read from the schema.
+export const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: TEST_URL }) });
 
 /** Every table, child-first, so truncation never trips a foreign key. */
 /**

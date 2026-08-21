@@ -50,6 +50,9 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
+# Prisma 7 reads the CLI's datasource URL from here, not from schema.prisma, so the
+# migrate step in entrypoint.sh has nothing to connect to without it.
+COPY --from=build /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 

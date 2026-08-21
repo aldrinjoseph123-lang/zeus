@@ -3,10 +3,15 @@
 set -e
 
 echo "[zeus] waiting for the database…"
+# Probes with the pg driver rather than PrismaClient: from Prisma 7 the client needs a
+# driver adapter to be constructed at all, and a liveness check has no business
+# depending on the ORM being wired up correctly. This asks the one question that
+# matters — can we open a connection and run a statement.
 tries=0
 until node -e "
-const { PrismaClient } = require('@prisma/client');
-new PrismaClient().\$queryRaw\`SELECT 1\`.then(() => process.exit(0)).catch(() => process.exit(1));
+const { Client } = require('pg');
+const c = new Client({ connectionString: process.env.DATABASE_URL });
+c.connect().then(() => c.query('SELECT 1')).then(() => c.end()).then(() => process.exit(0)).catch(() => process.exit(1));
 " 2>/dev/null; do
   tries=$((tries + 1))
   if [ "$tries" -ge 60 ]; then
