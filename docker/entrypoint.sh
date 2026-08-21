@@ -20,6 +20,12 @@ echo "[zeus] applying migrations…"
 # migrate deploy replays the versioned migrations in order and refuses anything it does
 # not recognise. db push would silently reshape a table around live data — fine while a
 # database is disposable, not once it holds customer records.
+#
+# `prisma` is a runtime dependency, not a devDependency, precisely because of this line:
+# the image is built with `npm prune --omit=dev`, so a dev-only CLI would be pruned out
+# and npx would silently fetch whatever `prisma@latest` happens to be that day — a
+# different major against this schema, or nothing at all on a host with no registry
+# access. Keep it in `dependencies`.
 npx prisma migrate deploy --schema prisma/schema.prisma
 
 echo "[zeus] seeding defaults (safe to re-run)…"

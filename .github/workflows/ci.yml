@@ -61,22 +61,79 @@ jobs:
       - run: npm run build --if-present
       - run: npm test
 
-  # The Dockerfile is what actually gets deployed, so CI has to prove it still builds.
-  # Its own job rather than a step above: it needs no Postgres, it runs in parallel with
-  # the tests, and a build break reads as a build break instead of a test failure.
+  # The Dockerfile is what actually gets deployed, so CI has to prove it still builds
+  # *and* still boots. Its own job rather than a step above: a deploy break should read
+  # as a deploy break instead of a test failure, and it runs in parallel with the tests.
   docker:
     runs-on: ubuntu-latest
+
+    # The container is started with --network host below, so it reaches this at
+    # localhost:5432 exactly as the app would reach a db service in production.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: zeus
+          POSTGRES_PASSWORD: zeus
+          POSTGRES_DB: zeus_boot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zeus -d zeus_boot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
-      # Build only — never pushed. GHA layer caching keeps a repeat build to seconds,
-      # so this costs a full build once and very little after that.
+      # Never pushed. `load: true` puts the image in the local daemon so the boot check
+      # below can actually run it. GHA layer caching keeps a repeat build to seconds.
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: false
+          load: true
           tags: zeus-ci-check:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Building an image only proves it compiles. This proves it *runs*: the entrypoint
+      # waits for Postgres, applies migrations, seeds, and serves /api/health — the exact
+      # sequence a real deploy performs, and the one a change to the data layer (a Prisma
+      # major, a driver adapter, a Node bump) would break without touching a single test.
+      - name: Boot the image and wait for it to serve traffic
+        run: |
+          docker run -d --name zeus-boot --network host \
+            -e DATABASE_URL='postgresql://zeus:zeus@localhost:5432/zeus_boot?schema=public' \
+            -e APP_SECRET='ci-boot-check-secret-not-used-anywhere-0123456789ab' \
+            -e APP_URL='http://localhost:4000' \
+            -e SEED_ADMIN_PASSWORD='CiBootCheck#2026' \
+            zeus-ci-check:${{ github.sha }}
+
+          # Entrypoint waits for the DB, migrates, then seeds — allow for all of it.
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:4000/api/health > /tmp/health.json 2>/dev/null; then
+              echo "healthy after ${i}s:"; cat /tmp/health.json; echo
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' zeus-boot)" != "true" ]; then
+              echo "::error::container exited before becoming healthy"; break
+            fi
+            sleep 1
+          done
+
+          echo "::error::image did not serve /api/health within 60s"
+          exit 1
+
+      # Runs even on success: the logs are how you find out *why* a boot broke, and
+      # they are worth having in the run record either way.
+      - name: Container logs
+        if: always()
+        run: docker logs zeus-boot 2>&1 || true
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f zeus-boot 2>/dev/null || true
