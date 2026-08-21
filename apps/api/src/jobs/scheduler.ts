@@ -4,6 +4,7 @@ import { getSetting } from '../lib/settings.js';
 import { notify, sendPendingDigests } from '../services/notify.js';
 import { runDueScheduledReports } from '../services/scheduledReports.js';
 import { runScheduledBackup, checkMissedBackups, weeklyAutoVerify } from '../services/backup.js';
+import { dailyDataHealthSweep } from '../services/dataHealth.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
 import { sweepRenewals } from '../services/renewals.js';
 import { ratesAreStale, refreshRates } from '../services/fx.js';
@@ -477,6 +478,14 @@ export function startScheduler(): void {
     const { count } = await prisma.componentCheck.deleteMany({ where: { at: { lt: new Date(Date.now() - 30 * 86_400_000) } } });
     const resources = await pruneResourceSamples(7);
     if (removed || count || resources) console.log(`[scheduler] pruned ${removed} log + ${count} health + ${resources} resource rows`);
+  }), { timezone: TZ }));
+
+  // Daily data-integrity sweep. 05:30 GST — after the 01:00-05:00 backup window has
+  // closed, so it reads a settled database, and well before the 08:30 morning digest
+  // so anything it finds is already in the log by the time someone reads their alerts.
+  tasks.push(cron.schedule('30 5 * * *', () => void safely('dataHealth', async () => {
+    const report = await dailyDataHealthSweep();
+    if (!report.ok) console.log(`[scheduler] data integrity: ${report.findings.length} problem(s) found`);
   }), { timezone: TZ }));
 
   // Data retention: login IP history and long-abandoned leads. 03:15 GST.

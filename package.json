@@ -2,7 +2,7 @@
   "name": "zeus-crm",
   "version": "1.0.0",
   "private": true,
-  "description": "Zeus — CRM for cybersecurity distribution and managed services (UAE)",
+  "description": "Zeus \u2014 CRM for cybersecurity distribution and managed services (UAE)",
   "workspaces": [
     "apps/api",
     "apps/web"
@@ -18,7 +18,8 @@
     "db:seed": "npm run db:seed --workspace=apps/api",
     "db:studio": "npm run db:studio --workspace=apps/api",
     "test": "npm run test --workspace=apps/api && npm run test --workspace=apps/web",
-    "test:api": "npm run test:api --workspace=apps/api"
+    "test:api": "npm run test:api --workspace=apps/api",
+    "lint": "npm run lint --workspace=apps/api && npm run lint --workspace=apps/web"
   },
   "engines": {
     "node": ">=26 <27"

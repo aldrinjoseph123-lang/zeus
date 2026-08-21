@@ -80,7 +80,8 @@ export async function restoreModules(runId: string, models: string[], confirm: b
       const id = row.id as string;
       try {
         await model.upsert(row);
-        liveIds.has(id) ? updated++ : created++;
+        if (liveIds.has(id)) updated++;
+        else created++;
       } catch (err) {
         failed.push({ model: key, id, error: (err as Error).message });
       }

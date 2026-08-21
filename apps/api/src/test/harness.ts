@@ -177,7 +177,7 @@ export function request(app: FastifyInstance, user?: TestUser) {
   const headers = user ? { cookie: user.cookie } : {};
   const call = async (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, payload?: unknown) => {
     const res = await app.inject({ method, url, headers, ...(payload === undefined ? {} : { payload: payload as object }) });
-    let body: unknown = null;
+    let body: unknown;
     try {
       body = res.body ? JSON.parse(res.body) : null;
     } catch {

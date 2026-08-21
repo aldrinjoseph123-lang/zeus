@@ -39,7 +39,8 @@ const Imports = lazy(() => import('./pages/Imports'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 /** Gate a route on a module permission rather than hiding it silently. */
-function Guard({ module, children }: { module: string; children: JSX.Element }) {
+// React 19's types dropped the global JSX namespace in favour of React.JSX.
+function Guard({ module, children }: { module: string; children: React.JSX.Element }) {
   const { can, loading } = useAuth();
   if (loading) return <Loading />;
   return can(module, 'read') ? children : <AccessDenied module={module} />;

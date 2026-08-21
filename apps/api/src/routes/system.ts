@@ -4,6 +4,7 @@ import { requirePermission } from '../lib/http.js';
 import { recentLogs, exportLogs } from '../services/systemLog.js';
 import { componentStatuses, uptimeSummary } from '../services/systemStatus.js';
 import { sampleResources, resourceHistory } from '../services/resources.js';
+import { runDataHealthChecks } from '../services/dataHealth.js';
 import { tableXlsx } from '../services/xlsx.js';
 import { audit } from '../lib/audit.js';
 import { clientIp } from '../lib/http.js';
@@ -39,6 +40,21 @@ export default async function systemRoutes(app: FastifyInstance): Promise<void> 
         history,
       },
     };
+  });
+
+  /**
+   * Run the data-integrity sweep on demand. Read-only — it reports drift and never
+   * repairs it — so it is gated on the same read permission as the rest of this page
+   * rather than a write one. POST because it is a real amount of work, not a cheap GET.
+   */
+  app.post('/api/system/data-health', { preHandler: requirePermission('audit', 'read') }, async (request) => {
+    const report = await runDataHealthChecks();
+    await audit({
+      user: request.user, action: 'integration', entity: 'SystemLog',
+      summary: `Data integrity check: ${report.ok ? 'clean' : `${report.findings.length} problem(s)`}`,
+      ip: clientIp(request),
+    });
+    return report;
   });
 
   app.get('/api/system/logs', { preHandler: requirePermission('audit', 'read') }, async (request) => {

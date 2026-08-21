@@ -26,7 +26,7 @@ const accountSchema = z.object({
   linkedinUrl: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   ownerId: z.string().optional().nullable(),
-  customFields: z.record(z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
   /** Set by the client after the user has seen and dismissed the duplicate warning. */
   ignoreDuplicates: z.boolean().optional(),
 });

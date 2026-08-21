@@ -33,7 +33,7 @@ const leadSchema = z.object({
   country: z.string().optional(),
   disqualifyReason: z.string().optional().nullable(),
   domain: z.string().optional().nullable(),
-  customFields: z.record(z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
   ignoreDuplicates: z.boolean().optional(),
 });
 

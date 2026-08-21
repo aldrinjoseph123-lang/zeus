@@ -19,7 +19,7 @@ const productSchema = z.object({
   currency: z.string().default('AED'),
   taxable: z.boolean().default(true),
   isActive: z.boolean().default(true),
-  customFields: z.record(z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
 });
 
 export default async function productRoutes(app: FastifyInstance): Promise<void> {

@@ -48,8 +48,16 @@ panel for stale accounts, stuck deals, expiring registrations and overdue tasks.
 all of them are editable and you can add more without touching code.
 
 **Office 365** — one Entra app registration powers Microsoft sign-in, sending quotes and
-alerts from a shared Outlook mailbox, adaptive cards into Teams channels, and nightly
+alerts from a shared Outlook mailbox, adaptive cards into Teams channels, and offsite
 database backups to OneDrive or SharePoint.
+
+**Backups you can actually rely on** — three kinds (whole-database, business data, and
+configuration) on their own schedules, AES-256-GCM encrypted, written to the server, a
+NAS path and OneDrive independently, with grandfather-father-son retention. Zeus
+verifies its own backups weekly by restoring one into a throwaway database, alerts if a
+backup stops happening, and can restore a single module back into the live system with
+a dry-run diff and an automatic safety copy first. See [Backups](#backups) and
+[Disaster recovery](#disaster-recovery).
 
 **Reports** — 14 built-in reports, each exportable to Excel and PDF, including a VAT
 summary and a receivables ageing.
@@ -154,9 +162,11 @@ channels, the threshold in days, and who receives it.
 ### Backups to OneDrive
 
 Set the backup account and folder in Settings → Microsoft 365, then turn on
-`backup.enabled` and set `backup.cron` in the same screen. The job runs `pg_dump`,
-gzips it, keeps the last `backup.retainLocal` copies on the server, and uploads to
-OneDrive. If the upload fails the local copy still exists and you get a notification.
+`backup.enabled` and set `backup.cron` in Settings → Backups. OneDrive is one of three
+independent destinations — if the upload fails, the local (and NAS) copies still exist,
+the run is recorded as `partial`, and you get a notification. Retention, encryption,
+the other two backup kinds and the restore paths are all covered in
+[Backups](#backups).
 
 ---
 
@@ -300,6 +310,128 @@ accent, 2–4px radii, tight uppercase micro-labels. All of it lives as CSS vari
 - Custom field values are filtered against the defined schema on write, so the JSON
   column cannot be used as arbitrary storage.
 - Postgres is not published to the host; only the app container can reach it.
+- Backup files are AES-256-GCM encrypted at rest by default (see Backups below).
 
-Keep `.env` out of version control, and take the OneDrive backup seriously — it is the
-thing that makes a self-hosted CRM safe to run.
+Keep `.env` out of version control. **`APP_SECRET` is now part of your backup**: it
+derives the key that encrypts every backup file, so a backup without it cannot be
+restored. Escrow it somewhere separate from the server — a password manager, not the
+same disk.
+
+---
+
+## Backups
+
+Three kinds, each on its own schedule, all configured in **Settings → Backups**:
+
+| Kind | What it holds | When it runs |
+|---|---|---|
+| **Physical** | `pg_dump` of the whole database — the restore-anywhere copy | Nightly, on the cron you set |
+| **Logical** | Business tables (accounts, deals, quotes, invoices…) as NDJSON | Daily, inside the maintenance window |
+| **Config** | How Zeus behaves — settings, roles, pipelines, custom fields | Weekly, inside the maintenance window |
+
+- **Encrypted at rest.** AES-256-GCM, keyed from `APP_SECRET`. On by default; files
+  get a `.enc` suffix and a 🔒 in the backups table.
+- **Up to three destinations per run**, each independent — one failing never stops
+  another: the server itself (always), a mounted NAS/external path (set
+  `backup.nasPath`, blank = off), and OneDrive/SharePoint when Microsoft 365 is
+  connected. The table records which destinations a given run actually reached.
+- **Grandfather-father-son retention.** A run is tagged daily/weekly/monthly from the
+  calendar when it is created, and each tier is pruned to its own count — so a monthly
+  copy from three months ago survives a week of daily churn.
+- **Skips itself when nothing changed.** Logical and config runs compare row counts
+  against the previous run and record a `skipped` row rather than writing an identical
+  file. A skip is visible in the table, not silence.
+- **Tells you when it stops happening.** If a kind has no successful (or legitimately
+  skipped) run inside its grace window, admins get a `Backup overdue` alert.
+- **Checks itself weekly.** Every Monday Zeus restores the latest physical backup into
+  a throwaway database to prove it is genuinely restorable, and re-counts the rows in
+  the latest logical/config files against what was recorded when they were written.
+  Anything that fails raises one alert for the sweep.
+
+Three buttons on the Backups page, and what each actually proves:
+
+- **Validate** — the file decrypts and decompresses into something shaped like a
+  database dump. Cheap, touches no database.
+- **Verify (restore)** — restores the latest physical backup into a real throwaway
+  database and counts the tables, then drops it. This is the one that proves a backup
+  would actually work.
+- **Check parity** (per row, logical/config only) — re-counts the records inside the
+  file against the counts recorded when it was written, catching a file that has been
+  truncated or corrupted since.
+
+### Restoring one module, not the whole database
+
+A logical or config backup row offers **Restore**, which puts selected modules back
+into the live database without touching anything else. It shows a dry-run diff first
+(how many records would be created vs updated), takes a fresh safety backup
+automatically before applying anything, then upserts by id in dependency order.
+Nothing is ever deleted — a restore only creates or updates. Invoices and purchase
+orders need the elevated Backups permission on top of the normal one.
+
+---
+
+## Disaster recovery
+
+If the server is gone, this is the procedure. It has been rehearsed end to end — a
+real encrypted backup restored into a fresh database, with a real API booted against
+it and confirmed serving correct data.
+
+**You need two things: a backup file, and the `APP_SECRET` that encrypted it.**
+
+1. **Find the newest physical backup.** In order of preference: the OneDrive/SharePoint
+   folder (survives the server dying), the NAS path, or `BACKUP_DIR` on the server.
+   The filename tells you what it is — `zeus-physical-<timestamp>.sql.gz.enc`.
+
+2. **Decrypt it.** The file is `[12-byte IV][16-byte GCM tag][ciphertext]`, AES-256-GCM,
+   with the key derived as `scrypt(APP_SECRET, 'zeus-backups', 32)`. This script needs
+   nothing but Node — deliberately, because in a real disaster Zeus itself may be
+   exactly what you no longer have:
+
+   ```js
+   // dr-decrypt.mjs — node dr-decrypt.mjs <in.enc> <out.sql.gz> <APP_SECRET>
+   import { readFileSync, writeFileSync } from 'node:fs';
+   import { scryptSync, createDecipheriv } from 'node:crypto';
+   const [, , inFile, outFile, appSecret] = process.argv;
+   const raw = readFileSync(inFile);
+   const decipher = createDecipheriv('aes-256-gcm',
+     scryptSync(appSecret, 'zeus-backups', 32), raw.subarray(0, 12));
+   decipher.setAuthTag(raw.subarray(12, 28));
+   writeFileSync(outFile, Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]));
+   ```
+
+   Then `gunzip out.sql.gz`. (An unencrypted backup has no `.enc` suffix — skip
+   straight to gunzip.)
+
+3. **Restore into a fresh database.**
+
+   ```bash
+   createdb zeus_restored
+   psql -d zeus_restored -v ON_ERROR_STOP=0 -f out.sql
+   ```
+
+   `ON_ERROR_STOP=0` is deliberate: a dump replays harmless notices (roles that already
+   exist, and similar) that should not abort a recovery. Judge success by the table and
+   row counts, not by silence.
+
+4. **Check it before trusting it.**
+
+   ```bash
+   psql -d zeus_restored -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+   psql -d zeus_restored -c 'SELECT count(*) FROM "Account"'
+   ```
+
+   Expect ~45 tables and row counts that match what the business had.
+
+5. **Point Zeus at it.** Set `DATABASE_URL` to the restored database and start the app.
+   `docker compose up -d` with the new URL in `.env`, or `PORT=4100 DATABASE_URL=… npm
+   run dev` for a throwaway check first. Sign in and open the dashboard — if the
+   pipeline figures look right, the recovery is real.
+
+**What the rehearsal proved:** a 59 KB encrypted backup decrypted with the standalone
+script above, restored to 45 tables with row counts matching the source exactly, and a
+real API booted against it and served accounts, deals, invoices, products, reports and
+dashboard aggregates — all 200s, correct numbers.
+
+**What it did not prove:** restoring onto a *different machine* (same host, same
+Postgres 17 throughout) and OneDrive download as the file source (the drill used a
+local file). Both are worth rehearsing once on the real production host.

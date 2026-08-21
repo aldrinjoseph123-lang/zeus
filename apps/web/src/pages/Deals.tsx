@@ -281,7 +281,7 @@ function DealList() {
   const [bulkOwner, setBulkOwner] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const clearSelection = () => setSelected(new Set());
-  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const toggleAll = (ids: string[]) => setSelected((s) => (ids.every((id) => s.has(id)) ? new Set() : new Set(ids)));
 
   const afterBulk = (msg: string) => {

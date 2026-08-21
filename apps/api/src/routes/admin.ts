@@ -179,13 +179,13 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   const roleSchema = z.object({
     name: z.string().min(1),
     description: z.string().optional().nullable(),
-    permissions: z.record(z.object({
+    permissions: z.record(z.string(), z.object({
       read: z.enum(['all', 'team', 'own', 'none']),
       create: z.boolean(),
       update: z.enum(['all', 'team', 'own', 'none']),
       delete: z.enum(['all', 'team', 'own', 'none']),
       export: z.boolean(),
-      fields: z.record(z.enum(['hidden', 'read', 'write'])).optional(),
+      fields: z.record(z.string(), z.enum(['hidden', 'read', 'write'])).optional(),
     })),
   });
 
@@ -351,7 +351,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.put('/api/settings', { preHandler: requirePermission('settings', 'update') }, async (request) => {
-    const body = z.record(z.unknown()).parse(request.body);
+    const body = z.record(z.string(), z.unknown()).parse(request.body);
     for (const [key, value] of Object.entries(body)) {
       await setSetting(key, value, key.split('.')[0]);
     }

@@ -21,7 +21,7 @@ const contactSchema = z.object({
   accountId: z.string().optional().nullable(),
   ownerId: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
-  customFields: z.record(z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
   ignoreDuplicates: z.boolean().optional(),
 });
 

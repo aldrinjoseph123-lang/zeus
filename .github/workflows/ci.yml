@@ -57,5 +57,26 @@ jobs:
 
       - run: npm ci
       - run: npm run db:generate
+      - run: npm run lint
       - run: npm run build --if-present
       - run: npm test
+
+  # The Dockerfile is what actually gets deployed, so CI has to prove it still builds.
+  # Its own job rather than a step above: it needs no Postgres, it runs in parallel with
+  # the tests, and a build break reads as a build break instead of a test failure.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only — never pushed. GHA layer caching keeps a repeat build to seconds,
+      # so this costs a full build once and very little after that.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: zeus-ci-check:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

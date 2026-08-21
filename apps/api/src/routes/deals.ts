@@ -34,7 +34,7 @@ const dealSchema = z.object({
   nextStep: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   ownerId: z.string().optional().nullable(),
-  customFields: z.record(z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
   ignoreDuplicates: z.boolean().optional(),
   /// Only meaningful when the chosen stage is a lost stage — e.g. an import or a
   /// historical backfill landing straight into "Closed Lost".

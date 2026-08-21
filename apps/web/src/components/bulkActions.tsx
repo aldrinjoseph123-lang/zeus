@@ -14,7 +14,7 @@ export function useBulkSelection() {
   return {
     selected,
     clear: () => setSelected(new Set()),
-    toggle: (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }),
+    toggle: (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
     toggleAll: (ids: string[]) => setSelected((s) => (ids.every((id) => s.has(id)) ? new Set() : new Set(ids))),
   };
 }

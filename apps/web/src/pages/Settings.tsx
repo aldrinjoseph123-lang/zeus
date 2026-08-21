@@ -931,7 +931,7 @@ function OffboardModal({ user, users, onClose }: { user: UserRow; users: UserRow
     queryFn: () => api.get<{ modules: Array<{ key: string; label: string }>; counts: Record<string, number> }>(`/users/${user.id}/transfer/preview`),
   });
 
-  const toggle = (key: string) => setModules((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const toggle = (key: string) => setModules((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const recipients = users.filter((u) => u.id !== user.id && u.isActive);
 
   const transfer = useMutation({
@@ -2021,7 +2021,8 @@ function RestoreModal({ run, onClose }: { run: BackupRunRow; onClose: () => void
     setPreview(null);
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(model) ? next.delete(model) : next.add(model);
+      if (next.has(model)) next.delete(model);
+      else next.add(model);
       return next;
     });
   };
@@ -2659,6 +2660,80 @@ function uptime(seconds: number): string {
   return [d && `${d}d`, (d || h) && `${h}h`, `${m}m`].filter(Boolean).join(' ');
 }
 
+interface DataHealthReport {
+  ok: boolean;
+  checkedAt: string;
+  durationMs: number;
+  checksRun: string[];
+  findings: Array<{ check: string; label: string; count: number; examples: string[]; detail: string }>;
+}
+
+/**
+ * The component list above answers "are the pipes connected". This answers "does the
+ * data still add up" — money that reconciles, no record stranded in an impossible
+ * state, files that still exist. It runs itself daily at 05:30 Gulf time; this button
+ * is for when you want to know right now.
+ */
+function DataHealthCard() {
+  const toast = useToast();
+  const [report, setReport] = useState<DataHealthReport | null>(null);
+
+  const check = useMutation({
+    mutationFn: () => api.post<DataHealthReport>('/system/data-health', {}),
+    onSuccess: (r) => {
+      setReport(r);
+      toast.push(
+        r.ok ? `All ${r.checksRun.length} data checks passed.` : `${r.findings.length} problem(s) found.`,
+        r.ok ? 'success' : 'error',
+      );
+    },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Data check failed.', 'error'),
+  });
+
+  return (
+    <Card>
+      <CardHeader
+        title="Data integrity"
+        subtitle="Runs daily at 05:30 Gulf time. Read-only — it reports drift, it never changes your data."
+        actions={
+          <span className="flex items-center gap-2">
+            {report ? <Badge tone={report.ok ? 'secure' : 'accent'}>{report.ok ? 'Clean' : `${report.findings.length} found`}</Badge> : null}
+            <Button size="sm" loading={check.isPending} onClick={() => check.mutate()}>Run check now</Button>
+          </span>
+        }
+      />
+      {report === null ? (
+        <p className="px-4 py-3 text-[12px] text-muted">
+          Checks that payments and credit notes still add up to what each invoice says was
+          paid, that document totals match their lines, that no deal or invoice is stranded
+          in an impossible state, that nothing live points at a deleted record, and that
+          attachment and backup files are really on disk.
+        </p>
+      ) : report.ok ? (
+        <p className="px-4 py-3 text-[12px] text-secure">
+          All {report.checksRun.length} checks passed in {report.durationMs} ms — nothing to act on.
+        </p>
+      ) : (
+        <ul>
+          {report.findings.map((f) => (
+            <li key={f.check} className="border-b border-line px-4 py-3 last:border-b-0">
+              <div className="flex items-center gap-3">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--red-500,#e11d2e)]" />
+                <p className="flex-1 text-[13px] font-semibold">{f.label}</p>
+                <Badge tone="accent">{f.count}</Badge>
+              </div>
+              <p className="mt-1 pl-[22px] text-[11px] text-muted">{f.detail}</p>
+              {f.examples.length ? (
+                <p className="mt-0.5 pl-[22px] text-[11px] text-n400">e.g. {f.examples.join(' · ')}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 function StatusSection() {
   const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['system-status'],
@@ -2692,6 +2767,8 @@ function StatusSection() {
           ))}
         </ul>
       </Card>
+
+      <DataHealthCard />
 
       <Card>
         <CardHeader title="Compute utilisation" subtitle="CPU, memory and disk on the server — sampled every 5 minutes." />

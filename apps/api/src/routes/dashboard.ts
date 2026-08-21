@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { listParams, requirePermission } from '../lib/http.js';
-import { scopeWhere, permissionFor, teamMemberIds } from '../auth/rbac.js';
+import { scopeWhere, permissionFor, teamMemberIds, can } from '../auth/rbac.js';
 import { getSetting } from '../lib/settings.js';
 
 /**
@@ -361,8 +361,22 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
       }),
     ]);
 
+    /**
+     * Unexpected server errors land in the system log and nowhere else — nothing
+     * prompts anyone toward that page, so a crash could go unnoticed until a user
+     * reported it. Surfaced here because this panel is the one place people already
+     * look to ask "what needs me today".
+     *
+     * Only for roles that can open the system log: a count you have no permission to
+     * investigate is noise, not information.
+     */
+    const systemErrors = can(request.user, 'audit', 'read')
+      ? await prisma.systemLog.count({ where: { level: 'error', at: { gte: new Date(Date.now() - 86_400_000) } } })
+      : null;
+
     return {
       thresholds: { staleAccountDays: Number(staleDays), staleDealDays: Number(staleDealDays), registrationWarnDays: Number(regDays) },
+      systemErrors,
       staleAccounts,
       stuckDeals: stuckDeals.map((d) => ({ ...d, amount: num(d.amount) })),
       expiringRegistrations,

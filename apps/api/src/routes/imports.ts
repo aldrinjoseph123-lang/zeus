@@ -134,7 +134,7 @@ function guessMapping(headers: string[], module: string): Record<string, string>
 function coerce(value: string | undefined, type?: string): unknown {
   if (value === undefined || value === '') return null;
   if (type === 'number') {
-    const n = Number(String(value).replace(/[^0-9.\-]/g, ''));
+    const n = Number(String(value).replace(/[^0-9.-]/g, ''));
     return Number.isFinite(n) ? n : null;
   }
   if (type === 'date') {
@@ -189,7 +189,8 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
       return reply
         .header('content-type', 'text/csv; charset=utf-8')
         .header('content-disposition', `attachment; filename="${title}.csv"`)
-        .send(`﻿${csv}\r\n`);
+        // Excel only reads a CSV as UTF-8 if it starts with a byte-order mark.
+        .send(`\uFEFF${csv}\r\n`);
     }
 
     const buffer = await templateXlsx({ title: module, columns, note });
@@ -245,12 +246,12 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
   app.post('/api/imports/:id/run', { preHandler: requirePermission('imports', 'create') }, async (request) => {
     const { id } = request.params as { id: string };
     const schema = z.object({
-      mapping: z.record(z.string()),
+      mapping: z.record(z.string(), z.string()),
       dryRun: z.boolean().default(true),
       /** skip = leave existing alone, update = merge into it, create = add anyway */
       onDuplicate: z.enum(['skip', 'update', 'create']).default('skip'),
       ownerId: z.string().optional(),
-      defaults: z.record(z.string()).optional(),
+      defaults: z.record(z.string(), z.string()).optional(),
     });
     const parsed = schema.safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);

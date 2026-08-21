@@ -2,7 +2,7 @@ import { Suspense, lazy, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AlarmClock, BadgeCheck, Building2, CalendarClock, CircleDollarSign, Clock, Flame, Layers,
+  AlarmClock, AlertTriangle, BadgeCheck, Building2, CalendarClock, CircleDollarSign, Clock, Flame, Layers,
   ShieldCheck, TrendingUp, Users,
 } from 'lucide-react';
 import { api, qs } from '../lib/api';
@@ -54,6 +54,8 @@ interface Overview {
 
 interface Attention {
   thresholds: { staleAccountDays: number; staleDealDays: number; registrationWarnDays: number };
+  /** Server errors in the last 24h. null for roles that cannot open the system log. */
+  systemErrors: number | null;
   staleAccounts: Array<{ id: string; name: string; type: string; lastActivityAt: string | null; owner: { name: string } | null; _count: { deals: number } }>;
   stuckDeals: Array<{ id: string; reference: string; name: string; amount: number; stageChangedAt: string; closeDate: string; stage: { name: string; color: string }; account: { name: string }; owner: { name: string } | null }>;
   expiringRegistrations: Array<{
@@ -349,6 +351,19 @@ export default function Dashboard() {
       <div className="mt-3 grid gap-3 xl:grid-cols-[1.35fr_1fr]">
         <Card>
           <CardHeader title="Needs attention" subtitle={attention ? `Stale after ${attention.thresholds.staleAccountDays} days · stuck after ${attention.thresholds.staleDealDays} days` : undefined} />
+          {/* Server errors otherwise only exist in a log nobody is prompted to open. */}
+          {attention?.systemErrors ? (
+            <Link
+              to="/settings/logs"
+              className="flex items-center gap-2 border-b border-line bg-[var(--red-50,#fef2f2)] px-4 py-2 text-[12px] text-[var(--red-700,#b91c1c)] transition-colors hover:bg-[var(--red-100,#fee2e2)]"
+            >
+              <AlertTriangle size={14} className="shrink-0" />
+              <span className="font-semibold">
+                {attention.systemErrors} server error{attention.systemErrors === 1 ? '' : 's'} in the last 24 hours
+              </span>
+              <span className="ml-auto text-[11px] underline">Open system log</span>
+            </Link>
+          ) : null}
           <Tabs tabs={attentionTabs} active={attentionTab} onChange={setAttentionTab} />
           <div className="max-h-[340px] overflow-y-auto">
             {!attention ? (

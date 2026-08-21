@@ -46,7 +46,7 @@ async function upload(user: { cookie: string }, fields: Record<string, string>, 
     headers: { cookie: user.cookie, 'content-type': `multipart/form-data; boundary=${boundary}` },
     payload: body,
   });
-  let json: unknown = null;
+  let json: unknown;
   try { json = res.body ? JSON.parse(res.body) : null; } catch { json = res.body; }
   return { status: res.statusCode, body: json as Record<string, unknown> };
 }
