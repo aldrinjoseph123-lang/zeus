@@ -1,6 +1,10 @@
 import bcrypt from 'bcryptjs';
-import { PrismaClient } from '@prisma/client';
 import 'dotenv/config';
+// The shared client, not a second one built here. From Prisma 7 a PrismaClient has to
+// be constructed with a driver adapter, and a private copy of that wiring is a copy
+// that goes stale — this script runs on every container start (docker/entrypoint.sh),
+// so it going stale means the container stops booting.
+import { prisma } from './db.js';
 import { SYSTEM_ROLES } from './auth/rbac.js';
 import { ensureNotificationRules } from './services/notify.js';
 import { SETTING_DEFAULTS } from './lib/settings.js';
@@ -9,8 +13,6 @@ import { SETTING_DEFAULTS } from './lib/settings.js';
  * Idempotent seed. Safe to re-run after an upgrade: it creates what is missing
  * and leaves anything you have since edited alone.
  */
-
-const prisma = new PrismaClient();
 
 const STANDARD_STAGES = [
   { name: 'New', order: 0, probability: 10, color: '#6b6b6b', rotDays: 7, isWon: false, isLost: false },
