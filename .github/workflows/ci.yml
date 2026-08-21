@@ -1,12 +1,24 @@
 name: CI
 
 on:
+  # Every branch, not just main: a feature branch that only gets checked once someone
+  # opens a PR is a branch you find out about late. Pushing is the moment to know.
   push:
-    branches: [main]
+  # Kept for pull requests from forks, whose pushes never reach this repo. Same-repo
+  # PRs are filtered out at the job level below so they do not run twice.
   pull_request:
+
+# A newer push to the same branch makes the run in flight irrelevant — cancel it rather
+# than paying for a Docker build whose result nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    # Skip the duplicate run when a PR comes from a branch in this repo — the push
+    # event already covered it. Fork PRs have no such push, so they still run.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
 
     # Postgres 17 matches the production image; the harness refuses any DB whose
@@ -65,6 +77,9 @@ jobs:
   # *and* still boots. Its own job rather than a step above: a deploy break should read
   # as a deploy break instead of a test failure, and it runs in parallel with the tests.
   docker:
+    # Skip the duplicate run when a PR comes from a branch in this repo — the push
+    # event already covered it. Fork PRs have no such push, so they still run.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
 
     # The container is started with --network host below, so it reaches this at
