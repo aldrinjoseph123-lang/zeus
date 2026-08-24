@@ -49,11 +49,20 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** Everyone's id+name, for owner dropdowns. Any signed-in user may read it. */
+  /**
+   * Names for owner pickers and assignment dropdowns, open to anyone signed in because
+   * every role can hand a record to a colleague.
+   *
+   * Deliberately id + name only. It used to return email, avatar colour and team as
+   * well, which handed the full staff directory — addresses included — to every rep for
+   * no reason: all four callers in the web app read `{ id, name }` and nothing else.
+   * Whoever genuinely needs the rest reads /api/users, which is gated on users:read.
+   */
   app.get('/api/users/lookup', async (request) => {
     if (!request.user) throw badRequest('Not signed in.');
     return prisma.user.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, email: true, avatarColor: true, team: { select: { name: true } } },
+      select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
   });

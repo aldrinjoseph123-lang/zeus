@@ -14,6 +14,20 @@
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
+
+		# Everything the app loads is same-origin except the Chakra Petch webfont, so the
+		# policy is 'self' plus Google Fonts and nothing else. Notes on the loose bits:
+		#   style-src 'unsafe-inline' — React inline style props and Tailwind's injected
+		#     styles both need it; there is no nonce plumbing in a static SPA build.
+		#   img-src data: — the favicon and the select-arrow are inline SVG data URIs.
+		#   font-src data: — belt and braces for any inlined face.
+		# script-src stays strict: the production bundle has no inline script.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+
+		# Zeus asks for none of these. Denying them outright means a dependency that
+		# starts asking cannot succeed quietly.
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), interest-cohort=()"
+
 		-Server
 	}
 

@@ -79,7 +79,10 @@ export default function Settings() {
         </Card>
 
         <div className="min-w-0">
-          {!section ? <Loading /> :
+          {/* A known path still resolving vs. one this role cannot reach (or nonsense):
+              the latter must not spin forever. `current` is only unset for the split
+              second before the redirect effect fires, so that alone is the load state. */}
+          {!section ? (!current ? <Loading /> : <AccessDenied module="settings" />) :
             section.path === 'company' ? <SettingsGroup prefix="company." title="Company details" description="Used on quote and invoice letterheads." /> :
             section.path === 'finance' ? (
               <div className="flex flex-col gap-3">
