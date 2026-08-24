@@ -143,12 +143,57 @@ jobs:
           echo "::error::image did not serve /api/health within 60s"
           exit 1
 
+      # The security headers live in the Caddyfile, so nothing in this workflow proved
+      # they survive an edit — a CSP typo would only surface in production. Puts the real
+      # reverse proxy in front of the container just booted above and asserts the headers
+      # on a real response.
+      #
+      # --network host + --add-host app:127.0.0.1 is what lets the unmodified Caddyfile
+      # work here: it proxies to `app:4000` (the compose service name), which resolves to
+      # the app already listening on the host's port 4000. ZEUS_DOMAIN=:8080 is the
+      # documented plain-HTTP mode, so no certificate is needed.
+      - name: Check the reverse proxy sets the security headers
+        run: |
+          docker run -d --name zeus-caddy --network host \
+            --add-host app:127.0.0.1 \
+            -e ZEUS_DOMAIN=:8080 \
+            -v "${{ github.workspace }}/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine
+
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:8080/api/health 2>/dev/null && break
+            if [ "$(docker inspect -f '{{.State.Running}}' zeus-caddy)" != "true" ]; then
+              echo "::error::caddy exited"; docker logs zeus-caddy 2>&1 | tail -30; exit 1
+            fi
+            sleep 1
+          done
+
+          headers=$(curl -sSI http://localhost:8080/api/health)
+          echo "$headers"
+
+          fail=0
+          for h in content-security-policy permissions-policy strict-transport-security \
+                   x-content-type-options x-frame-options referrer-policy; do
+            grep -qi "^$h:" <<< "$headers" || { echo "::error::missing header: $h"; fail=1; }
+          done
+
+          # The Caddyfile strips it; a stray one means the directive stopped working.
+          grep -qi '^server:' <<< "$headers" && { echo "::error::Server header not stripped"; fail=1; }
+
+          # Spot-check the CSP actually constrains scripts rather than being permissive.
+          csp=$(grep -i '^content-security-policy:' <<< "$headers")
+          grep -q "script-src 'self'" <<< "$csp" || { echo "::error::CSP script-src is not 'self'"; fail=1; }
+
+          exit $fail
+
       # Runs even on success: the logs are how you find out *why* a boot broke, and
       # they are worth having in the run record either way.
       - name: Container logs
         if: always()
-        run: docker logs zeus-boot 2>&1 || true
+        run: |
+          echo "───── app ─────"; docker logs zeus-boot 2>&1 || true
+          echo "───── caddy ─────"; docker logs zeus-caddy 2>&1 | tail -40 || true
 
-      - name: Stop the container
+      - name: Stop the containers
         if: always()
-        run: docker rm -f zeus-boot 2>/dev/null || true
+        run: docker rm -f zeus-boot zeus-caddy 2>/dev/null || true
