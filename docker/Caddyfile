@@ -5,8 +5,13 @@
 
 	# Uploads and PDF generation can be slow on a big quote.
 	reverse_proxy app:4000 {
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Forwarded-Proto {scheme}
+		# Behind a Cloudflare Tunnel, cloudflared runs on this host and reaches Caddy
+		# through Docker's published port, so it arrives from the Docker bridge range —
+		# trust X-Forwarded-For / -Proto from there and Caddy passes the visitor's real
+		# IP and https through. Anything else (a LAN client hitting :80 directly) gets
+		# its own address, so nobody can spoof the audit log or dodge the rate limit.
+		# Without this every tunnel visitor was 127.0.0.1 and shared one rate limit.
+		trusted_proxies static 127.0.0.1/32 ::1/128 172.16.0.0/12
 	}
 
 	header {
