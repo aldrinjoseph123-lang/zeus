@@ -66,7 +66,11 @@ services:
       - '80:80'
       - '443:443'
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The directory, not the file: a bind-mounted file pins the inode it had when the
+      # container was created, and git checkout replaces the file — so a release that
+      # changed the Caddyfile was invisible to `caddy reload` until the container was
+      # recreated. A directory mount sees the new file.
+      - ./docker:/etc/caddy:ro
       - caddy_data:/data
       - caddy_config:/config
 

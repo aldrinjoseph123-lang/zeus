@@ -1,18 +1,24 @@
+# Behind a Cloudflare Tunnel, cloudflared runs on this host and reaches Caddy through
+# Docker's published port, so it arrives from the Docker bridge range. Trusting
+# X-Forwarded-* from there — and only there — means the app and Caddy's own log see
+# the visitor's real IP and https, while a LAN client hitting :80 directly still gets
+# its own address and cannot spoof the audit log or dodge the rate limit. Without
+# this every tunnel visitor was one Docker-internal IP sharing one rate limit.
+# Global option, not the reverse_proxy sub-option: that form is deprecated and does
+# not feed the access log's client_ip.
+{
+	servers {
+		trusted_proxies static 127.0.0.1/32 ::1/128 172.16.0.0/12
+	}
+}
+
 # Set ZEUS_DOMAIN in .env — a hostname gets an automatic Let's Encrypt certificate,
 # ":80" serves plain HTTP for a LAN-only install.
 {$ZEUS_DOMAIN} {
 	encode zstd gzip
 
 	# Uploads and PDF generation can be slow on a big quote.
-	reverse_proxy app:4000 {
-		# Behind a Cloudflare Tunnel, cloudflared runs on this host and reaches Caddy
-		# through Docker's published port, so it arrives from the Docker bridge range —
-		# trust X-Forwarded-For / -Proto from there and Caddy passes the visitor's real
-		# IP and https through. Anything else (a LAN client hitting :80 directly) gets
-		# its own address, so nobody can spoof the audit log or dodge the rate limit.
-		# Without this every tunnel visitor was 127.0.0.1 and shared one rate limit.
-		trusted_proxies 127.0.0.1/32 ::1/128 172.16.0.0/12
-	}
+	reverse_proxy app:4000
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
