@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { Shell } from '../shell';
 
@@ -82,7 +82,7 @@ export default function SignIn() {
       </form>
 
       <p className="mt-10 text-[11px] leading-relaxed text-[var(--muted)]">
-        There is no sign-up. Access is arranged by your Protect24x7 contact. We never ask for this password anywhere but here.
+        There is no sign-up. Access is arranged by your Protect24x7 contact — or <Link to="/request-access" className="underline underline-offset-4">ask for it here</Link>. We never ask for this password anywhere but here.
       </p>
     </Shell>
   );

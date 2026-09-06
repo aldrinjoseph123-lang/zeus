@@ -69,6 +69,7 @@ model User {
   importJobs                ImportJob[]
   pipelineSnapshots         PipelineSnapshot[] @relation("SnapshotOwner")
   scheduledReports          ScheduledReport[]
+  accessRequests            AccessRequest[]
 
   /// TOTP shared secret, AES-256-GCM at rest. Null until the user enrols.
   totpSecret    String?
@@ -1520,5 +1521,24 @@ model PortalUser {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  @@index([email])
+}
+
+/// The portal's one public write, quarantined. A visitor with no access asks for it;
+/// the row is an inbox item — a claimed email and a claimed company — never a Contact.
+/// It becomes data only when an admin matches it to a contact sales already created.
+model AccessRequest {
+  id          String    @id @default(cuid())
+  email       String
+  company     String
+  note        String?
+  ip          String?
+  status      String    @default("PENDING") // PENDING | MATCHED
+  handledById String?
+  handledBy   User?     @relation(fields: [handledById], references: [id])
+  handledAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([status, createdAt])
   @@index([email])
 }

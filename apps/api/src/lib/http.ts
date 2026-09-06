@@ -122,3 +122,16 @@ export function patchOf<T extends z.ZodRawShape>(schema: z.ZodObject<T>): z.ZodO
   }
   return z.object(shape) as never;
 }
+
+/**
+ * A per-route rate-limit config, disabled under test.
+ *
+ * The rate-limit plugin is registered with `global: NODE_ENV !== 'test'`, so global
+ * limiting is already off in the suite — but a route's own `config.rateLimit` leaks
+ * through, and a whole test file shares one client IP, so a tight public limit
+ * (five sign-in-link requests an hour, say) trips partway through the file. This keeps
+ * the limit in production and out of the way of the tests, in one place.
+ */
+export function limit(max: number, timeWindow: string): { rateLimit?: { max: number; timeWindow: string } } {
+  return process.env.NODE_ENV === 'test' ? {} : { rateLimit: { max, timeWindow } };
+}

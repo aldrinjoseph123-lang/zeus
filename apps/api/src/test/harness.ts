@@ -127,6 +127,12 @@ export async function seedFixtures(app: FastifyInstance): Promise<Fixtures> {
 
   invalidateSettings();
 
+  // The app seeds notification rules at boot (server.ts / seed.ts); the suite truncates
+  // them each test, so a notify() whose audience comes from the rule (e.g. an admins-only
+  // event with no record owner) would otherwise find no rule and reach nobody.
+  const { ensureNotificationRules } = await import('../services/notify.js');
+  await ensureNotificationRules();
+
   const team = await prisma.team.create({ data: { name: 'Test Team', kind: 'product' } });
   const passwordHash = await bcrypt.hash('Passw0rd!Test', 10);
 

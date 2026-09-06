@@ -32,8 +32,9 @@
 		#     styles both need it; there is no nonce plumbing in a static SPA build.
 		#   img-src data: — the favicon and the select-arrow are inline SVG data URIs.
 		#   font-src data: — belt and braces for any inlined face.
-		# script-src stays strict: the production bundle has no inline script.
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+		# script-src stays strict: the production bundle has no inline script. The one outside
+		#   host is Cloudflare Turnstile, for the portal's request-access form (script + iframe).
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 
 		# Zeus asks for none of these. Denying them outright means a dependency that
 		# starts asking cannot succeed quietly.

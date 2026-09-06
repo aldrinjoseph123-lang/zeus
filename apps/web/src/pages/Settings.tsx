@@ -3205,8 +3205,116 @@ function PortalAccessSection() {
           <DataTable columns={columns} rows={users ?? []} rowKey={(u) => u.id} empty="Nobody has portal access yet." />
         )}
       </Card>
+      <AccessRequestsCard editable={editable} />
+      <TurnstileCard editable={editable} />
       <GrantAccessModal open={grantOpen} onClose={() => setGrantOpen(false)} onGranted={() => { setGrantOpen(false); refresh(); }} />
     </div>
+  );
+}
+
+type AccessRequestRow = { id: string; email: string; company: string; note: string | null; createdAt: string };
+
+/** The quarantine queue: what unauthenticated visitors asked for. Match to a contact, or reject. */
+function AccessRequestsCard({ editable }: { editable: boolean }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [matching, setMatching] = useState<AccessRequestRow | null>(null);
+  const { data } = useQuery({ queryKey: ['portal-requests'], queryFn: () => api.get<AccessRequestRow[]>('/portal-admin/requests') });
+  const refresh = () => { void queryClient.invalidateQueries({ queryKey: ['portal-requests'] }); void queryClient.invalidateQueries({ queryKey: ['portal-users'] }); };
+  const reject = useMutation({
+    mutationFn: (id: string) => api.post(`/portal-admin/requests/${id}/reject`, {}),
+    onSuccess: () => { refresh(); toast.push('Request rejected.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not reject.', 'error'),
+  });
+  if (!data || data.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader title={`Access requests (${data.length})`} subtitle="People who asked to get in. Nothing here is a contact yet — match it to one sales already created, or reject it." />
+      <ul className="divide-y divide-line">
+        {data.map((r) => (
+          <li key={r.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold">{r.email}</p>
+              <p className="text-[12px] text-muted">{r.company}{r.note ? ` · “${r.note}”` : ''} · {relative(r.createdAt)}</p>
+            </div>
+            {editable ? (
+              <div className="flex shrink-0 gap-1">
+                <Button size="sm" onClick={() => setMatching(r)}>Match to a contact</Button>
+                <Button size="sm" variant="ghost" loading={reject.isPending} onClick={() => reject.mutate(r.id)}>Reject</Button>
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {matching ? <MatchRequestModal request={matching} onClose={() => setMatching(null)} onMatched={() => { setMatching(null); refresh(); }} /> : null}
+    </Card>
+  );
+}
+
+/** Reuses the contact search; posts to the request's match route rather than a bare grant. */
+function MatchRequestModal({ request, onClose, onMatched }: { request: AccessRequestRow; onClose: () => void; onMatched: () => void }) {
+  const toast = useToast();
+  const [q, setQ] = useState(request.email);
+  const { data } = useQuery({
+    queryKey: ['portal-match-search', q],
+    queryFn: () => api.get<{ data: ContactPick[] }>(`/contacts?search=${encodeURIComponent(q)}&pageSize=10`),
+    enabled: q.trim().length >= 2,
+  });
+  const eligible = (data?.data ?? []).filter((c) => c.email && (c.account?.type === 'PARTNER' || c.account?.type === 'CUSTOMER'));
+  const match = useMutation({
+    mutationFn: (contactId: string) => api.post<{ mail: { ok: boolean; to?: string; reason?: string } }>(`/portal-admin/requests/${request.id}/match`, { contactId }),
+    onSuccess: (r) => { toast.push(r.mail.ok ? `Access granted — link sent to ${r.mail.to}.` : `Granted, but the link was not sent: ${r.mail.reason}`, r.mail.ok ? 'success' : 'error'); onMatched(); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not match.', 'error'),
+  });
+  return (
+    <Modal open onClose={onClose} title={`Match ${request.email}`} subtitle={`Requested by ${request.company}. Grant access to the contact sales created for them.`}>
+      <div className="flex flex-col gap-3">
+        <SearchInput value={q} onChange={setQ} placeholder="Name, email or company…" />
+        {q.trim().length < 2 ? <p className="text-[12px] text-muted">Type at least two characters.</p>
+          : eligible.length === 0 ? <p className="text-[12px] text-muted">No eligible contact matches — they need an email and a partner or customer account.</p>
+          : (
+            <ul className="divide-y divide-line">
+              {eligible.map((c) => (
+                <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0"><p className="truncate text-[13px] font-semibold">{c.firstName} {c.lastName}</p><p className="truncate text-[12px] text-muted">{c.email} · {c.account?.name}</p></div>
+                  <Button size="sm" loading={match.isPending} onClick={() => match.mutate(c.id)}>Grant</Button>
+                </li>
+              ))}
+            </ul>
+          )}
+      </div>
+    </Modal>
+  );
+}
+
+/** The bot check on the public form: a Cloudflare Turnstile site key + secret, or nothing. */
+function TurnstileCard({ editable }: { editable: boolean }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { data } = useQuery({ queryKey: ['portal-turnstile'], queryFn: () => api.get<{ siteKey: string | null; configured: boolean }>('/portal-admin/turnstile') });
+  const [siteKey, setSiteKey] = useState<string | null>(null);
+  const [secret, setSecret] = useState('');
+  const save = useMutation({
+    mutationFn: () => api.put('/portal-admin/turnstile', { siteKey: siteKey ?? data?.siteKey ?? '', secret: secret || undefined }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['portal-turnstile'] }); setSecret(''); setSiteKey(null); toast.push('Turnstile saved.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
+  });
+  if (!data) return null;
+  const key = siteKey ?? data.siteKey ?? '';
+  return (
+    <Card>
+      <CardHeader title="Bot check on the request form" subtitle={`Cloudflare Turnstile. ${data.configured ? 'Configured — the public form shows the challenge.' : 'Not set — the form works without a challenge.'}`} />
+      <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
+        <Field label="Site key">
+          <Input value={key} disabled={!editable} onChange={(e) => setSiteKey(e.target.value)} placeholder="0x4AAAA…" />
+        </Field>
+        <Field label={data.configured ? 'Secret (leave blank to keep)' : 'Secret'}>
+          <Input type="password" value={secret} disabled={!editable} onChange={(e) => setSecret(e.target.value)} placeholder="0x4AAAA…" />
+        </Field>
+        {editable ? <div className="sm:col-span-2"><Button size="sm" variant="accent" loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div> : null}
+      </div>
+    </Card>
   );
 }
 

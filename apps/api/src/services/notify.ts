@@ -25,6 +25,7 @@ export const NOTIFICATION_EVENTS = [
   { event: 'registration_expiring', label: 'Deal registration expiring', thresholdDays: 30, defaults: { inApp: true, email: true, teams: true } },
   { event: 'registration_expired', label: 'Deal registration expired', thresholdDays: 0, defaults: { inApp: true, email: true, teams: true } },
   { event: 'registration_approved', label: 'Deal registration approved — partner told', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
+  { event: 'portal_access_requested', label: 'Portal access requested (someone outside asked to get in)', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
   { event: 'renewal_due', label: 'Subscription coming up for renewal', thresholdDays: 90, defaults: { inApp: true, email: true, teams: true } },
   { event: 'renewal_lapsed', label: 'Subscription lapsed without renewal', thresholdDays: 0, defaults: { inApp: true, email: true, teams: true } },
   { event: 'renewal_gap', label: 'Won deal with no renewal on file', thresholdDays: 14, defaults: { inApp: true, email: false, teams: true } },
@@ -115,7 +116,7 @@ export async function ensureNotificationRules(): Promise<number> {
         teams: false,
         whatsapp: false,
         thresholdDays: event.thresholdDays,
-        audience: ['deal_won', 'deal_lost', 'backup_failed', 'backup_missed', 'backup_verify_failed', 'data_integrity_failed', 'target_at_risk', 'invoice_overdue', 'component_down', 'component_recovered'].includes(event.event)
+        audience: ['deal_won', 'deal_lost', 'backup_failed', 'backup_missed', 'backup_verify_failed', 'data_integrity_failed', 'portal_access_requested', 'target_at_risk', 'invoice_overdue', 'component_down', 'component_recovered'].includes(event.event)
           ? 'admins'
           : 'owner',
       },
@@ -176,7 +177,7 @@ export async function notify(input: NotifyInput): Promise<void> {
      * a courtesy to another system, and a deal closing must not wait on — or fail
      * because of — somebody's endpoint being slow.
      */
-    void dispatch({
+    const dispatched = dispatch({
       event: input.event,
       title: input.title,
       body: input.body,
@@ -184,6 +185,10 @@ export async function notify(input: NotifyInput): Promise<void> {
       severity: input.severity,
       facts: input.facts,
     }).catch((err) => console.error('[notify] webhook dispatch failed:', (err as Error).message));
+    // Fire-and-forget in production. Under test, await it: an unawaited query outlives the
+    // request and lands mid-TRUNCATE in the next test's reset, surfacing as a spurious
+    // unique-constraint error in the following seed.
+    if (process.env.NODE_ENV === 'test') await dispatched; else void dispatched;
 
     if (rule?.teams) {
       await postToTeams(

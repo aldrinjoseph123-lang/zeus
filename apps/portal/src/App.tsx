@@ -6,6 +6,7 @@ import SignIn from './pages/SignIn';
 import SetPassword from './pages/SetPassword';
 import Home from './pages/Home';
 import ViewAs from './pages/ViewAs';
+import RequestAccess from './pages/RequestAccess';
 
 /**
  * Three screens. Sign-in (email, then password, with "first time / forgot" that only
@@ -19,6 +20,7 @@ export default function App() {
       <Route path="/sign-in" element={<SignIn />} />
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/view-as" element={<ViewAs />} />
+      <Route path="/request-access" element={<RequestAccess />} />
       <Route path="/" element={<RequireSession><Home /></RequireSession>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

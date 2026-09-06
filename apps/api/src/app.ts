@@ -40,6 +40,7 @@ import systemRoutes from './routes/system.js';
 import coachingRoutes from './routes/coaching.js';
 import portalRoutes from './routes/portal.js';
 import portalAdminRoutes from './routes/portalAdmin.js';
+import accessRequestRoutes from './routes/accessRequests.js';
 import { registerPortalGate } from './portal/gate.js';
 
 /**
@@ -73,6 +74,10 @@ export async function buildApp() {
     '/api/auth/microsoft/start',
     '/api/auth/microsoft/callback',
     '/api/auth/microsoft/consent-callback',
+    // The portal's one public write and the widget key its form needs. Outside /api/portal/
+    // on purpose: that prefix stays read-only for everyone.
+    '/api/access-requests',
+    '/api/access-requests/config',
   ]);
 
   await app.register(cookie, { secret: env.APP_SECRET });
@@ -172,6 +177,7 @@ export async function buildApp() {
   await app.register(systemRoutes);
   await app.register(coachingRoutes);
   await app.register(portalAdminRoutes);
+  await app.register(accessRequestRoutes);
 
   // ── partner & customer portal: its own gate, its own routes ──────────────────
   registerPortalGate(app);
