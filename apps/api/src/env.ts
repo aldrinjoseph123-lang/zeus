@@ -8,6 +8,8 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   APP_URL: z.string().url().default('http://localhost:5174'),
   CORS_ORIGINS: z.string().default('http://localhost:5174'),
+  /** Where the partner/customer portal is served — its own host, so its cookie cannot cross over. */
+  PORTAL_URL: z.string().url().default('http://localhost:5175'),
   SEED_ADMIN_EMAIL: z.string().email().default('admin@protect24x7.ae'),
   SEED_ADMIN_PASSWORD: z.string().default('ChangeMe#2026'),
   UPLOAD_DIR: z.string().default('./uploads'),
@@ -26,4 +28,4 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export const isProd = env.NODE_ENV === 'production';
-export const corsOrigins = env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
+export const corsOrigins = [...env.CORS_ORIGINS.split(','), env.PORTAL_URL].map((s) => s.trim()).filter(Boolean);

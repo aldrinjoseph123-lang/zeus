@@ -38,6 +38,9 @@ import adminRoutes from './routes/admin.js';
 import integrationRoutes from './routes/integrations.js';
 import systemRoutes from './routes/system.js';
 import coachingRoutes from './routes/coaching.js';
+import portalRoutes from './routes/portal.js';
+import portalAdminRoutes from './routes/portalAdmin.js';
+import { registerPortalGate } from './portal/gate.js';
 
 /**
  * Builds the API without starting it.
@@ -92,6 +95,8 @@ export async function buildApp() {
   // One gate for the whole API: resolve the session, then reject anonymous traffic.
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
+    // The portal has its own gate (portal/gate.ts) with its own cookie and rules.
+    if (request.url.startsWith('/api/portal/')) return;
 
     const user = await loadSessionUser(request);
     if (user) request.user = user as never;
@@ -166,6 +171,11 @@ export async function buildApp() {
   await app.register(integrationRoutes);
   await app.register(systemRoutes);
   await app.register(coachingRoutes);
+  await app.register(portalAdminRoutes);
+
+  // ── partner & customer portal: its own gate, its own routes ──────────────────
+  registerPortalGate(app);
+  await app.register(portalRoutes);
 
   // In production the API also serves the built SPA, so one container is the whole app.
   const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');

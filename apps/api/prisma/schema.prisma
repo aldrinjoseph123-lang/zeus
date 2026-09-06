@@ -196,6 +196,7 @@ model Contact {
   purchaseOrders PurchaseOrder[]
   attachments    Attachment[]
   registrations  DealRegistration[] @relation("RegistrationPartnerContact")
+  portalUser     PortalUser?
 
   @@index([email])
   @@index([accountId])
@@ -1487,4 +1488,32 @@ model WebhookDelivery {
   createdAt    DateTime @default(now())
 
   @@index([webhookId, createdAt])
+}
+
+// ---------------------------------------------------------------- partner & customer portal
+
+/// Identity for someone outside the company: one per Contact, never a User. Access is
+/// granted on purpose by an admin, never implied by the contact existing. Passwords are
+/// set and reset only from an emailed single-use link, so the public page never offers
+/// to create one. The gate re-checks the contact, its account and the kill switch on
+/// every request; revoking is disabledAt, and it takes effect on the next request.
+model PortalUser {
+  id             String    @id @default(cuid())
+  contactId      String    @unique
+  contact        Contact   @relation(fields: [contactId], references: [id])
+  /// Lower-cased copy of the contact's email at grant time — the login key, unique.
+  email          String    @unique
+  passwordHash   String?
+  enabledAt      DateTime  @default(now())
+  disabledAt     DateTime?
+  lastLoginAt    DateTime?
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  /// sha256 of the outstanding set/reset link, single use, expires.
+  linkTokenHash  String?
+  linkExpiresAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([email])
 }

@@ -295,7 +295,7 @@ function digestTemplate(items: Array<{ title: string; body: string | null; link:
   </table></body></html>`;
 }
 
-export function emailTemplate(title: string, body?: string, link?: string, facts?: CardFact[]): string {
+export function emailTemplate(title: string, body?: string, link?: string, facts?: CardFact[], cta = 'OPEN IN ZEUS'): string {
   const rows = (facts ?? [])
     .map(
       (f) =>
@@ -316,7 +316,7 @@ export function emailTemplate(title: string, body?: string, link?: string, facts
           <h1 style="margin:0 0 12px;font-size:18px;color:#0a0a0a">${escapeHtml(title)}</h1>
           ${body ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#4a4a4a">${escapeHtml(body)}</p>` : ''}
           ${rows ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px">${rows}</table>` : ''}
-          ${link ? `<a href="${link}" style="display:inline-block;background:#e11d2e;color:#ffffff;text-decoration:none;padding:10px 20px;font-size:13px;font-weight:600;letter-spacing:.04em">OPEN IN ZEUS</a>` : ''}
+          ${link ? `<a href="${link}" style="display:inline-block;background:#e11d2e;color:#ffffff;text-decoration:none;padding:10px 20px;font-size:13px;font-weight:600;letter-spacing:.04em">${cta}</a>` : ''}
         </td></tr>
         <tr><td style="padding:14px 24px;border-top:1px solid #ebebe8;color:#999;font-size:11px">
           Sent by Zeus CRM. Manage alerts in Settings &rsaquo; Notifications.

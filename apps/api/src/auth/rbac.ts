@@ -29,6 +29,7 @@ export const MODULES = [
   'integrations',
   'backups',
   'audit',
+  'portal',
 ] as const;
 
 export type Module = (typeof MODULES)[number];

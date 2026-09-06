@@ -86,6 +86,15 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'approvals.purchaseOrderMinAmount': 0,
   'approvals.invoicesEnabled': true,
   'approvals.invoiceMinAmount': 0,
+  // Partner & customer portal. Off until an admin turns it on in Settings → Portal access.
+  'portal.enabled': false,
+  'portal.partner.enabled': true,
+  'portal.customer.enabled': true,
+  'portal.session.idleMinutes': 1440,
+  'portal.password.minLength': 12,
+  'portal.lockout.attempts': 10,
+  'portal.lockout.minutes': 15,
+  'portal.link.expiryMinutes': 60,
   /// Below this margin a deal needs approving whatever it is worth — the discount
   /// giveaway is what a sales manager actually wants to catch.
   'approvals.dealMinMarginPct': 0,
