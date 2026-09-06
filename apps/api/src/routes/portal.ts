@@ -4,6 +4,7 @@ import { audit } from '../lib/audit.js';
 import { badRequest, clientIp } from '../lib/http.js';
 import { loginWithPassword, requestLink, setPasswordFromLink } from '../portal/auth.js';
 import { clearPortalSession, issuePortalSession, verifyViewAsToken } from '../portal/session.js';
+import { partnerRegistrations } from '../portal/registrations.js';
 
 /**
  * What an outsider can call. Auth routes are the only writes; everything else is a
@@ -63,5 +64,16 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · me${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
     // Allowlist: what leaves is named here and nowhere else.
     return { name: s.name, email: s.email, account: { name: s.accountName, type: s.accountType }, ...(s.viewingAs ? { viewingAs: s.viewingAs.name } : {}) };
+  });
+
+  // ── partner view ───────────────────────────────────────────────────────────
+
+  /** Their registered deals, both sides of the channel. Partners only. */
+  app.get('/api/portal/registrations', async (request, reply) => {
+    const s = request.portal;
+    if (s.accountType !== 'PARTNER') return reply.status(404).send({ error: 'Not found.' });
+    const rows = await partnerRegistrations(s);
+    await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · registrations (${rows.length})${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
+    return rows;
   });
 }

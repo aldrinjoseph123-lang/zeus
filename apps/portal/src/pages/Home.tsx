@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { Shell } from '../shell';
 import { useMe } from '../me';
+import PartnerHome from './PartnerHome';
 
 /**
  * The signed-in home. Phase 1 is deliberately empty: it proves who you are and which
@@ -32,14 +33,12 @@ export default function Home() {
         <button onClick={signOut} className="text-[12px] uppercase tracking-[0.15em] text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Sign out</button>
       </div>
 
-      <section className="mt-10 border border-dashed border-[var(--line)] px-6 py-12 text-center">
-        <p className="text-[13px] uppercase tracking-[0.2em] text-[var(--muted)]">Nothing to show yet</p>
-        <p className="mx-auto mt-3 max-w-[48ch] text-[14px] leading-relaxed text-[var(--muted)]">
-          {me.account.type === 'PARTNER'
-            ? 'Your registered opportunities and their protection status will appear here.'
-            : 'Your services, what each includes, and their renewal dates will appear here.'}
-        </p>
-      </section>
+      {me.account.type === 'PARTNER' ? <PartnerHome /> : (
+        <section className="mt-10 border border-dashed border-[var(--line)] px-6 py-12 text-center">
+          <p className="text-[13px] uppercase tracking-[0.2em] text-[var(--muted)]">Nothing to show yet</p>
+          <p className="mx-auto mt-3 max-w-[48ch] text-[14px] leading-relaxed text-[var(--muted)]">Your services, what each includes, and their renewal dates will appear here.</p>
+        </section>
+      )}
     </Shell>
   );
 }

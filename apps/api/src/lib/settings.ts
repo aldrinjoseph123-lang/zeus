@@ -95,6 +95,9 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'portal.lockout.attempts': 10,
   'portal.lockout.minutes': 15,
   'portal.link.expiryMinutes': 60,
+  // What a partner sees on a registration. The vendor number is already in the expiry mail.
+  'portal.partner.showRegNumber': true,
+  'portal.partner.showDealValue': false,
   /// Below this margin a deal needs approving whatever it is worth — the discount
   /// giveaway is what a sales manager actually wants to catch.
   'approvals.dealMinMarginPct': 0,

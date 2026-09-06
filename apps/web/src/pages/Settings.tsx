@@ -124,6 +124,7 @@ const LABELS: Record<string, string> = {
   'portal.session.idleMinutes': 'Session length (minutes)', 'portal.password.minLength': 'Minimum password length',
   'portal.lockout.attempts': 'Wrong passwords before lockout', 'portal.lockout.minutes': 'Lockout length (minutes)',
   'portal.link.expiryMinutes': 'Set-password link valid for (minutes)',
+  'portal.partner.showRegNumber': 'Partners see the vendor registration number', 'portal.partner.showDealValue': 'Partners see the deal value',
   'company.name': 'Trading name', 'company.legalName': 'Legal name', 'company.trn': 'TRN (tax registration number)',
   'company.addressLine1': 'Address line 1', 'company.addressLine2': 'Address line 2', 'company.city': 'City',
   'company.emirate': 'Emirate', 'company.country': 'Country', 'company.poBox': 'P.O. Box', 'company.phone': 'Phone',
