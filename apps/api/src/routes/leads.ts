@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { sanitizeCustomFields } from '../lib/customFields.js';
 import { audit, auditRead, diff, undoSoftDelete, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
 import { checkDuplicates, extractDomain } from '../services/dedupe.js';
 import { nextReference } from '../lib/counters.js';
@@ -153,7 +153,7 @@ export default async function leadRoutes(app: FastifyInstance): Promise<void> {
     if (!(await ownerAllowed(request.user, 'leads', 'update', existing.ownerId))) throw forbidden();
     if (existing.status === 'CONVERTED') throw badRequest('This lead is already converted and cannot be edited.');
 
-    const parsed = leadSchema.partial().safeParse(request.body);
+    const parsed = patchOf(leadSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const { ignoreDuplicates: _i, ...body } = stripUnwritableFields(request.user, 'leads', parsed.data as Record<string, unknown>);
 

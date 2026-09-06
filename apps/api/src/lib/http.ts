@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { can, type Module, type SessionUser } from '../auth/rbac.js';
 
@@ -101,4 +102,23 @@ export function sendError(reply: FastifyReply, err: unknown): FastifyReply {
 
 function request_log(err: unknown): void {
   console.error('[api]', err);
+}
+
+/**
+ * The PATCH form of a create schema: every field optional, and *no defaults*.
+ *
+ * Zod 4 keeps `.default()` under `.partial()` (Zod 3 dropped it), so a PATCH that only
+ * carried `{ name }` came back as `{ name, type: 'PROSPECT', cost: 0, lines: [] … }` and
+ * the update overwrote fields the caller never sent — a renamed customer became a
+ * prospect, a completed call became a task, a product edit zeroed its price. Every
+ * update route derives its body schema through this instead of `.partial()`.
+ */
+type WithoutDefault<T> = T extends z.ZodDefault<infer U> ? U : T;
+export function patchOf<T extends z.ZodRawShape>(schema: z.ZodObject<T>): z.ZodObject<{ [K in keyof T]: z.ZodOptional<WithoutDefault<T[K]>> }> {
+  const shape: Record<string, z.ZodType> = {};
+  for (const [key, field] of Object.entries(schema.shape)) {
+    const bare = field instanceof z.ZodDefault ? field.unwrap() : field;
+    shape[key] = (bare as z.ZodType).optional();
+  }
+  return z.object(shape) as never;
 }

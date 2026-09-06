@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { sanitizeCustomFields } from '../lib/customFields.js';
 import { audit, auditRead, diff, undoSoftDelete, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
 import { checkDuplicates, extractDomain } from '../services/dedupe.js';
 
@@ -181,7 +181,7 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     if (!existing) throw notFound('Account not found.');
     if (!(await ownerAllowed(request.user, 'accounts', 'update', existing.ownerId))) throw forbidden();
 
-    const parsed = accountSchema.partial().safeParse(request.body);
+    const parsed = patchOf(accountSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const { ignoreDuplicates: _ignored, ...body } = stripUnwritableFields(request.user, 'accounts', parsed.data as Record<string, unknown>);
 

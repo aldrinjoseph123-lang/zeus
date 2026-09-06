@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { sanitizeCustomFields } from '../lib/customFields.js';
 import { audit, diff, undoHardDelete, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, stripUnwritableFields } from '../auth/rbac.js';
 
 const productSchema = z.object({
@@ -78,7 +78,7 @@ export default async function productRoutes(app: FastifyInstance): Promise<void>
     const existing = await prisma.product.findUnique({ where: { id } });
     if (!existing) throw notFound('Product not found.');
 
-    const parsed = productSchema.partial().safeParse(request.body);
+    const parsed = patchOf(productSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const body = stripUnwritableFields(request.user, 'products', parsed.data as Record<string, unknown>);
 

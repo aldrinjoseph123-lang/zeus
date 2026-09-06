@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, auditRead, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { approvalRequired, blockedReason } from '../services/approvals.js';
 import { maskFields, permissionFor } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
@@ -217,7 +217,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     if (!existing) throw notFound('Quote not found.');
     if (existing.status === 'ACCEPTED') throw badRequest('An accepted quote is locked. Create a new version instead.');
 
-    const parsed = quoteSchema.partial().safeParse(request.body);
+    const parsed = patchOf(quoteSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const { lines, ...body } = parsed.data;
 

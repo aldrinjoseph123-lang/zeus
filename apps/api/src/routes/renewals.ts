@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { SubscriptionStatus } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { audit, undoSoftDelete, undoUpdate, diff } from '../lib/audit.js';
-import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere } from '../auth/rbac.js';
 import { round2 } from '../lib/money.js';
 import { getSetting } from '../lib/settings.js';
@@ -196,7 +196,7 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
 
   app.patch('/api/subscriptions/:id', { preHandler: requirePermission('deals', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
-    const parsed = subscriptionSchema.partial().safeParse(request.body);
+    const parsed = patchOf(subscriptionSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
 
     const existing = await prisma.subscription.findFirst({ where: { id, deletedAt: null } });

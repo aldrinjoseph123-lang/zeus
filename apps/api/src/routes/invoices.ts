@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, auditRead, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
 import { formatAed, round2 } from '../lib/money.js';
@@ -186,7 +186,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
     const existing = await prisma.invoice.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!existing) throw notFound('Invoice not found.');
 
-    const parsed = invoiceSchema.partial().safeParse(request.body);
+    const parsed = patchOf(invoiceSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const { lines, ...body } = parsed.data;
 

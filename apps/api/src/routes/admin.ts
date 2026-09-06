@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { audit, diff } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, listParams, notFound, paged, patchOf, requirePermission } from '../lib/http.js';
 import { MODULES, PROTECTED_FIELDS, SYSTEM_ROLES, type PermissionMap } from '../auth/rbac.js';
 import { getSettings, invalidateSettings, setSetting, SETTING_DEFAULTS } from '../lib/settings.js';
 import { finishSetup, setSkipped, setupStatus, SETUP_KEYS } from '../services/setup.js';
@@ -100,7 +100,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/users/:id', { preHandler: requirePermission('users', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
-    const parsed = userSchema.partial().safeParse(request.body);
+    const parsed = patchOf(userSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
     const { password, ...data } = parsed.data;
 
@@ -209,7 +209,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/roles/:id', { preHandler: requirePermission('roles', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
-    const parsed = roleSchema.partial().safeParse(request.body);
+    const parsed = patchOf(roleSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
 
     const existing = await prisma.role.findUnique({ where: { id } });
@@ -459,7 +459,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/webhooks/:id', { preHandler: requirePermission('integrations', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
-    const parsed = webhookSchema.partial().safeParse(request.body);
+    const parsed = patchOf(webhookSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
 
     if (parsed.data.url) {
@@ -692,7 +692,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/scheduled-reports/:id', { preHandler: requirePermission('settings', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
-    const body = scheduledReportBase.partial().parse(request.body);
+    const body = patchOf(scheduledReportBase).parse(request.body);
     const existing = await prisma.scheduledReport.findUnique({ where: { id } });
     if (!existing) throw notFound('Schedule not found.');
 

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, undoHardDelete, undoUpdate, diff } from '../lib/audit.js';
-import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { permissionFor } from '../auth/rbac.js';
 import { resolvePrice } from '../services/priceBook.js';
 
@@ -142,7 +142,7 @@ export default async function priceBookRoutes(app: FastifyInstance): Promise<voi
   app.patch('/api/price-book/:id', { preHandler: requirePermission('products', 'update') }, async (request) => {
     await requireCostAccess(request);
     const { id } = request.params as { id: string };
-    const parsed = entrySchema.partial().safeParse(request.body);
+    const parsed = patchOf(entrySchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
 
     const existing = await prisma.priceEntry.findUnique({ where: { id } });

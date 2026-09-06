@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { sanitizeCustomFields } from '../lib/customFields.js';
 import { audit, auditRead, diff, undoHardDelete, undoSoftDelete, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
 import { checkDuplicates } from '../services/dedupe.js';
 import { nextReference } from '../lib/counters.js';
 import { applyVat, formatAed } from '../lib/money.js';
 import { getSetting, vatRate } from '../lib/settings.js';
 import { notify } from '../services/notify.js';
-import { mailPartnerAboutRegistration } from '../services/registrations.js';
+import { mailPartnerAboutRegistration, mailPartnerRegistrationApproved } from '../services/registrations.js';
 import { approvalRequired, blockedReason } from '../services/approvals.js';
 import { markRenewed } from '../services/renewals.js';
 import { touch } from '../lib/touch.js';
@@ -334,7 +334,7 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     if (!existing) throw notFound('Deal not found.');
     if (!(await ownerAllowed(request.user, 'deals', 'update', existing.ownerId))) throw forbidden();
 
-    const parsed = dealSchema.partial().safeParse(request.body);
+    const parsed = patchOf(dealSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const { ignoreDuplicates: _i, ...body } = stripUnwritableFields(request.user, 'deals', parsed.data as Record<string, unknown>);
 
@@ -588,6 +588,33 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     partnerContact: { select: { id: true, firstName: true, lastName: true, email: true } },
   } as const;
 
+  /**
+   * A PARTNER-side registration just became APPROVED: tell the deal owner in-app and
+   * the partner by mail. The mail is best-effort — no partner contact, or Microsoft 365
+   * not set up, must never fail the rep's save; the notification records what happened
+   * either way so the rep can chase by hand.
+   */
+  async function announcePartnerApproval(regId: string): Promise<void> {
+    const reg = await prisma.dealRegistration.findUnique({
+      where: { id: regId },
+      include: { ...registrationInclude, deal: { select: { id: true, reference: true, name: true, ownerId: true, account: { select: { name: true } } } } },
+    });
+    if (!reg || reg.side !== 'PARTNER') return;
+    const sent = await mailPartnerRegistrationApproved(reg);
+    await notify({
+      event: 'registration_approved',
+      title: `Registration approved — ${reg.partner?.name ?? 'partner'} on ${reg.deal.account.name}`,
+      body: sent.ok ? `${sent.to} has been told the opportunity is locked with us.` : `Partner not mailed: ${sent.reason}`,
+      link: `/deals/${reg.deal.id}`,
+      severity: sent.ok ? 'info' : 'warn',
+      ownerId: reg.deal.ownerId,
+      facts: [
+        { title: 'Deal', value: `${reg.deal.reference} · ${reg.deal.name}` },
+        { title: 'Protected until', value: reg.expiresAt ? reg.expiresAt.toLocaleDateString('en-GB') : '—' },
+      ],
+    });
+  }
+
   app.post('/api/deals/:id/registrations', { preHandler: requirePermission('deals', 'update') }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = registrationSchema.safeParse(request.body);
@@ -629,12 +656,13 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
       summary: `${deal.reference} ${registration.side === 'PARTNER' ? 'protected for' : 'registered with'} ${counterparty(registration)}`,
       ip: clientIp(request),
     });
+    if (registration.side === 'PARTNER' && registration.status === 'APPROVED') await announcePartnerApproval(registration.id);
     return reply.status(201).send(registration);
   });
 
   app.patch('/api/registrations/:regId', { preHandler: requirePermission('deals', 'update') }, async (request) => {
     const { regId } = request.params as { regId: string };
-    const parsed = registrationSchema.partial().safeParse(request.body);
+    const parsed = patchOf(registrationSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
 
     const existing = await prisma.dealRegistration.findUnique({ where: { id: regId }, include: { deal: true } });
@@ -655,6 +683,8 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
       include: registrationInclude,
     });
     await audit({ user: request.user, action: 'update', entity: 'DealRegistration', entityId: regId, summary: `${existing.deal.reference} / ${counterparty(registration)}`, ip: clientIp(request) });
+    // Only on the transition — re-saving an already approved row must not mail the partner twice.
+    if (registration.side === 'PARTNER' && registration.status === 'APPROVED' && existing.status !== 'APPROVED') await announcePartnerApproval(regId);
     return registration;
   });
 

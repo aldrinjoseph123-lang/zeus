@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, undoSoftDelete } from '../lib/audit.js';
-import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
 import { formatAed, round2 } from '../lib/money.js';
@@ -202,7 +202,7 @@ export default async function purchaseOrderRoutes(app: FastifyInstance): Promise
     if (!existing) throw notFound('Purchase order not found.');
     if (!(await ownerAllowed(request.user, 'invoices', 'update', existing.ownerId))) throw forbidden();
 
-    const parsed = poSchema.partial().safeParse(request.body);
+    const parsed = patchOf(poSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const { lines, direction: _dir, ...body } = parsed.data;
 

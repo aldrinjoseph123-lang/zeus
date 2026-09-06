@@ -3,7 +3,7 @@ import type { ActivityType } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { audit, undoHardDelete } from '../lib/audit.js';
-import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { ownerAllowed, scopeWhere } from '../auth/rbac.js';
 import { touch } from '../lib/touch.js';
 
@@ -103,7 +103,7 @@ export default async function activityRoutes(app: FastifyInstance): Promise<void
     if (!existing) throw notFound('Activity not found.');
     if (!(await ownerAllowed(request.user, 'activities', 'update', existing.ownerId))) throw forbidden();
 
-    const parsed = activitySchema.partial().safeParse(request.body);
+    const parsed = patchOf(activitySchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const body = parsed.data;
 
