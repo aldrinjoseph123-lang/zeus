@@ -52,9 +52,13 @@ main() {
   set_tag "$tag"
   docker compose pull -q app
 
-  # 4. bring the stack up at the new tag. db and caddy have unchanged config so compose
-  #    leaves them alone; on a freshly wiped box this is also what starts them.
+  # 4. bring the stack up at the new tag. db and caddy have unchanged compose config so
+  #    compose leaves them alone; on a freshly wiped box this is also what starts them.
   docker compose up -d --no-build
+  # Caddy only reads its file at start, and a release may have changed it. A reload is
+  # zero-downtime; fall back to a restart if the admin endpoint is unavailable.
+  docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 \
+    || docker compose restart caddy >/dev/null
   if wait_healthy 180; then
     echo "▸ $tag is live: $(curl -fsS http://localhost/api/health)"
     echo "▸ previous image kept for rollback: ./docker/deploy.sh ${prev:-<previous tag>}"
