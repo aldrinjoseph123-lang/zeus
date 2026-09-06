@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+
+/* The same tokens as the internal app, so the portal reads as the same company. */
+:root {
+  --black: #0a0a0a;
+  --ink: #f4f4f2;
+  --muted: #999999;
+  --line: #2e2e2e;
+  --card: #141414;
+  --red: #e11d2e;
+  --red-hover: #c8121f;
+  --secure: #1f8a4c;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--black);
+  color: var(--ink);
+  font-family: 'Chakra Petch', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

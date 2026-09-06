@@ -179,13 +179,28 @@ export async function buildApp() {
 
   // In production the API also serves the built SPA, so one container is the whole app.
   const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');
+  const portalDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../portal/dist');
+  // The portal is told apart by hostname. Its bundle lives under /portal-app/ so the two
+  // builds' assets cannot collide; on the portal host the internal bundle is withheld,
+  // so an outsider never downloads the internal app's screens, field names or routes.
+  const portalHost = new URL(env.PORTAL_URL).host;
+  const isPortalHost = (request: { host?: string; hostname?: string }) => (request.host ?? request.hostname) === portalHost;
   if (existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: '/' });
+    if (existsSync(portalDist)) await app.register(fastifyStatic, { root: portalDist, prefix: '/portal-app/', decorateReply: false });
+    app.addHook('onRequest', async (request, reply) => {
+      if (isPortalHost(request) && (request.url.startsWith('/assets/') || request.url === '/index.html')) {
+        return reply.status(404).send({ error: 'Not found.' });
+      }
+    });
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api/')) return reply.status(404).send({ error: 'No such endpoint.' });
+      if (isPortalHost(request)) {
+        return existsSync(portalDist) ? reply.sendFile('index.html', portalDist) : reply.status(404).send({ error: 'Portal not built.' });
+      }
       return reply.sendFile('index.html');
     });
-    app.log.info(`serving frontend from ${webDist}`);
+    app.log.info(`serving frontend from ${webDist}${existsSync(portalDist) ? ` and portal from ${portalDist} on ${portalHost}` : ''}`);
   }
 
 

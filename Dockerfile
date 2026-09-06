@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
+COPY apps/portal/package.json apps/portal/
 # ci, not install: the lockfile decides, so an image built today matches one built in
 # six months. Install scripts stay on because Prisma fetches its engines in one.
 RUN npm ci --include=dev
@@ -20,7 +21,8 @@ RUN npx prisma generate --schema apps/api/prisma/schema.prisma
 
 COPY . .
 RUN npm run build --workspace=apps/api \
-    && npm run build --workspace=apps/web
+    && npm run build --workspace=apps/web \
+    && npm run build --workspace=apps/portal
 
 # Drop dev dependencies from the tree we ship.
 RUN npm prune --omit=dev
@@ -54,6 +56,7 @@ COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 # migrate step in entrypoint.sh has nothing to connect to without it.
 COPY --from=build /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY --from=build /app/apps/web/dist ./apps/web/dist
+COPY --from=build /app/apps/portal/dist ./apps/portal/dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # /data is where the named volume mounts. Creating it in the image first means Docker

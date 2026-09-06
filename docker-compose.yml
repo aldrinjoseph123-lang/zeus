@@ -40,6 +40,8 @@ services:
       APP_SECRET: "${APP_SECRET:?generate with openssl rand -hex 32}"
       APP_URL: "${APP_URL:?e.g. https://zeus.protect24x7.ae}"
       CORS_ORIGINS: ${APP_URL}
+      # The partner/customer portal answers on its own hostname; the default keeps it unreachable from outside.
+      PORTAL_URL: ${PORTAL_URL:-http://localhost:5175}
       NODE_ENV: production
       PORT: 4000
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@protect24x7.ae}

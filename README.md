@@ -380,6 +380,40 @@ same disk.
 
 ---
 
+## Partner & customer portal
+
+A second, deliberately small front end (`apps/portal`) for the two parties outside the
+company. It is **read-only by construction** — the only routes an outsider can POST to
+are its own sign-in, set-password and link-request; every other non-GET under
+`/api/portal/` is refused before a route runs. It is **off by default** (`portal.enabled`)
+until an admin switches it on.
+
+**Identity.** A portal user is a `Contact`, never a `User`, and access is granted on
+purpose from inside Zeus (`POST /api/portal-admin/users`, the `portal` module —
+Administrator only by default). A contact under a partner account gets nothing by merely
+existing; a grant fails if another contact shares the email address, because the login
+key must name one person.
+
+**Passwords** are set and reset only from an emailed single-use link, so the public page
+never offers to create one. Sign-in is email then password; an unknown address, a wrong
+password and a locked account all get the same answer. Lockout matches the internal
+login.
+
+**Who qualifies**, re-checked on every request: a live contact under a live `PARTNER`
+account, or under a `CUSTOMER` account with an `ACTIVE`/`EXPIRING` subscription.
+Revoking, deleting the contact, or the last subscription lapsing closes the door on the
+next request. Every portal read is written to the audit trail.
+
+**Hosting.** The API serves the portal build on its own hostname (`PORTAL_URL`, e.g.
+`https://portal.protect24x7.com`): the portal's assets live under `/portal-app/`, and on
+that hostname the internal app's bundle is withheld, so an outsider never downloads the
+CRM's screens. Behind the Cloudflare Tunnel, add a second public hostname for the portal
+pointing at the same `localhost:80`; Caddy needs no change in `:80` mode. The portal's
+session cookie has its own name and JWT issuer — an internal session is worthless on
+the portal and the other way round.
+
+Dev: `npm run dev:portal` (port 5175). Tests: `apps/api/src/test/portal.test.ts`.
+
 ## Backups
 
 Three kinds, each on its own schedule, all configured in **Settings → Backups**:
