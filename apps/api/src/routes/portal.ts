@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp } from '../lib/http.js';
 import { loginWithPassword, requestLink, setPasswordFromLink } from '../portal/auth.js';
-import { clearPortalSession, issuePortalSession } from '../portal/session.js';
+import { clearPortalSession, issuePortalSession, verifyViewAsToken } from '../portal/session.js';
 
 /**
  * What an outsider can call. Auth routes are the only writes; everything else is a
@@ -41,6 +41,16 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     return { ok: true };
   });
 
+  /** An admin's hand-off from Settings → "View as". The token lives two minutes. */
+  app.post('/api/portal/auth/view-as', { config: { rateLimit: { max: 20, timeWindow: '5 minutes' } } }, async (request, reply) => {
+    const parsed = z.object({ token: z.string().min(20) }).safeParse(request.body);
+    const claim = parsed.success ? await verifyViewAsToken(parsed.data.token) : null;
+    if (!claim) throw badRequest('This preview link is not valid any more. Open View as again from Settings.');
+    await issuePortalSession(reply, claim.portalUserId, claim.admin);
+    await audit({ user: null, action: 'login', entity: 'PortalUser', entityId: claim.portalUserId, summary: `portal preview by ${claim.admin.name}`, ip: clientIp(request) });
+    return { ok: true };
+  });
+
   app.post('/api/portal/auth/logout', async (_request, reply) => {
     clearPortalSession(reply);
     return { ok: true };
@@ -50,8 +60,8 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/api/portal/me', async (request) => {
     const s = request.portal;
-    await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · me`, ip: clientIp(request) });
+    await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · me${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
     // Allowlist: what leaves is named here and nowhere else.
-    return { name: s.name, email: s.email, account: { name: s.accountName, type: s.accountType } };
+    return { name: s.name, email: s.email, account: { name: s.accountName, type: s.accountType }, ...(s.viewingAs ? { viewingAs: s.viewingAs.name } : {}) };
   });
 }

@@ -20,4 +20,6 @@ export interface Me {
   name: string;
   email: string;
   account: { name: string; type: 'PARTNER' | 'CUSTOMER' };
+  /** Present when a Protect24x7 admin is previewing the portal as this person. */
+  viewingAs?: string;
 }

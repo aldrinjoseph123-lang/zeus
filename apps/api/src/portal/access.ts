@@ -17,9 +17,11 @@ export interface PortalSession {
   accountName: string;
   email: string;
   name: string;
+  /** Set when an admin is previewing the portal as this person. */
+  viewingAs?: { userId: string; name: string };
 }
 
-export async function resolvePortalSession(portalUserId: string): Promise<PortalSession | null> {
+export async function resolvePortalSession(portalUserId: string, viewingAs?: { userId: string; name: string }): Promise<PortalSession | null> {
   const pu = await prisma.portalUser.findUnique({
     where: { id: portalUserId },
     include: { contact: { include: { account: { select: { id: true, name: true, type: true, deletedAt: true } } } } },
@@ -48,6 +50,7 @@ export async function resolvePortalSession(portalUserId: string): Promise<Portal
     accountName: account.name,
     email: pu.email,
     name: `${contact.firstName} ${contact.lastName}`.trim(),
+    ...(viewingAs ? { viewingAs } : {}),
   };
 }
 

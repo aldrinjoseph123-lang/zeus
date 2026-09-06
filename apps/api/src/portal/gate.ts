@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { getSetting } from '../lib/settings.js';
-import { portalUserIdFromRequest } from './session.js';
+import { portalClaimsFromRequest } from './session.js';
 import { resolvePortalSession, type PortalSession } from './access.js';
 
 declare module 'fastify' {
@@ -14,6 +14,8 @@ declare module 'fastify' {
  * One gate for everything under /api/portal/, independent of the internal one.
  *
  *   - Kill switch first: portal.enabled off → 503 for every portal call, auth included.
+ *     The one exception is an admin's "view as" preview, so the portal can be set up and
+ *     looked at before it is switched on for outsiders.
  *   - /api/portal/auth/* are the only routes an outsider may POST to, each rate-limited.
  *   - Everything else is read-only by construction: any non-GET is 405 before a route
  *     runs. Lifting that later is a deliberate act, one route at a time.
@@ -24,7 +26,9 @@ export function registerPortalGate(app: FastifyInstance): void {
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/portal/')) return;
 
-    if (!(await getSetting<boolean>('portal.enabled', false))) {
+    const claims = await portalClaimsFromRequest(request);
+    const previewing = Boolean(claims?.viewingAs) || path === '/api/portal/auth/view-as';
+    if (!previewing && !(await getSetting<boolean>('portal.enabled', false))) {
       return reply.status(503).send({ error: 'The portal is not available right now.' });
     }
     if (path.startsWith('/api/portal/auth/')) return;
@@ -33,8 +37,7 @@ export function registerPortalGate(app: FastifyInstance): void {
       return reply.status(405).send({ error: 'The portal is read-only.' });
     }
 
-    const id = await portalUserIdFromRequest(request);
-    const session = id ? await resolvePortalSession(id) : null;
+    const session = claims ? await resolvePortalSession(claims.portalUserId, claims.viewingAs) : null;
     if (!session) return reply.status(401).send({ error: 'Sign in required.' });
     request.portal = session;
   });

@@ -18,6 +18,11 @@ export default function Home() {
 
   return (
     <Shell wide>
+      {me.viewingAs ? (
+        <div role="status" className="mb-6 border border-[var(--red)] px-4 py-2.5 text-[12px] uppercase tracking-[0.15em] text-[var(--ink)]">
+          Preview · you are {me.viewingAs}, seeing the portal as {me.name}. Read-only; every view here is logged.
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-baseline justify-between gap-4 border-b border-[var(--line)] pb-5">
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">{me.account.type === 'PARTNER' ? 'Channel partner' : 'Customer'}</p>

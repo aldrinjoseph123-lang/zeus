@@ -197,3 +197,49 @@ describe('portal: the door closes on the next request', () => {
     assert.equal((await request(app, asPortal(`${PORTAL_COOKIE}=${good.slice(0, -4)}xxxx`)).get('/api/portal/me')).status, 401);
   });
 });
+
+describe('portal: view as (an admin previewing the portal as a contact)', () => {
+  it('mints a short-lived hand-off, the portal exchanges it, and every read names the admin', async () => {
+    const { contactId, email } = await partnerContact();
+    const { portalUserId } = await grantWithPassword(contactId);
+
+    const minted = await request(app, fx.admin).post(`/api/portal-admin/users/${portalUserId}/view-as`, {});
+    assert.equal(minted.status, 200, JSON.stringify(minted.body));
+    const url = new URL((minted.body as { url: string }).url);
+    assert.equal(url.pathname, '/view-as');
+    const token = url.searchParams.get('token')!;
+
+    const exchange = await request(app).post('/api/portal/auth/view-as', { token });
+    assert.equal(exchange.status, 200, JSON.stringify(exchange.body));
+    const cookie = String(exchange.raw.headers['set-cookie'] ?? '').match(new RegExp(`${PORTAL_COOKIE}=[^;]+`))![0];
+
+    const me = await request(app, asPortal(cookie)).get('/api/portal/me');
+    assert.equal(me.status, 200);
+    assert.equal((me.body as { email: string; viewingAs?: string }).email, email);
+    assert.equal((me.body as { viewingAs?: string }).viewingAs, fx.admin.name);
+
+    const read = await prisma.auditLog.findFirst({ where: { action: 'portal_read', entityId: portalUserId }, orderBy: { at: 'desc' } });
+    assert.match(read?.summary ?? '', new RegExp(`viewed by ${fx.admin.name}`));
+
+    assert.equal((await request(app).post('/api/portal/auth/view-as', { token: token.slice(0, -3) + 'xyz' })).status, 400, 'a tampered token is refused');
+  });
+
+  it('works while the portal is switched off, so it can be set up before outsiders see it', async () => {
+    const { contactId } = await partnerContact();
+    const { portalUserId } = await grantWithPassword(contactId);
+    await setSetting('portal.enabled', false, 'portal'); invalidateSettings();
+    const minted = await request(app, fx.admin).post(`/api/portal-admin/users/${portalUserId}/view-as`, {});
+    const token = new URL((minted.body as { url: string }).url).searchParams.get('token')!;
+    const exchange = await request(app).post('/api/portal/auth/view-as', { token });
+    assert.equal(exchange.status, 200, 'preview exchange bypasses the kill switch');
+    const cookie = String(exchange.raw.headers['set-cookie'] ?? '').match(new RegExp(`${PORTAL_COOKIE}=[^;]+`))![0];
+    assert.equal((await request(app, asPortal(cookie)).get('/api/portal/me')).status, 200, 'preview reads bypass it too');
+    assert.equal((await request(app).get('/api/portal/me')).status, 503, 'everyone else still gets 503');
+  });
+
+  it('only a role with the portal module can mint a preview', async () => {
+    const { contactId } = await partnerContact();
+    const { portalUserId } = await grantWithPassword(contactId);
+    assert.equal((await request(app, fx.rep).post(`/api/portal-admin/users/${portalUserId}/view-as`, {})).status, 403);
+  });
+});

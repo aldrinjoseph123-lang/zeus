@@ -2,16 +2,16 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
+  Activity, AlertTriangle, Bell, Building2, Globe, CalendarClock, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
   ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, Plus, RefreshCw, RotateCcw, ShieldCheck, X,
 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { dateTime, money, quarterOf, relative } from '../lib/format';
 import {
-  Avatar, Badge, Button, Card, CardHeader, Checkbox, ConfirmDialog, CopyButton, DataTable, EmptyState,
-  ErrorNote, Field, Input, Loading, Modal, PageHeader, ProgressBar, Select, Textarea, cx, useToast,
+  Avatar, Badge, Button, Card, CardHeader, Checkbox, ConfirmDialog, CopyButton, cx, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal, PageHeader, ProgressBar, SearchInput, Select, Textarea, useToast,
 } from '../components/ui';
+import type { Column } from '../components/ui';
 import { Toolbar } from '../components/pickers';
 import { AccessDenied } from '../components/Layout';
 import { fileSize } from '../components/attachments';
@@ -30,6 +30,7 @@ const SECTIONS = [
   // Named for what the tab holds, not for one of the things in it — Microsoft 365,
   // WhatsApp, backups and sign-in all live here.
   { path: 'integrations', label: 'Integrations', icon: Plug, module: 'integrations' },
+  { path: 'portal', label: 'Portal access', icon: Globe, module: 'portal' },
   { path: 'backups', label: 'Backups', icon: HardDrive, module: 'backups' },
   { path: 'audit', label: 'Audit trail', icon: ScrollText, module: 'audit' },
   { path: 'status', label: 'System status', icon: Activity, module: 'audit' },
@@ -103,6 +104,7 @@ export default function Settings() {
             section.path === 'targets' ? <TargetsSection /> :
             section.path === 'notifications' ? <NotificationsSection /> :
             section.path === 'integrations' ? <IntegrationsSection /> :
+            section.path === 'portal' ? <PortalAccessSection /> :
             section.path === 'backups' ? <BackupsSection /> :
             section.path === 'audit' ? <AuditSection /> :
             section.path === 'status' ? <StatusSection /> :
@@ -117,6 +119,11 @@ export default function Settings() {
 // ── generic key/value settings ────────────────────────────────────────────────
 
 const LABELS: Record<string, string> = {
+  'portal.enabled': 'Portal switched on (off = every visitor gets "not available")',
+  'portal.partner.enabled': 'Partners can sign in', 'portal.customer.enabled': 'Customers can sign in',
+  'portal.session.idleMinutes': 'Session length (minutes)', 'portal.password.minLength': 'Minimum password length',
+  'portal.lockout.attempts': 'Wrong passwords before lockout', 'portal.lockout.minutes': 'Lockout length (minutes)',
+  'portal.link.expiryMinutes': 'Set-password link valid for (minutes)',
   'company.name': 'Trading name', 'company.legalName': 'Legal name', 'company.trn': 'TRN (tax registration number)',
   'company.addressLine1': 'Address line 1', 'company.addressLine2': 'Address line 2', 'company.city': 'City',
   'company.emirate': 'Emirate', 'company.country': 'Country', 'company.poBox': 'P.O. Box', 'company.phone': 'Phone',
@@ -3092,5 +3099,139 @@ function TwoFactorPanel() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+// ── partner & customer portal ───────────────────────────────────────────────
+
+type PortalUserRow = {
+  id: string; email: string; enabledAt: string; disabledAt: string | null; lastLoginAt: string | null;
+  lockedUntil: string | null; linkExpiresAt: string | null; hasPassword: boolean;
+  contact: { id: string; firstName: string; lastName: string; account: { id: string; name: string; type: string } | null };
+};
+
+/**
+ * Who can get into the portal, and the switches that decide what it does. The switches
+ * are ordinary settings (the generic group renders them); the people table is the part
+ * that needs its own hands: grant, resend the link, revoke, restore, and "view as" —
+ * the only way to see the effective result of every switch.
+ */
+function PortalAccessSection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const [grantOpen, setGrantOpen] = useState(false);
+  const editable = can('portal', 'update');
+
+  const { data: users, isLoading } = useQuery({ queryKey: ['portal-users'], queryFn: () => api.get<PortalUserRow[]>('/portal-admin/users') });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['portal-users'] });
+
+  const act = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: 'link' | 'revoke' | 'restore' }) => api.post<{ to?: string }>(`/portal-admin/users/${id}/${action}`, {}),
+    onSuccess: (r, v) => { refresh(); toast.push(v.action === 'link' ? `Set-password link sent to ${r.to}.` : v.action === 'revoke' ? 'Access revoked — takes effect on their next request.' : 'Access restored.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not do that.', 'error'),
+  });
+  const viewAs = useMutation({
+    mutationFn: (id: string) => api.post<{ url: string }>(`/portal-admin/users/${id}/view-as`, {}),
+    onSuccess: (r) => { window.open(r.url, '_blank', 'noopener'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not open the preview.', 'error'),
+  });
+
+  const status = (u: PortalUserRow) => {
+    if (u.disabledAt) return <Badge tone="neutral">Revoked</Badge>;
+    if (u.lockedUntil && new Date(u.lockedUntil) > new Date()) return <Badge tone="watch">Locked</Badge>;
+    if (!u.hasPassword) {
+      const live = u.linkExpiresAt && new Date(u.linkExpiresAt) > new Date();
+      return <Badge tone={live ? 'info' : 'watch'}>{live ? 'Invited' : 'No password yet'}</Badge>;
+    }
+    return <Badge tone="secure">Active</Badge>;
+  };
+
+  const columns: Array<Column<PortalUserRow>> = [
+    { key: 'person', header: 'Person', render: (u) => (
+      <div className="min-w-0">
+        <p className="truncate text-[13px] font-semibold">{u.contact.firstName} {u.contact.lastName}</p>
+        <p className="truncate text-[12px] text-muted">{u.email}</p>
+      </div>
+    ) },
+    { key: 'account', header: 'Account', render: (u) => (
+      <div className="flex items-center gap-2">
+        <span className="text-[13px]">{u.contact.account?.name ?? '—'}</span>
+        {u.contact.account ? <Badge tone="neutral">{u.contact.account.type === 'PARTNER' ? 'Partner' : 'Customer'}</Badge> : null}
+      </div>
+    ) },
+    { key: 'status', header: 'Status', width: '130px', render: status },
+    { key: 'lastLoginAt', header: 'Last sign-in', width: '130px', render: (u) => <span className="text-[12px] text-muted">{u.lastLoginAt ? relative(u.lastLoginAt) : 'never'}</span> },
+    { key: 'actions', header: '', align: 'right', render: (u) => editable ? (
+      <div className="flex justify-end gap-1">
+        <Button size="sm" variant="ghost" onClick={() => viewAs.mutate(u.id)}>View as</Button>
+        {!u.disabledAt ? <Button size="sm" variant="ghost" onClick={() => act.mutate({ id: u.id, action: 'link' })}>Send link</Button> : null}
+        {u.disabledAt
+          ? <Button size="sm" onClick={() => act.mutate({ id: u.id, action: 'restore' })}>Restore</Button>
+          : <Button size="sm" variant="ghost" onClick={() => act.mutate({ id: u.id, action: 'revoke' })}>Revoke</Button>}
+      </div>
+    ) : null },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SettingsGroup prefix="portal." title="Portal" description="The switches. Off means every visitor — partner or customer — gets “not available”; View as still works so you can set things up first." />
+      <Card>
+        <CardHeader
+          title="People with access"
+          subtitle="Each person is a contact you granted. Nobody gets in by merely being a contact at a partner or customer."
+          actions={editable ? <Button variant="accent" size="sm" onClick={() => setGrantOpen(true)}>Grant access</Button> : undefined}
+        />
+        {isLoading ? <Loading /> : (
+          <DataTable columns={columns} rows={users ?? []} rowKey={(u) => u.id} empty="Nobody has portal access yet." />
+        )}
+      </Card>
+      <GrantAccessModal open={grantOpen} onClose={() => setGrantOpen(false)} onGranted={() => { setGrantOpen(false); refresh(); }} />
+    </div>
+  );
+}
+
+type ContactPick = { id: string; firstName: string; lastName: string; email: string | null; account: { id: string; name: string; type: string } | null };
+
+/** Pick a contact — only ones with an email under a partner or customer account are offered. */
+function GrantAccessModal({ open, onClose, onGranted }: { open: boolean; onClose: () => void; onGranted: () => void }) {
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const { data } = useQuery({
+    queryKey: ['portal-grant-search', q],
+    queryFn: () => api.get<{ data: ContactPick[] }>(`/contacts?search=${encodeURIComponent(q)}&pageSize=10`),
+    enabled: open && q.trim().length >= 2,
+  });
+  const eligible = (data?.data ?? []).filter((c) => c.email && (c.account?.type === 'PARTNER' || c.account?.type === 'CUSTOMER'));
+
+  const grant = useMutation({
+    mutationFn: (contactId: string) => api.post<{ email: string; mail: { ok: boolean; to?: string; reason?: string } }>('/portal-admin/users', { contactId }),
+    onSuccess: (r) => { toast.push(r.mail.ok ? `Access granted — set-password link sent to ${r.mail.to}.` : `Access granted, but the link was not sent: ${r.mail.reason}`, r.mail.ok ? 'success' : 'error'); onGranted(); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not grant access.', 'error'),
+  });
+
+  return (
+    <Modal open={open} onClose={onClose} title="Grant portal access" subtitle="Search contacts by name, email or company. They receive a link to set their password.">
+      <div className="flex flex-col gap-3">
+        <SearchInput value={q} onChange={setQ} placeholder="Name, email or company…" />
+        {q.trim().length < 2 ? (
+          <p className="text-[12px] text-muted">Type at least two characters.</p>
+        ) : eligible.length === 0 ? (
+          <p className="text-[12px] text-muted">No eligible contact matches — they need an email address and a partner or customer account.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {eligible.map((c) => (
+              <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-semibold">{c.firstName} {c.lastName}</p>
+                  <p className="truncate text-[12px] text-muted">{c.email} · {c.account?.name}</p>
+                </div>
+                <Button size="sm" loading={grant.isPending} onClick={() => grant.mutate(c.id)}>Grant</Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Modal>
   );
 }

@@ -4,6 +4,8 @@ import { prisma } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, notFound, requirePermission } from '../lib/http.js';
 import { issueLinkFor } from '../portal/auth.js';
+import { signViewAsToken } from '../portal/session.js';
+import { env } from '../env.js';
 
 /**
  * The internal side of the portal: who has access. Grant is a deliberate act on a
@@ -54,6 +56,20 @@ export default async function portalAdminRoutes(app: FastifyInstance): Promise<v
     if (!mail.ok) throw badRequest(mail.reason);
     await audit({ user: request.user, action: 'update', entity: 'PortalUser', entityId: id, summary: `Set-password link sent to ${mail.to}`, ip: clientIp(request) });
     return { ok: true, to: mail.to };
+  });
+
+  /**
+   * "View as": the only way to see the effective result of every switch. Returns a URL
+   * on the portal host carrying a two-minute token; the portal exchanges it for a
+   * read-only preview session marked with the admin's name, and logs every read twice.
+   */
+  app.post('/api/portal-admin/users/:id/view-as', { preHandler: requirePermission('portal', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const user = await prisma.portalUser.findUnique({ where: { id } });
+    if (!user) throw notFound('Portal user not found.');
+    const token = await signViewAsToken(id, { userId: request.user.id, name: request.user.name });
+    await audit({ user: request.user, action: 'read', entity: 'PortalUser', entityId: id, summary: `Opened the portal as ${user.email}`, ip: clientIp(request) });
+    return { url: `${env.PORTAL_URL.replace(/\/$/, '')}/view-as?token=${token}` };
   });
 
   for (const [action, disabledAt] of [['revoke', () => new Date()], ['restore', () => null]] as const) {

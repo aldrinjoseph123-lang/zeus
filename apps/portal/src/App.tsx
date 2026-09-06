@@ -5,6 +5,7 @@ import { MeProvider, Shell } from './shell';
 import SignIn from './pages/SignIn';
 import SetPassword from './pages/SetPassword';
 import Home from './pages/Home';
+import ViewAs from './pages/ViewAs';
 
 /**
  * Three screens. Sign-in (email, then password, with "first time / forgot" that only
@@ -17,6 +18,7 @@ export default function App() {
     <Routes>
       <Route path="/sign-in" element={<SignIn />} />
       <Route path="/set-password" element={<SetPassword />} />
+      <Route path="/view-as" element={<ViewAs />} />
       <Route path="/" element={<RequireSession><Home /></RequireSession>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
