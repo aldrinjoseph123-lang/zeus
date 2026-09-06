@@ -13,8 +13,9 @@
  * UI takes, which is the point. Never prints the password.
  *
  * One run consumes one invoice number: an issued tax document cannot be deleted, only
- * cancelled, so ZEU-INV-… advances by one per run. Wipe the database before go-live if
- * the sequence should start from 000001.
+ * cancelled, so ZEU-INV-… advances by one per run, and the customer account that holds
+ * those cancelled invoices ("UAT Staging Co") is kept and reused. Staging only — never
+ * point this at production.
  */
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -123,11 +124,19 @@ await step('pipelines and catalog are seeded', async () => {
   return `${pipelines.length} pipeline(s), ${items.length}+ products`;
 });
 
-await step('create account', async () => {
+// One customer account lives permanently: an issued tax invoice keeps its number and
+// its party, so the account that received it can never be deleted — by design. Every
+// run reuses it rather than leaving a new orphan behind.
+const ACCOUNT_NAME = 'UAT Staging Co';
+await step('customer account (reused across runs)', async () => {
+  const found = ((await api('GET', `/api/accounts?search=${encodeURIComponent(ACCOUNT_NAME)}&pageSize=5`)).json.data as Array<{ id: string; name: string }> | undefined)
+    ?.find((a) => a.name === ACCOUNT_NAME);
+  if (found) { created.accountId = found.id; return 'existing'; }
   // A 15-digit TRN: a full tax invoice above AED 10,000 must carry the recipient's.
-  const r = await api('POST', '/api/accounts', { name: `${TAG} Co`, type: 'CUSTOMER', domain: `uat-${stamp}.example`, trn: '100000000000003', ignoreDuplicates: true });
+  const r = await api('POST', '/api/accounts', { name: ACCOUNT_NAME, type: 'CUSTOMER', domain: 'uat-staging.example', trn: '100000000000003', ignoreDuplicates: true });
   assert.equal(r.status, 201, brief(r.json));
   created.accountId = String(r.json.id);
+  return 'created';
 });
 
 await step('create contact', async () => {
@@ -278,10 +287,9 @@ await step('remove everything this run created', async () => {
   if (created.quoteId) await attempt('quote', () => api('DELETE', `/api/quotes/${created.quoteId}`));
   if (created.dealId) await attempt('deal', () => api('DELETE', `/api/deals/${created.dealId}`));
   if (created.contactId) await attempt('contact', () => api('DELETE', `/api/contacts/${created.contactId}`));
-  if (created.accountId) await attempt('account', () => api('DELETE', `/api/accounts/${created.accountId}`));
   if (created.approverId) await attempt('approver (deactivated)', () => api('DELETE', `/api/users/${created.approverId}`));
   if (problems.length) throw new Error(problems.join(' | '));
-  return gone.join(', ') || 'nothing to remove';
+  return `${gone.join(', ') || 'nothing to remove'} · "${ACCOUNT_NAME}" kept (holds the cancelled invoices; numbers are permanent)`;
 });
 
 await step('data integrity is still clean after cleanup', integrityClean);

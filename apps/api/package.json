@@ -19,7 +19,8 @@
     "test:api": "tsx --test --test-concurrency=1 src/test/*.test.ts",
     "db:simulate": "tsx src/simulate.ts",
     "lint": "eslint .",
-    "uat": "tsx scripts/uat.ts"
+    "uat": "tsx scripts/uat.ts",
+    "staging:admin": "tsx scripts/staging-admin.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
