@@ -1489,7 +1489,7 @@ function NotificationsSection() {
         {noWebhook ? (
           <EmptyState
             title="No Teams channel connected"
-            message="In Teams: channel → ⋯ → Workflows (or Connectors) → Post to a channel when a webhook request is received. Copy the URL here."
+            message="In Teams: channel → ⋯ → Workflows → “Send webhook alerts to a channel”. Copy the URL it gives you here."
             action={can('settings', 'create') ? <Button variant="accent" size="sm" onClick={() => setAddingHook(true)}>Add webhook</Button> : undefined}
           />
         ) : (

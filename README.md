@@ -210,9 +210,11 @@ paste the new value; nothing else changes.
 
 ### Teams notifications
 
-In the Teams channel you want alerts in: **⋯ → Workflows → "Post to a channel when a
-webhook request is received"**, then copy the generated URL into
-**Settings → Notifications → Add webhook**. Press **Test** to post a card.
+In the Teams channel you want alerts in: **⋯ → Workflows → "Send webhook alerts to a
+channel"** (older Teams builds call it "Post to a channel when a webhook request is
+received"), then copy the generated URL into **Settings → Notifications → Add webhook**.
+Press **Test** to post a card. The URL is a secret — anyone holding it can post to the
+channel.
 
 Each event (deal won, deal lost, stale account, stuck deal, registration expiring,
 overdue task, backup failed, target at risk…) has its own row where you choose the

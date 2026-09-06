@@ -610,10 +610,24 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
     return rule;
   });
 
+  /**
+   * Hosts a Teams webhook can legitimately live on. Workflows moved from
+   * *.logic.azure.com to *.powerplatform.com in 2025; the office.com ones are the
+   * retired connectors, kept so an existing row still validates. Matched on the
+   * hostname, not anywhere in the string — a query parameter is not a host.
+   */
+  const TEAMS_WEBHOOK_HOSTS = ['powerplatform.com', 'logic.azure.com', 'webhook.office.com', 'office.com', 'microsoft.com'];
+  const looksLikeTeamsWebhook = (u: string) => {
+    try {
+      const host = new URL(u).hostname.toLowerCase();
+      return TEAMS_WEBHOOK_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+    } catch { return false; }
+  };
+
   app.post('/api/teams-webhooks', { preHandler: requirePermission('settings', 'create') }, async (request, reply) => {
     const body = z.object({
       name: z.string().min(1),
-      url: z.string().url().refine((u) => /(webhook\.office\.com|logic\.azure\.com|office\.com|microsoft\.com)/i.test(u), 'That does not look like a Teams webhook URL.'),
+      url: z.string().url().refine(looksLikeTeamsWebhook, 'That does not look like a Teams webhook URL.'),
       isDefault: z.boolean().default(false),
     }).parse(request.body);
 
