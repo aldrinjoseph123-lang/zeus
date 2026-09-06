@@ -23,6 +23,11 @@ services:
       - '5432'
 
   app:
+    # Production runs the image CI published for a release tag — never built on the
+    # box, never `latest`. docker/deploy.sh sets ZEUS_TAG, pulls, and rolls back.
+    # `build:` stays so a from-source install (`up -d --build`) still works when no
+    # release exists yet; the result is tagged with the same name.
+    image: ghcr.io/aldrinjoseph123-lang/zeus:${ZEUS_TAG:-dev}
     build:
       context: .
       dockerfile: Dockerfile

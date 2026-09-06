@@ -114,7 +114,7 @@ password under Settings → My account.
 ```bash
 docker compose logs -f app          # tail the API
 docker compose exec app node dist/seed.js   # re-run seed (safe, idempotent)
-docker compose pull && docker compose up -d --build   # upgrade
+./docker/deploy.sh v1.2.3           # update to a release — see below
 docker compose down                 # stop (data volumes survive)
 ```
 
@@ -123,6 +123,65 @@ Manual database dump, independent of the OneDrive job:
 ```bash
 docker compose exec db pg_dump -U zeus zeus | gzip > zeus-$(date +%F).sql.gz
 ```
+
+### Releases and updating production
+
+Production never builds code and never runs `main`. It runs an image that CI built,
+booted, migrated, seeded, served traffic from and header-checked — then published
+under a release tag.
+
+**Staging is your workstation.** Everything that writes test data runs there:
+
+```bash
+npm test                                   # the full suite, both workspaces
+cd apps/api && UAT_URL=http://localhost:4000 UAT_EMAIL=… UAT_PASSWORD=… npm run uat
+```
+
+`npm run uat` walks a real account → deal → quote → invoice → payment chain through
+the HTTP API, goes through the approval sign-off with a second user, checks the
+dashboard, reports, integrity sweep and a real backup, and removes everything it
+created. It writes, so it is for staging only — never point it at production.
+
+**Cut a release** once the branch is green:
+
+```bash
+git tag v1.2.3 && git push --tags
+```
+
+CI builds the image again from that tag, runs the same boot and header checks, and
+only then pushes `ghcr.io/aldrinjoseph123-lang/zeus:v1.2.3`. A red run publishes
+nothing.
+
+One-time: the first push creates the package as *private*. Either make it public
+(GitHub → Packages → zeus → Package settings → Change visibility — the repo is
+public, so there is nothing to hide) or sign the server in with a read-only token
+(`docker login ghcr.io`). Public is simpler.
+
+**Update production** from the checked-out repo on the server:
+
+```bash
+./docker/deploy.sh v1.2.3
+```
+
+It dumps the database to `backups/pre-deploy-v1.2.3-<time>.sql.gz`, checks the repo
+out at the tag so `docker-compose.yml` and the Caddyfile match the image, writes
+`ZEUS_TAG` into `.env`, pulls the image, restarts only the app container, and waits
+for `/api/health`. If health never comes it puts the previous tag back on its own and
+tells you where the dump is. Roll back deliberately with the same command and the
+previous tag.
+
+Two things to know:
+
+- Migrations are forward-only (`prisma migrate deploy` in the entrypoint). Rolling the
+  code back does not roll the schema back; the dump taken at the start of the deploy is
+  the way back for data. Read the release's migrations before deploying it.
+- The previous image stays on disk so a rollback is a pull-free restart. Prune old
+  images by hand (`docker image prune`) once a release has settled.
+
+**Refresh staging with real data** by restoring a production backup into your local
+database — the standalone decryptor and steps under *Disaster recovery* below do
+exactly that. The disaster drill and the staging refresh are the same procedure, so
+rehearsing one rehearses the other.
 
 ---
 

@@ -82,6 +82,11 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
 
+    # packages: write is what lets a tag push publish the image to ghcr.io below.
+    permissions:
+      contents: read
+      packages: write
+
     # The container is started with --network host below, so it reaches this at
     # localhost:5432 exactly as the app would reach a db service in production.
     services:
@@ -110,7 +115,7 @@ jobs:
       # Parse it with the real tool, with the required variables stubbed.
       - name: Validate docker-compose.yml
         run: |
-          POSTGRES_PASSWORD=x APP_SECRET=x APP_URL=http://localhost SEED_ADMIN_PASSWORD=x \
+          POSTGRES_PASSWORD=x APP_SECRET=x APP_URL=http://localhost SEED_ADMIN_PASSWORD=x ZEUS_TAG=x \
             docker compose config --quiet
 
       # Never pushed. `load: true` puts the image in the local daemon so the boot check
@@ -194,6 +199,26 @@ jobs:
           grep -q "script-src 'self'" <<< "$csp" || { echo "::error::CSP script-src is not 'self'"; fail=1; }
 
           exit $fail
+
+      # A release is a git tag (v1.2.3). Only then — and only after the image above
+      # built, booted, migrated, seeded, served traffic and set its headers — is that
+      # exact image published, so production pulls something CI has already run.
+      # Branch pushes never publish: production runs explicit tags, never main.
+      - name: Sign in to GitHub's container registry
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the release image
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          image="ghcr.io/${{ github.repository }}:${GITHUB_REF_NAME}"
+          docker tag "zeus-ci-check:${{ github.sha }}" "$image"
+          docker push "$image"
+          echo "::notice::published $image — deploy with: ./docker/deploy.sh ${GITHUB_REF_NAME}"
 
       # Runs even on success: the logs are how you find out *why* a boot broke, and
       # they are worth having in the run record either way.
