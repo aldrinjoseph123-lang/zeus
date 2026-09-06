@@ -109,7 +109,7 @@ describe('portal: access is granted, not implied', () => {
 
 describe('portal: link → password → sign-in', () => {
   it('the link sets a password once; a reused or short attempt is refused', async () => {
-    const { contactId, email } = await partnerContact();
+    const { contactId, email } = await partnerContact('patricia@partner.example');
     const { token } = await grantWithPassword(contactId);
     assert.equal((await request(app).post('/api/portal/auth/set-password', { token, password: 'another-long-password-1' })).status, 400, 'single use');
     const { portalUserId } = { portalUserId: (await prisma.portalUser.findUniqueOrThrow({ where: { email } })).id };
@@ -118,6 +118,13 @@ describe('portal: link → password → sign-in', () => {
     const short = await request(app).post('/api/portal/auth/set-password', { token: fresh, password: 'short' });
     assert.equal(short.status, 400);
     assert.match(String((short.body as { error: string }).error), /at least 12/);
+    // Long enough is not enough: one character class, or built from the address, is refused — and the link survives the refusal.
+    const letters = await request(app).post('/api/portal/auth/set-password', { token: fresh, password: 'onlylettersinhere' });
+    assert.equal(letters.status, 400); assert.match(String((letters.body as { error: string }).error), /numbers or symbols/);
+    const local = email.split('@')[0];
+    const fromEmail = await request(app).post('/api/portal/auth/set-password', { token: fresh, password: `${local}-2026!!` });
+    assert.equal(fromEmail.status, 400); assert.match(String((fromEmail.body as { error: string }).error), /email address/);
+    assert.equal((await request(app).post('/api/portal/auth/set-password', { token: fresh, password: 'Strong-enough-pass-9' })).status, 200, 'link still usable after refusals');
   });
 
   it('signs in with the password, reads /me through an allowlist, and cannot write', async () => {

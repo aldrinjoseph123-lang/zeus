@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
@@ -194,16 +194,19 @@ export async function buildApp() {
   if (existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: '/' });
     if (existsSync(portalDist)) await app.register(fastifyStatic, { root: portalDist, prefix: '/portal-app/', decorateReply: false });
+    const portalIndex = (reply: FastifyReply) =>
+      existsSync(portalDist) ? reply.sendFile('index.html', portalDist) : reply.status(404).send({ error: 'Portal not built.' });
     app.addHook('onRequest', async (request, reply) => {
-      if (isPortalHost(request) && (request.url.startsWith('/assets/') || request.url === '/index.html')) {
-        return reply.status(404).send({ error: 'Not found.' });
-      }
+      if (!isPortalHost(request)) return;
+      const pathname = request.url.split('?')[0];
+      if (pathname.startsWith('/assets/') || pathname === '/index.html') return reply.status(404).send({ error: 'Not found.' });
+      // The static plugin would answer the bare root with the internal index.html before
+      // the not-found handler ever ran — and with the assets withheld, that is a blank page.
+      if (pathname === '/') return portalIndex(reply);
     });
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api/')) return reply.status(404).send({ error: 'No such endpoint.' });
-      if (isPortalHost(request)) {
-        return existsSync(portalDist) ? reply.sendFile('index.html', portalDist) : reply.status(404).send({ error: 'Portal not built.' });
-      }
+      if (isPortalHost(request)) return portalIndex(reply);
       return reply.sendFile('index.html');
     });
     app.log.info(`serving frontend from ${webDist}${existsSync(portalDist) ? ` and portal from ${portalDist} on ${portalHost}` : ''}`);

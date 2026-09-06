@@ -59,9 +59,15 @@ export async function requestLink(email: string): Promise<void> {
 export async function setPasswordFromLink(token: string, password: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const minLength = Number(await getSetting<number>('portal.password.minLength', 12));
   if (password.length < minLength) return { ok: false, reason: `Use at least ${minLength} characters.` };
+  // Length carries most of the strength; these two rules stop the obvious weak ones
+  // without turning the form into a puzzle: not a single character class, and not
+  // built from the address the attacker already knows.
+  if (!(/[a-zA-Z]/.test(password) && /[^a-zA-Z]/.test(password))) return { ok: false, reason: 'Mix letters with numbers or symbols.' };
 
   const pu = await prisma.portalUser.findFirst({ where: { linkTokenHash: hashToken(token) } });
   if (!pu || !pu.linkExpiresAt || pu.linkExpiresAt < new Date()) return { ok: false, reason: 'This link is not valid any more. Ask for a new one from the sign-in page.' };
+  const local = pu.email.split('@')[0].toLowerCase();
+  if (local.length >= 4 && password.toLowerCase().includes(local)) return { ok: false, reason: 'Do not build the password from your email address.' };
   if (!(await resolvePortalSession(pu.id))) return { ok: false, reason: 'This link is not valid any more. Ask for a new one from the sign-in page.' };
 
   await prisma.portalUser.update({

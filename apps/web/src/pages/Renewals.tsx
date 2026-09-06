@@ -230,11 +230,19 @@ export default function Renewals() {
               rows={data?.data ?? []}
               rowKey={(row) => row.id}
               empty={
-                <EmptyState
-                  title="Nothing under cover yet"
-                  message="Entitlements appear here when an invoice with a term is issued. You can also add one by hand for something sold before Zeus."
-                  icon={<CalendarClock size={22} />}
-                />
+                (debounced || status || withinDays || unworked) ? (
+                  <EmptyState
+                    title="Nothing in this window"
+                    message="Nothing matches the filters — widen the window or clear them to see everything under cover."
+                    icon={<CalendarClock size={22} />}
+                  />
+                ) : (
+                  <EmptyState
+                    title="Nothing under cover yet"
+                    message="Entitlements appear here when an invoice with a term is issued. You can also add one by hand for something sold before Zeus."
+                    icon={<CalendarClock size={22} />}
+                  />
+                )
               }
               columns={[
                 {
