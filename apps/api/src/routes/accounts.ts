@@ -7,6 +7,30 @@ import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderB
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
 import { checkDuplicates, extractDomain } from '../services/dedupe.js';
 
+/**
+ * What still hangs off an account, as a sentence, or null when it is safe to delete.
+ *
+ * The daily integrity sweep flags any quote, invoice or live deal/contact whose
+ * account is soft-deleted, so deleting must refuse under exactly those conditions —
+ * the old guard only looked at *open* deals and let a cancelled invoice go orphaned.
+ * Paperwork is checked in every status: a tax document keeps pointing at its party.
+ */
+async function accountDeleteBlockers(accountId: string): Promise<string | null> {
+  const [contacts, deals, quotes, invoices, purchaseOrders, subscriptions] = await Promise.all([
+    prisma.contact.count({ where: { accountId, deletedAt: null } }),
+    prisma.deal.count({ where: { accountId, deletedAt: null } }),
+    prisma.quote.count({ where: { accountId } }),
+    prisma.invoice.count({ where: { accountId } }),
+    prisma.purchaseOrder.count({ where: { accountId } }),
+    prisma.subscription.count({ where: { accountId, deletedAt: null } }),
+  ]);
+  const parts = [
+    [contacts, 'contact'], [deals, 'deal'], [quotes, 'quote'], [invoices, 'invoice'],
+    [purchaseOrders, 'purchase order'], [subscriptions, 'subscription'],
+  ].filter(([n]) => (n as number) > 0).map(([n, label]) => `${n} ${label}${n === 1 ? '' : 's'}`);
+  return parts.length ? parts.join(', ') : null;
+}
+
 const accountSchema = z.object({
   name: z.string().min(1, 'Account name is required.'),
   type: z.enum(['CUSTOMER', 'PARTNER', 'VENDOR', 'PROSPECT']).default('PROSPECT'),
@@ -190,8 +214,8 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     if (!existing) throw notFound('Account not found.');
     if (!(await ownerAllowed(request.user, 'accounts', 'delete', existing.ownerId))) throw forbidden();
 
-    const openDeals = await prisma.deal.count({ where: { accountId: id, status: 'OPEN', deletedAt: null } });
-    if (openDeals > 0) throw badRequest(`This account has ${openDeals} open deal(s). Close or move them first.`);
+    const blockers = await accountDeleteBlockers(id);
+    if (blockers) throw badRequest(`This account still has ${blockers}. Move or remove them first — paperwork must always point at a live party.`);
 
     // Soft delete — a mis-click should never destroy customer history.
     await prisma.account.update({ where: { id }, data: { deletedAt: new Date() } });
@@ -229,8 +253,7 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     for (const id of parsed.data.ids) {
       const account = await prisma.account.findFirst({ where: { id, deletedAt: null } });
       if (!account || !(await ownerAllowed(request.user, 'accounts', 'delete', account.ownerId))) { skipped++; continue; }
-      const openDeals = await prisma.deal.count({ where: { accountId: id, status: 'OPEN', deletedAt: null } });
-      if (openDeals > 0) { skipped++; continue; }
+      if (await accountDeleteBlockers(id)) { skipped++; continue; }
       await prisma.account.update({ where: { id }, data: { deletedAt: new Date() } });
       await audit({ user: request.user, action: 'delete', entity: 'Account', entityId: id, summary: account.name, undo: undoSoftDelete('account', 'accounts', id), ip: clientIp(request) });
       deleted++;

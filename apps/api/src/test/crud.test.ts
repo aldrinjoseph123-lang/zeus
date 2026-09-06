@@ -101,3 +101,43 @@ describe('contacts CRUD + validation', () => {
     assert.equal((await request(app, fx.admin).get('/api/contacts/nope')).status, 404);
   });
 });
+
+/**
+ * Deleting an account must refuse while anything still points at it. The daily
+ * integrity sweep flags a quote, invoice or live deal/contact under a soft-deleted
+ * account as drift, so the guard has to match that definition exactly — the first
+ * live deploy orphaned a cancelled invoice because the old guard only checked open deals.
+ */
+describe('account deletion guard', () => {
+  it('refuses while an invoice exists in any status, and the bulk path skips it', async () => {
+    const acc = await request(app, fx.admin).post('/api/accounts', { name: 'Guarded Co', type: 'CUSTOMER', ignoreDuplicates: true });
+    const id = (acc.body as { id: string }).id;
+    const inv = await request(app, fx.admin).post('/api/invoices', { accountId: id, lines: [{ description: 'Thing', quantity: 1, unitPrice: 100 }] });
+    assert.equal(inv.status, 201);
+    const cancelled = await request(app, fx.admin).post(`/api/invoices/${(inv.body as { id: string }).id}/status`, { status: 'CANCELLED' });
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+
+    const del = await request(app, fx.admin).del(`/api/accounts/${id}`);
+    assert.equal(del.status, 400);
+    assert.match(String((del.body as { error: string }).error), /1 invoice/);
+
+    const bulk = await request(app, fx.admin).post('/api/accounts/bulk-delete', { ids: [id] });
+    assert.deepEqual(bulk.body, { deleted: 0, skipped: 1 });
+    assert.equal((await request(app, fx.admin).get(`/api/accounts/${id}`)).status, 200);
+  });
+
+  it('refuses while a contact is attached, then allows once it is gone', async () => {
+    const acc = await request(app, fx.admin).post('/api/accounts', { name: 'Lonely Co', type: 'PROSPECT', ignoreDuplicates: true });
+    const id = (acc.body as { id: string }).id;
+    const contact = await request(app, fx.admin).post('/api/contacts', { firstName: 'Only', lastName: 'Person', accountId: id, ignoreDuplicates: true });
+    assert.equal(contact.status, 201);
+
+    const blocked = await request(app, fx.admin).del(`/api/accounts/${id}`);
+    assert.equal(blocked.status, 400);
+    assert.match(String((blocked.body as { error: string }).error), /1 contact/);
+
+    assert.ok((await request(app, fx.admin).del(`/api/contacts/${(contact.body as { id: string }).id}`)).status < 300);
+    assert.ok((await request(app, fx.admin).del(`/api/accounts/${id}`)).status < 300);
+    assert.equal((await request(app, fx.admin).get(`/api/accounts/${id}`)).status, 404);
+  });
+});
