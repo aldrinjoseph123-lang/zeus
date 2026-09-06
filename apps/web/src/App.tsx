@@ -24,6 +24,7 @@ import Activities from './pages/Activities';
  * — and none of them is where a working day starts. Splitting them out means the first
  * paint no longer waits for code most sessions never touch.
  */
+const Setup = lazy(() => import('./pages/Setup'));
 const Quotes = lazy(() => import('./pages/Quotes'));
 const QuoteEditor = lazy(() => import('./pages/QuoteEditor'));
 const Invoices = lazy(() => import('./pages/Invoices'));
@@ -86,6 +87,7 @@ export default function App() {
         <Route path="coaching" element={<Guard module="deals"><Coaching /></Guard>} />
         <Route path="imports" element={<Guard module="imports"><Imports /></Guard>} />
         <Route path="settings/*" element={<Settings />} />
+        <Route path="setup" element={<Guard module="settings"><Setup /></Guard>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

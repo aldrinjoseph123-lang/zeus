@@ -5,7 +5,8 @@ import { prisma } from '../db.js';
 import { audit, diff } from '../lib/audit.js';
 import { badRequest, clientIp, listParams, notFound, paged, requirePermission } from '../lib/http.js';
 import { MODULES, PROTECTED_FIELDS, SYSTEM_ROLES, type PermissionMap } from '../auth/rbac.js';
-import { getSettings, invalidateSettings, setSetting, setupStatus, SETTING_DEFAULTS } from '../lib/settings.js';
+import { getSettings, invalidateSettings, setSetting, SETTING_DEFAULTS } from '../lib/settings.js';
+import { finishSetup, setSkipped, setupStatus, SETUP_KEYS } from '../services/setup.js';
 import { invalidateCustomFields } from '../lib/customFields.js';
 import { NOTIFICATION_EVENTS } from '../services/notify.js';
 import { postToWebhook } from '../services/teams.js';
@@ -359,8 +360,23 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
     return Object.fromEntries(Object.entries(all).filter(([key]) => allowed.some((p) => key === p || key.startsWith(p))));
   });
 
-  /** First-run check: the web app sends an admin to Company settings until this is complete. */
-  app.get('/api/setup/status', { preHandler: requirePermission('settings', 'read') }, async () => setupStatus());
+  // ── first-run setup ────────────────────────────────────────────────────────
+  // The checklist itself lives in services/setup.ts; these three routes only read it,
+  // record a skip, and record that the admin pressed Finish.
+  app.get('/api/setup/status', { preHandler: requirePermission('settings', 'read') }, async (request) => setupStatus(request.user.id));
+
+  app.post('/api/setup/skip', { preHandler: requirePermission('settings', 'update') }, async (request) => {
+    const { key, skipped } = z.object({ key: z.enum(SETUP_KEYS), skipped: z.boolean().default(true) }).parse(request.body);
+    await setSkipped(key, skipped);
+    await audit({ user: request.user, action: 'update', entity: 'Setting', entityId: 'setup.skipped', summary: `Setup: ${skipped ? 'skipped' : 'unskipped'} ${key}`, ip: clientIp(request) });
+    return setupStatus(request.user.id);
+  });
+
+  app.post('/api/setup/finish', { preHandler: requirePermission('settings', 'update') }, async (request) => {
+    await finishSetup();
+    await audit({ user: request.user, action: 'update', entity: 'Setting', entityId: 'setup.finishedAt', summary: 'Setup finished', ip: clientIp(request) });
+    return setupStatus(request.user.id);
+  });
 
   app.put('/api/settings', { preHandler: requirePermission('settings', 'update') }, async (request) => {
     const body = z.record(z.string(), z.unknown()).parse(request.body);

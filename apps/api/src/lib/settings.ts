@@ -298,13 +298,3 @@ export const SETUP_REQUIRED: Array<{ key: string; label: string; valid?: (v: str
   { key: 'company.email', label: 'Email' },
   { key: 'company.phone', label: 'Phone' },
 ];
-
-export async function setupStatus(): Promise<{ complete: boolean; required: Array<{ key: string; label: string }>; missing: Array<{ key: string; label: string }> }> {
-  const values = await getSettings('company.');
-  const missing = SETUP_REQUIRED.filter(({ key, valid }) => {
-    const v = String(values[key] ?? '').trim();
-    return !v || (valid ? !valid(v) : false);
-  });
-  const strip = ({ key, label }: { key: string; label: string }) => ({ key, label });
-  return { complete: missing.length === 0, required: SETUP_REQUIRED.map(strip), missing: missing.map(strip) };
-}

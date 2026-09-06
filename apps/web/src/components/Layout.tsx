@@ -142,16 +142,29 @@ function ThemeToggle() {
   );
 }
 
+type SetupStatus = { complete: boolean; finished: boolean; items: Array<{ key: string; label: string; done: boolean; skipped: boolean; required: boolean }> };
+
 function NotificationBell() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const ref = useRef<HTMLDivElement>(null);
+  const { can } = useAuth();
 
   const { data } = useQuery({
     queryKey: ['notifications', 'recent'],
     queryFn: () => api.get<{ data: Array<{ id: string; title: string; body: string | null; link: string | null; severity: string; readAt: string | null; createdAt: string }>; unread: number }>('/notifications?pageSize=12'),
     refetchInterval: 60_000,
   });
+
+  // Setup items still undone — skipped or not — sit at the top of the bell for anyone
+  // who can act on them, and count towards the badge. They clear themselves when done.
+  const { data: setup } = useQuery({
+    queryKey: ['setup'],
+    queryFn: () => api.get<SetupStatus>('/setup/status'),
+    enabled: can('settings', 'update'),
+    staleTime: 60_000,
+  });
+  const pendingSetup = (setup?.items ?? []).filter((i) => !i.done);
 
   useEffect(() => {
     if (!open) return;
@@ -168,7 +181,7 @@ function NotificationBell() {
     void queryClient.invalidateQueries({ queryKey: ['me'] });
   };
 
-  const unread = data?.unread ?? 0;
+  const unread = (data?.unread ?? 0) + pendingSetup.length;
 
   return (
     <div className="relative" ref={ref}>
@@ -196,7 +209,24 @@ function NotificationBell() {
             ) : null}
           </div>
           <div className="max-h-[400px] overflow-y-auto">
-            {(data?.data ?? []).length === 0 ? (
+            {pendingSetup.length > 0 ? (
+              <Link
+                to="/setup"
+                onClick={() => setOpen(false)}
+                className="block border-b border-line bg-accent-soft/40 px-3 py-2.5 transition-colors hover:bg-sunken"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: pendingSetup.some((i) => i.required) ? 'var(--red-500)' : 'var(--status-watch)' }} />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold leading-snug">Finish setting up Zeus</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted">
+                      {pendingSetup.length} pending: {pendingSetup.map((i) => i.label).join(', ')}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            ) : null}
+            {(data?.data ?? []).length === 0 && pendingSetup.length === 0 ? (
               <p className="px-3 py-8 text-center text-xs text-muted">Nothing needs your attention.</p>
             ) : (
               data!.data.map((n) => (
@@ -233,24 +263,24 @@ export default function Layout() {
   const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // First-run nudge. A fresh install cannot issue a tax invoice until the company's
-  // own TRN, name and address are on file, and nothing used to say so until the first
-  // invoice failed. Send whoever can fix it to the Company page once per session; the
-  // page itself lists what is missing.
+  // First-run setup. Until the admin presses Finish on the checklist, sign-in lands on
+  // it — once per session, and never while they are already inside Settings doing the
+  // work it asked for. Whatever stays undone after Finish lives under the bell.
   const location = useLocation();
   const { data: setup } = useQuery({
     queryKey: ['setup'],
-    queryFn: () => api.get<{ complete: boolean }>('/setup/status'),
+    queryFn: () => api.get<SetupStatus>('/setup/status'),
     enabled: can('settings', 'update'),
     staleTime: 60_000,
   });
   useEffect(() => {
-    if (!setup || setup.complete || location.pathname.startsWith('/settings/company')) return;
+    if (!setup || setup.finished) return;
+    if (location.pathname === '/setup' || location.pathname.startsWith('/settings')) return;
     try {
-      if (sessionStorage.getItem('zeus.setupNudged')) return;
-      sessionStorage.setItem('zeus.setupNudged', '1');
-    } catch { /* storage blocked — nudge every load instead of never */ }
-    navigate('/settings/company');
+      if (sessionStorage.getItem('zeus.setupShown')) return;
+      sessionStorage.setItem('zeus.setupShown', '1');
+    } catch { /* storage blocked — open it every load instead of never */ }
+    navigate('/setup');
   }, [setup, location.pathname, navigate]);
 
   const signOut = async () => {
