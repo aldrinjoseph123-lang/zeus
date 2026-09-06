@@ -82,7 +82,13 @@ describe('authentication', () => {
   it('signs in with the right password', async () => {
     const res = await request(app).post('/api/auth/login', { email: fx.rep.email, password: 'Passw0rd!Test' });
     assert.equal(res.status, 200);
-    assert.ok(String(res.raw.headers['set-cookie']).includes('zeus_session='), 'login must set the session cookie');
+    const cookie = String(res.raw.headers['set-cookie']);
+    assert.ok(cookie.includes('zeus_session='), 'login must set the session cookie');
+    // Flags follow APP_URL's scheme (http here), never NODE_ENV: a Secure cookie on a
+    // plain-HTTP install is one the browser silently drops, and nothing after login works.
+    assert.match(cookie, /HttpOnly/i);
+    assert.match(cookie, /SameSite=Lax/i);
+    assert.doesNotMatch(cookie, /;\s*Secure/i, 'APP_URL is http, so the cookie must not be Secure');
   });
 
   it('does not let an attacker tell a wrong password from an unknown address', async () => {

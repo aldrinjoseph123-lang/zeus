@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { env, isProd } from '../env.js';
+import { env } from '../env.js';
 import { prisma } from '../db.js';
 import { getSetting } from '../lib/settings.js';
 import type { PermissionMap, SessionUser } from './rbac.js';
@@ -28,10 +28,14 @@ export async function issueSession(reply: FastifyReply, userId: string): Promise
   const hours = Number(await getSetting<number>('auth.sessionHours', 12));
   const token = await signSessionToken(userId, hours);
 
+  // Secure follows the scheme the browser is actually on, not NODE_ENV. A production
+  // install on plain HTTP (the documented LAN mode, ZEUS_DOMAIN=:80) used to issue a
+  // Secure cookie the browser silently refused: login 200, every request after 401.
+  const secure = env.APP_URL.startsWith('https://');
   reply.setCookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,
+    secure,
     path: '/',
     maxAge: hours * 3600,
   });
