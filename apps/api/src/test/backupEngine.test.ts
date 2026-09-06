@@ -117,11 +117,15 @@ describe('a second destination (NAS)', () => {
 
 describe('grandfather-father-son retention', () => {
   it('prunes each tier independently instead of one flat count', async () => {
-    await setSetting('backup.retainDaily', 2);
+    // Today decides the tier — Sundays are weekly, the 1st is monthly — so the
+    // retain-2 limit has to land on whichever bucket these runs will fall into,
+    // or the test fails every Sunday while the code is fine.
+    const tier = tierFor();
+    await setSetting(`backup.retain${tier[0].toUpperCase()}${tier.slice(1)}`, 2);
     await setSetting('backup.encrypted', false);
     invalidateSettings();
 
-    // Three daily-tier config backups in a row — retention of 2 should prune the
+    // Three same-tier config backups in a row — retention of 2 should prune the
     // first one's file once the third lands.
     const first = await runBackup({ kind: 'config', uploadToOneDrive: false });
     await runBackup({ kind: 'config', uploadToOneDrive: false });
