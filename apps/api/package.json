@@ -18,7 +18,8 @@
     "test:unit": "tsx src/selfcheck.ts",
     "test:api": "tsx --test --test-concurrency=1 src/test/*.test.ts",
     "db:simulate": "tsx src/simulate.ts",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "uat": "tsx scripts/uat.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
