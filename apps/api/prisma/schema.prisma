@@ -560,6 +560,7 @@ model Subscription {
   ownerId      String?
   owner        User?     @relation("SubscriptionOwner", fields: [ownerId], references: [id])
   customFields Json      @default("{}")
+  entitlements Entitlement[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
@@ -1541,4 +1542,54 @@ model AccessRequest {
 
   @@index([status, createdAt])
   @@index([email])
+}
+
+// ---------------------------------------------------------------- deliverables
+
+/// What a subscription includes that is consumed a piece at a time over its term —
+/// two VAPT assessments a year, forty support hours, four training sessions. The
+/// quantity is what was bought; each Delivery draws it down. Remaining is derived,
+/// never stored, so it cannot drift.
+model Entitlement {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  label          String       // "VAPT assessment", "Support hours"
+  quantity       Decimal      @default(1) @db.Decimal(12, 2)
+  unit           String       @default("unit") // assessment | hour | session | …
+  /// The window it can be used in — defaults to the subscription's term.
+  validFrom      DateTime
+  validTo        DateTime
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  deliveries Delivery[]
+
+  @@index([subscriptionId])
+  @@index([validTo])
+}
+
+enum DeliveryStatus {
+  SCHEDULED
+  DELIVERED
+}
+
+/// One use of an entitlement, dated. Scheduled first, delivered later; the quantity is
+/// how much of the entitlement this use consumed (one assessment, eight hours).
+model Delivery {
+  id            String         @id @default(cuid())
+  entitlementId String
+  entitlement   Entitlement    @relation(fields: [entitlementId], references: [id], onDelete: Cascade)
+  quantity      Decimal        @default(1) @db.Decimal(12, 2)
+  status        DeliveryStatus @default(SCHEDULED)
+  scheduledFor  DateTime?
+  deliveredAt   DateTime?
+  reference     String?        // report id, ticket, vendor confirmation
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([entitlementId])
+  @@index([status, scheduledFor])
 }

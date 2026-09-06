@@ -7,6 +7,7 @@ import { clearPortalSession, issuePortalSession, verifyViewAsToken } from '../po
 import { partnerRegistrations } from '../portal/registrations.js';
 import { brandingFor } from '../portal/branding.js';
 import { customerSubscriptions } from '../portal/subscriptions.js';
+import { portalEntitlements } from '../portal/entitlements.js';
 
 /**
  * What an outsider can call. Auth routes are the only writes; everything else is a
@@ -90,6 +91,16 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     if (s.accountType !== 'CUSTOMER') return reply.status(404).send({ error: 'Not found.' });
     const rows = await customerSubscriptions(s);
     await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · subscriptions (${rows.length})${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
+    return rows;
+  });
+
+  /** What one of their subscriptions includes, and how much is left. Customers only, own account only. */
+  app.get('/api/portal/subscriptions/:id/entitlements', async (request, reply) => {
+    const s = request.portal;
+    if (s.accountType !== 'CUSTOMER') return reply.status(404).send({ error: 'Not found.' });
+    const { id } = request.params as { id: string };
+    const rows = await portalEntitlements(s, id);
+    if (rows === null) return reply.status(404).send({ error: 'Not found.' });
     return rows;
   });
 }

@@ -26,6 +26,7 @@ export const NOTIFICATION_EVENTS = [
   { event: 'registration_expired', label: 'Deal registration expired', thresholdDays: 0, defaults: { inApp: true, email: true, teams: true } },
   { event: 'registration_approved', label: 'Deal registration approved — partner told', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
   { event: 'portal_access_requested', label: 'Portal access requested (someone outside asked to get in)', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
+  { event: 'entitlement_unused', label: 'A deliverable is going unused with time running out', thresholdDays: 60, defaults: { inApp: true, email: true, teams: false } },
   { event: 'renewal_due', label: 'Subscription coming up for renewal', thresholdDays: 90, defaults: { inApp: true, email: true, teams: true } },
   { event: 'renewal_lapsed', label: 'Subscription lapsed without renewal', thresholdDays: 0, defaults: { inApp: true, email: true, teams: true } },
   { event: 'renewal_gap', label: 'Won deal with no renewal on file', thresholdDays: 14, defaults: { inApp: true, email: false, teams: true } },

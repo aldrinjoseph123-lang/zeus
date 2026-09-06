@@ -329,6 +329,33 @@ async function backupFilesPresent(): Promise<Finding> {
   };
 }
 
+/**
+ * Deliverables are internally consistent: nothing is over-delivered (more used than
+ * included), a DELIVERED row carries a delivered date, and nothing sits SCHEDULED in
+ * the past — a booking whose date has come and gone without being marked delivered is
+ * either done-but-unrecorded or a slip, and both are worth a look.
+ */
+async function deliverablesConsistent(): Promise<Finding> {
+  const entitlements = await prisma.entitlement.findMany({ include: { deliveries: true, subscription: { select: { reference: true } } } });
+  const problems: string[] = [];
+  for (const e of entitlements) {
+    const used = e.deliveries.reduce((sum, x) => sum + Number(x.quantity), 0);
+    if (used > Number(e.quantity) + EPSILON) problems.push(`${e.subscription.reference}: ${e.label} over-delivered (${used}/${Number(e.quantity)})`);
+  }
+  const deliveries = await prisma.delivery.findMany({ include: { entitlement: { select: { label: true, subscription: { select: { reference: true } } } } } });
+  for (const d of deliveries) {
+    if (d.status === 'DELIVERED' && !d.deliveredAt) problems.push(`${d.entitlement.subscription.reference}: a delivered ${d.entitlement.label} has no delivered date`);
+    if (d.status === 'SCHEDULED' && d.scheduledFor && d.scheduledFor < new Date()) problems.push(`${d.entitlement.subscription.reference}: ${d.entitlement.label} was scheduled for ${d.scheduledFor.toLocaleDateString('en-GB')} and is still not delivered`);
+  }
+  return {
+    check: 'deliverables_consistent',
+    label: 'Deliverables are not over-used, and dates line up with status',
+    count: problems.length,
+    examples: sample(problems),
+    detail: problems.length ? `${problems.length} deliverable(s) need a look.` : `${entitlements.length} entitlement(s) consistent.`,
+  };
+}
+
 // ── the sweep ─────────────────────────────────────────────────────────────────
 
 const CHECKS = [
@@ -339,6 +366,7 @@ const CHECKS = [
   softDeleteDrift,
   attachmentFilesPresent,
   backupFilesPresent,
+  deliverablesConsistent,
 ];
 
 /**

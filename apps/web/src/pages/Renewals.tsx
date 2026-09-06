@@ -58,6 +58,7 @@ const monthLabel = (key: string) => {
 };
 
 export default function Renewals() {
+  const [deliverablesFor, setDeliverablesFor] = useState<{ id: string; description: string } | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -295,6 +296,10 @@ export default function Renewals() {
                       ) : <span className="text-[11px] text-accent">Not opened</span>
                     ) : <span className="text-n400">—</span>,
                 },
+                {
+                  key: 'deliverables', header: '', width: '130px',
+                  render: (row) => <Button size="sm" variant="ghost" onClick={() => setDeliverablesFor({ id: row.id, description: row.description })}>Deliverables</Button>,
+                },
                 { key: 'owner', header: 'Owner', width: '120px', render: (row) => <span className="text-[12px]">{row.owner?.name ?? '—'}</span> },
               ]}
             />
@@ -304,6 +309,7 @@ export default function Renewals() {
       </Card>
 
       {adding ? <EntitlementModal onClose={() => setAdding(false)} /> : null}
+      {deliverablesFor ? <DeliverablesModal subscription={deliverablesFor} onClose={() => setDeliverablesFor(null)} /> : null}
     </>
   );
 }
@@ -417,6 +423,91 @@ function EntitlementModal({ onClose }: { onClose: () => void }) {
           <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </Field>
       </div>
+    </Modal>
+  );
+}
+
+type EntitlementRow = {
+  id: string; label: string; unit: string; included: number; used: number; remaining: number; validFrom: string; validTo: string;
+  deliveries: Array<{ id: string; quantity: number; status: 'SCHEDULED' | 'DELIVERED'; scheduledFor: string | null; deliveredAt: string | null; reference: string | null }>;
+};
+
+/**
+ * Deliverables for one subscription — what it includes and each dated use. This is the
+ * internal side: the team schedules and marks off. The customer sees the read-only
+ * version of exactly this in the portal.
+ */
+function DeliverablesModal({ subscription, onClose }: { subscription: { id: string; description: string }; onClose: () => void }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const key = ['entitlements', subscription.id];
+  const { data, isLoading } = useQuery({ queryKey: key, queryFn: () => api.get<EntitlementRow[]>(`/subscriptions/${subscription.id}/entitlements`) });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: key });
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ label: '', quantity: '1', unit: 'assessment' });
+
+  const addEntitlement = useMutation({
+    mutationFn: () => api.post(`/subscriptions/${subscription.id}/entitlements`, { label: form.label, quantity: Number(form.quantity), unit: form.unit }),
+    onSuccess: () => { refresh(); setAdding(false); setForm({ label: '', quantity: '1', unit: 'assessment' }); toast.push('Deliverable added.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not add.', 'error'),
+  });
+  const addDelivery = useMutation({
+    mutationFn: (v: { entitlementId: string; status: 'SCHEDULED' | 'DELIVERED' }) => api.post(`/entitlements/${v.entitlementId}/deliveries`, { quantity: 1, status: v.status, scheduledFor: v.status === 'SCHEDULED' ? new Date().toISOString() : undefined }),
+    onSuccess: () => { refresh(); toast.push('Recorded.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not record.', 'error'),
+  });
+  const markDelivered = useMutation({
+    mutationFn: (deliveryId: string) => api.patch(`/deliveries/${deliveryId}`, { status: 'DELIVERED' }),
+    onSuccess: () => { refresh(); toast.push('Marked delivered.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not update.', 'error'),
+  });
+
+  return (
+    <Modal open onClose={onClose} title="Deliverables" subtitle={subscription.description} width="lg">
+      {isLoading ? <Loading /> : (
+        <div className="flex flex-col gap-4">
+          {(data ?? []).length === 0 ? <p className="text-[13px] text-muted">Nothing included yet. Add what this subscription entitles the customer to — assessments, hours, sessions.</p> : null}
+          {(data ?? []).map((e) => (
+            <div key={e.id} className="border border-line">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-3 py-2">
+                <div>
+                  <span className="text-[14px] font-semibold">{e.label}</span>
+                  <span className="ml-2 text-[12px] text-muted">{e.included} {e.unit}{e.included === 1 ? '' : 's'} · {e.remaining} remaining · valid to {date(e.validTo)}</span>
+                </div>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" disabled={e.remaining <= 0} onClick={() => addDelivery.mutate({ entitlementId: e.id, status: 'SCHEDULED' })}>Schedule</Button>
+                  <Button size="sm" variant="ghost" disabled={e.remaining <= 0} onClick={() => addDelivery.mutate({ entitlementId: e.id, status: 'DELIVERED' })}>Mark delivered</Button>
+                </div>
+              </div>
+              {e.deliveries.length ? (
+                <ul className="divide-y divide-line">
+                  {e.deliveries.map((d) => (
+                    <li key={d.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-[13px]">
+                      <span className="flex items-center gap-2">
+                        <Badge tone={d.status === 'DELIVERED' ? 'secure' : 'watch'}>{d.status === 'DELIVERED' ? 'Delivered' : 'Scheduled'}</Badge>
+                        <span className="text-muted">{d.quantity} {e.unit}{d.quantity === 1 ? '' : 's'}{d.deliveredAt ? ` · ${date(d.deliveredAt)}` : d.scheduledFor ? ` · for ${date(d.scheduledFor)}` : ''}{d.reference ? ` · ${d.reference}` : ''}</span>
+                      </span>
+                      {d.status === 'SCHEDULED' ? <Button size="sm" variant="ghost" onClick={() => markDelivered.mutate(d.id)}>Deliver</Button> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ))}
+
+          {adding ? (
+            <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3">
+              <Field label="Deliverable"><Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="VAPT assessment" /></Field>
+              <Field label="Quantity" className="w-24"><Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></Field>
+              <Field label="Unit" className="w-32"><Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} /></Field>
+              <Button size="sm" variant="accent" loading={addEntitlement.isPending} disabled={!form.label} onClick={() => addEntitlement.mutate()}>Add</Button>
+              <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>+ Add a deliverable</Button>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }

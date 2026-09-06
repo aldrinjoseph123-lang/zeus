@@ -6,6 +6,7 @@ import { runDueScheduledReports } from '../services/scheduledReports.js';
 import { runScheduledBackup, checkMissedBackups, weeklyAutoVerify } from '../services/backup.js';
 import { dailyDataHealthSweep } from '../services/dataHealth.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
+import { unusedEntitlements } from '../services/deliverables.js';
 import { sweepRenewals } from '../services/renewals.js';
 import { ratesAreStale, refreshRates } from '../services/fx.js';
 import { takePipelineSnapshot, takeWeeklyDealSnapshot } from '../services/snapshots.js';
@@ -455,6 +456,24 @@ export function startScheduler(): void {
   tasks.push(cron.schedule('0 19 * * *', () => void safely('pipelineSnapshot', async () => {
     const { takenOn, rows, openNet } = await takePipelineSnapshot();
     console.log(`[scheduler] pipeline photographed for ${takenOn.toISOString().slice(0, 10)}: ${rows} row(s), ${formatAed(openNet)} open`);
+  }), { timezone: TZ }));
+
+  // Deliverables the customer has paid for and not used, with the clock running out —
+  // a delivery reminder and an upsell prompt in one. Daily 06:30 GST, clear of the
+  // backup window; the deal owner hears once per entitlement per run.
+  tasks.push(cron.schedule('30 6 * * *', () => void safely('unusedDeliverables', async () => {
+    const soon = await unusedEntitlements(60);
+    for (const e of soon) {
+      await notify({
+        event: 'entitlement_unused',
+        title: `Unused: ${e.remaining} ${e.unit} of ${e.label} — ${e.subscription.account.name}`,
+        body: `${e.subscription.reference}: ${e.remaining} ${e.unit}${e.remaining === 1 ? '' : 's'} of ${e.label} still available, valid until ${e.validTo.toLocaleDateString('en-GB')}. Schedule it or offer the renewal.`,
+        link: '/renewals',
+        severity: 'warn',
+        ownerId: e.subscription.ownerId,
+      });
+    }
+    if (soon.length) console.log(`[scheduler] ${soon.length} unused deliverable(s) flagged`);
   }), { timezone: TZ }));
 
   // Weekly per-deal snapshot for week-over-week movement. Monday 06:00 GST.

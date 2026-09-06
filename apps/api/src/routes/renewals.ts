@@ -8,6 +8,7 @@ import { maskFields, ownerAllowed, scopeWhere } from '../auth/rbac.js';
 import { round2 } from '../lib/money.js';
 import { getSetting } from '../lib/settings.js';
 import { createFromInvoice, createSubscription, openRenewalDeal, sweepRenewals, termEnd, wonDealsWithoutRenewal } from '../services/renewals.js';
+import { entitlementsForSubscription } from '../services/deliverables.js';
 
 /**
  * Renewals sit under the `deals` permission rather than a module of their own: an
@@ -311,6 +312,91 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
       summary: `${created} entitlement(s) created from invoice`, ip: clientIp(request),
     });
     return { ok: true, created };
+  });
+
+  // ── deliverables: what a subscription includes, used a piece at a time ───────
+
+  app.get('/api/subscriptions/:id/entitlements', { preHandler: requirePermission('deals', 'read') }, async (request) => {
+    const { id } = request.params as { id: string };
+    return entitlementsForSubscription(id);
+  });
+
+  app.post('/api/subscriptions/:id/entitlements', { preHandler: requirePermission('deals', 'update') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const sub = await prisma.subscription.findFirst({ where: { id, deletedAt: null } });
+    if (!sub) throw notFound('Subscription not found.');
+    const body = z.object({
+      label: z.string().min(1), quantity: z.number().positive().default(1), unit: z.string().default('unit'),
+      validFrom: z.string().optional(), validTo: z.string().optional(), notes: z.string().max(1000).optional().nullable(),
+    }).parse(request.body);
+    const ent = await prisma.entitlement.create({ data: {
+      subscriptionId: id, label: body.label, quantity: body.quantity, unit: body.unit,
+      validFrom: body.validFrom ? new Date(body.validFrom) : sub.startDate,
+      validTo: body.validTo ? new Date(body.validTo) : sub.endDate,
+      notes: body.notes ?? null,
+    } });
+    await audit({ user: request.user, action: 'create', entity: 'Entitlement', entityId: ent.id, summary: `${body.quantity} ${body.unit} — ${body.label} on ${sub.reference}`, ip: clientIp(request) });
+    return reply.status(201).send(ent);
+  });
+
+  app.delete('/api/entitlements/:id', { preHandler: requirePermission('deals', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const ent = await prisma.entitlement.findUnique({ where: { id } });
+    if (!ent) throw notFound('Entitlement not found.');
+    await prisma.entitlement.delete({ where: { id } });
+    await audit({ user: request.user, action: 'delete', entity: 'Entitlement', entityId: id, summary: ent.label, ip: clientIp(request) });
+    return { ok: true };
+  });
+
+  app.post('/api/entitlements/:id/deliveries', { preHandler: requirePermission('deals', 'update') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ent = await prisma.entitlement.findUnique({ where: { id } });
+    if (!ent) throw notFound('Entitlement not found.');
+    const body = z.object({
+      quantity: z.number().positive().default(1),
+      status: z.enum(['SCHEDULED', 'DELIVERED']).default('SCHEDULED'),
+      scheduledFor: z.string().optional().nullable(), deliveredAt: z.string().optional().nullable(),
+      reference: z.string().max(200).optional().nullable(), notes: z.string().max(1000).optional().nullable(),
+    }).parse(request.body);
+    const delivery = await prisma.delivery.create({ data: {
+      entitlementId: id, quantity: body.quantity, status: body.status,
+      scheduledFor: body.scheduledFor ? new Date(body.scheduledFor) : null,
+      deliveredAt: body.status === 'DELIVERED' ? (body.deliveredAt ? new Date(body.deliveredAt) : new Date()) : (body.deliveredAt ? new Date(body.deliveredAt) : null),
+      reference: body.reference ?? null, notes: body.notes ?? null,
+    } });
+    await audit({ user: request.user, action: 'create', entity: 'Delivery', entityId: delivery.id, summary: `${body.status.toLowerCase()} ${body.quantity} ${ent.unit} of ${ent.label}`, ip: clientIp(request) });
+    return reply.status(201).send(delivery);
+  });
+
+  app.patch('/api/deliveries/:id', { preHandler: requirePermission('deals', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const existing = await prisma.delivery.findUnique({ where: { id } });
+    if (!existing) throw notFound('Delivery not found.');
+    const body = z.object({
+      quantity: z.number().positive().optional(),
+      status: z.enum(['SCHEDULED', 'DELIVERED']).optional(),
+      scheduledFor: z.string().optional().nullable(), deliveredAt: z.string().optional().nullable(),
+      reference: z.string().max(200).optional().nullable(), notes: z.string().max(1000).optional().nullable(),
+    }).parse(request.body);
+    // Marking delivered stamps the date if one was not given; nothing else infers a date.
+    const deliveredAt = body.status === 'DELIVERED' && !existing.deliveredAt && body.deliveredAt === undefined ? new Date()
+      : body.deliveredAt !== undefined ? (body.deliveredAt ? new Date(body.deliveredAt) : null) : undefined;
+    const delivery = await prisma.delivery.update({ where: { id }, data: {
+      quantity: body.quantity, status: body.status,
+      scheduledFor: body.scheduledFor !== undefined ? (body.scheduledFor ? new Date(body.scheduledFor) : null) : undefined,
+      deliveredAt, reference: body.reference ?? undefined, notes: body.notes ?? undefined,
+    } });
+    await audit({ user: request.user, action: 'update', entity: 'Delivery', entityId: id, summary: `${delivery.status.toLowerCase()}`, ip: clientIp(request) });
+    return delivery;
+  });
+
+  app.delete('/api/deliveries/:id', { preHandler: requirePermission('deals', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const existing = await prisma.delivery.findUnique({ where: { id } });
+    if (!existing) throw notFound('Delivery not found.');
+    await prisma.delivery.delete({ where: { id } });
+    await audit({ user: request.user, action: 'delete', entity: 'Delivery', entityId: id, summary: 'delivery removed', ip: clientIp(request) });
+    return { ok: true };
   });
 
   /** Run the nightly pass on demand — useful the day the module is switched on. */

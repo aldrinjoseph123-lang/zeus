@@ -14,6 +14,7 @@ import { portalScope, type PortalSession } from './access.js';
  * live successor that shows in its place.
  */
 export interface PortalSubscription {
+  id: string;
   reference: string;
   description: string;
   product: string | null;
@@ -40,13 +41,14 @@ export async function customerSubscriptions(session: PortalSession): Promise<Por
       ],
     },
     select: {
-      reference: true, description: true, quantity: true, unit: true, startDate: true, endDate: true, status: true,
+      id: true, reference: true, description: true, quantity: true, unit: true, startDate: true, endDate: true, status: true,
       product: { select: { name: true } },
     },
     orderBy: { endDate: 'asc' },
   });
 
   return rows.map((r) => ({
+    id: r.id,
     reference: r.reference,
     description: r.description,
     product: r.product?.name ?? null,
