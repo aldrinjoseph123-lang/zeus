@@ -284,3 +284,27 @@ export async function setSetting(key: string, value: unknown, category = 'genera
 export async function vatRate(): Promise<number> {
   return Number(await getSetting<number>('finance.vatRate', 5));
 }
+
+/**
+ * What a fresh install must have on file before it can issue a tax invoice: the
+ * supplier's own name, TRN and address have to appear on the face of the document.
+ * The defaults above pre-fill most of it; the TRN is the one thing nobody can guess.
+ */
+export const SETUP_REQUIRED: Array<{ key: string; label: string; valid?: (v: string) => boolean }> = [
+  { key: 'company.legalName', label: 'Legal name' },
+  { key: 'company.trn', label: 'TRN (15 digits)', valid: (v) => /^\d{15}$/.test(v) },
+  { key: 'company.addressLine1', label: 'Address' },
+  { key: 'company.emirate', label: 'Emirate' },
+  { key: 'company.email', label: 'Email' },
+  { key: 'company.phone', label: 'Phone' },
+];
+
+export async function setupStatus(): Promise<{ complete: boolean; required: Array<{ key: string; label: string }>; missing: Array<{ key: string; label: string }> }> {
+  const values = await getSettings('company.');
+  const missing = SETUP_REQUIRED.filter(({ key, valid }) => {
+    const v = String(values[key] ?? '').trim();
+    return !v || (valid ? !valid(v) : false);
+  });
+  const strip = ({ key, label }: { key: string; label: string }) => ({ key, label });
+  return { complete: missing.length === 0, required: SETUP_REQUIRED.map(strip), missing: missing.map(strip) };
+}

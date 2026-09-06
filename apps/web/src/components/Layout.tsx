@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bell, Building2, CalendarClock, ClipboardList, Contact2, FileText, Gauge, LayoutGrid, LogOut, Menu, Package, Tags, Undo2,
@@ -232,6 +232,26 @@ export default function Layout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // First-run nudge. A fresh install cannot issue a tax invoice until the company's
+  // own TRN, name and address are on file, and nothing used to say so until the first
+  // invoice failed. Send whoever can fix it to the Company page once per session; the
+  // page itself lists what is missing.
+  const location = useLocation();
+  const { data: setup } = useQuery({
+    queryKey: ['setup'],
+    queryFn: () => api.get<{ complete: boolean }>('/setup/status'),
+    enabled: can('settings', 'update'),
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (!setup || setup.complete || location.pathname.startsWith('/settings/company')) return;
+    try {
+      if (sessionStorage.getItem('zeus.setupNudged')) return;
+      sessionStorage.setItem('zeus.setupNudged', '1');
+    } catch { /* storage blocked — nudge every load instead of never */ }
+    navigate('/settings/company');
+  }, [setup, location.pathname, navigate]);
 
   const signOut = async () => {
     await api.post('/auth/logout');

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
+  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
   ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, Plus, RefreshCw, RotateCcw, ShieldCheck, X,
 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
@@ -83,7 +83,12 @@ export default function Settings() {
               the latter must not spin forever. `current` is only unset for the split
               second before the redirect effect fires, so that alone is the load state. */}
           {!section ? (!current ? <Loading /> : <AccessDenied module="settings" />) :
-            section.path === 'company' ? <SettingsGroup prefix="company." title="Company details" description="Used on quote and invoice letterheads." /> :
+            section.path === 'company' ? (
+              <div className="flex flex-col gap-3">
+                <SetupNotice />
+                <SettingsGroup prefix="company." title="Company details" description="Used on quote and invoice letterheads." />
+              </div>
+            ) :
             section.path === 'finance' ? (
               <div className="flex flex-col gap-3">
                 <SettingsGroup prefix="finance." title="Finance & VAT" description="Currency, VAT rate and default terms." />
@@ -160,6 +165,26 @@ const LABELS: Record<string, string> = {
   'branding.productName': 'Product name', 'branding.tagline': 'Tagline',
 };
 
+type SetupStatus = { complete: boolean; required: Array<{ key: string; label: string }>; missing: Array<{ key: string; label: string }> };
+
+/**
+ * First-run banner on the Company page: what a fresh install still needs before it
+ * can issue a tax invoice. Goes away on its own once the fields are saved.
+ */
+function SetupNotice() {
+  const { data } = useQuery({ queryKey: ['setup'], queryFn: () => api.get<SetupStatus>('/setup/status'), staleTime: 60_000 });
+  if (!data || data.complete) return null;
+  return (
+    <div className="flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--red-700)]">
+      <AlertTriangle size={15} className="mt-px shrink-0" />
+      <span className="min-w-0 flex-1">
+        <b>Finish setting up Zeus.</b> A tax invoice cannot be issued until these are filled in:{' '}
+        {data.missing.map((m) => m.label).join(', ')}.
+      </span>
+    </div>
+  );
+}
+
 function SettingsGroup({ prefix, title, description, extraPrefixes = [] }: {
   prefix: string;
   title: string;
@@ -176,11 +201,21 @@ function SettingsGroup({ prefix, title, description, extraPrefixes = [] }: {
     queryFn: () => api.get<{ values: Record<string, unknown> }>('/settings'),
   });
 
+  // Company page only: the first-run check says which fields are mandatory.
+  const { data: setup } = useQuery({
+    queryKey: ['setup'],
+    queryFn: () => api.get<SetupStatus>('/setup/status'),
+    enabled: prefix === 'company.',
+    staleTime: 60_000,
+  });
+  const requiredKeys = new Set((setup?.required ?? []).map((r) => r.key));
+
   const save = useMutation({
     mutationFn: () => api.put('/settings', draft),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['settings'] });
       void queryClient.invalidateQueries({ queryKey: ['settings-public'] });
+      void queryClient.invalidateQueries({ queryKey: ['setup'] });
       setDraft({});
       toast.push('Settings saved.');
     },
@@ -228,7 +263,7 @@ function SettingsGroup({ prefix, title, description, extraPrefixes = [] }: {
           }
 
           return (
-            <Field key={key} label={label} className={isLong ? 'sm:col-span-2' : undefined}>
+            <Field key={key} label={label} required={requiredKeys.has(key)} className={isLong ? 'sm:col-span-2' : undefined}>
               {isLong ? (
                 <Textarea
                   rows={3}
