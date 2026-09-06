@@ -104,6 +104,15 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # docker-compose.yml is the other half of the deploy artifact, and the boot check
+      # below bypasses it (docker run, not compose) — so nothing here ever parsed it. An
+      # unquoted colon in an error hint shipped for weeks and only failed on the server.
+      # Parse it with the real tool, with the required variables stubbed.
+      - name: Validate docker-compose.yml
+        run: |
+          POSTGRES_PASSWORD=x APP_SECRET=x APP_URL=http://localhost SEED_ADMIN_PASSWORD=x \
+            docker compose config --quiet
+
       # Never pushed. `load: true` puts the image in the local daemon so the boot check
       # below can actually run it. GHA layer caching keeps a repeat build to seconds.
       - uses: docker/build-push-action@v6

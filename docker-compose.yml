@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-zeus}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
       POSTGRES_DB: ${POSTGRES_DB:-zeus}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -32,13 +32,13 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-zeus}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-zeus}?schema=public
-      APP_SECRET: ${APP_SECRET:?generate with: openssl rand -hex 32}
-      APP_URL: ${APP_URL:?e.g. https://zeus.protect24x7.ae}
+      APP_SECRET: "${APP_SECRET:?generate with openssl rand -hex 32}"
+      APP_URL: "${APP_URL:?e.g. https://zeus.protect24x7.ae}"
       CORS_ORIGINS: ${APP_URL}
       NODE_ENV: production
       PORT: 4000
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@protect24x7.ae}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?set a first-login password in .env}
+      SEED_ADMIN_PASSWORD: "${SEED_ADMIN_PASSWORD:?set a first-login password in .env}"
       UPLOAD_DIR: /data/uploads
       BACKUP_DIR: /data/backups
       PG_DUMP_PATH: pg_dump
