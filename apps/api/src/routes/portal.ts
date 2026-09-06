@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit.js';
-import { badRequest, clientIp } from '../lib/http.js';
+import { badRequest, clientIp, limit } from '../lib/http.js';
 import { loginWithPassword, requestLink, setPasswordFromLink } from '../portal/auth.js';
 import { clearPortalSession, issuePortalSession, verifyViewAsToken } from '../portal/session.js';
 import { partnerRegistrations } from '../portal/registrations.js';
 import { brandingFor } from '../portal/branding.js';
+import { customerSubscriptions } from '../portal/subscriptions.js';
 
 /**
  * What an outsider can call. Auth routes are the only writes; everything else is a
@@ -19,13 +20,13 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
   // ── auth ────────────────────────────────────────────────────────────────────
 
   /** First time or forgot: same answer whatever the address is. */
-  app.post('/api/portal/auth/link', { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } }, async (request) => {
+  app.post('/api/portal/auth/link', { config: limit(5, '15 minutes') }, async (request) => {
     const parsed = z.object({ email: z.string().email() }).safeParse(request.body);
     if (parsed.success) await requestLink(parsed.data.email);
     return NEUTRAL;
   });
 
-  app.post('/api/portal/auth/set-password', { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }, async (request) => {
+  app.post('/api/portal/auth/set-password', { config: limit(10, '15 minutes') }, async (request) => {
     const parsed = z.object({ token: z.string().min(32), password: z.string().min(1) }).safeParse(request.body);
     if (!parsed.success) throw badRequest('This link is not valid any more. Ask for a new one from the sign-in page.');
     const result = await setPasswordFromLink(parsed.data.token, parsed.data.password);
@@ -33,7 +34,7 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     return { ok: true };
   });
 
-  app.post('/api/portal/auth/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
+  app.post('/api/portal/auth/login', { config: limit(10, '5 minutes') }, async (request, reply) => {
     const parsed = z.object({ email: z.string().email(), password: z.string().min(1) }).safeParse(request.body);
     // Wrong shape, wrong password, unknown address, locked out: one answer.
     const result = parsed.success ? await loginWithPassword(parsed.data.email, parsed.data.password) : ({ ok: false } as const);
@@ -44,7 +45,7 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
   });
 
   /** An admin's hand-off from Settings → "View as". The token lives two minutes. */
-  app.post('/api/portal/auth/view-as', { config: { rateLimit: { max: 20, timeWindow: '5 minutes' } } }, async (request, reply) => {
+  app.post('/api/portal/auth/view-as', { config: limit(20, '5 minutes') }, async (request, reply) => {
     const parsed = z.object({ token: z.string().min(20) }).safeParse(request.body);
     const claim = parsed.success ? await verifyViewAsToken(parsed.data.token) : null;
     if (!claim) throw badRequest('This preview link is not valid any more. Open View as again from Settings.');
@@ -78,6 +79,17 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     if (s.accountType !== 'PARTNER') return reply.status(404).send({ error: 'Not found.' });
     const rows = await partnerRegistrations(s);
     await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · registrations (${rows.length})${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
+    return rows;
+  });
+
+  // ── customer view ──────────────────────────────────────────────────────────
+
+  /** The services they own and when each renews. Customers only. */
+  app.get('/api/portal/subscriptions', async (request, reply) => {
+    const s = request.portal;
+    if (s.accountType !== 'CUSTOMER') return reply.status(404).send({ error: 'Not found.' });
+    const rows = await customerSubscriptions(s);
+    await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · subscriptions (${rows.length})${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
     return rows;
   });
 }

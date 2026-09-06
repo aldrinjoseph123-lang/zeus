@@ -3,6 +3,7 @@ import { api } from '../api';
 import { Shell } from '../shell';
 import { useBranding, useMe } from '../me';
 import PartnerHome from './PartnerHome';
+import CustomerHome from './CustomerHome';
 
 /**
  * The signed-in home. Phase 1 is deliberately empty: it proves who you are and which
@@ -38,12 +39,7 @@ export default function Home() {
       {branding?.banner ? (
         <div role="note" className="mt-6 border border-[var(--line)] bg-[var(--card)] px-4 py-3 text-[13px] leading-relaxed">{branding.banner}</div>
       ) : null}
-      {me.account.type === 'PARTNER' ? <PartnerHome /> : (
-        <section className="mt-10 border border-dashed border-[var(--line)] px-6 py-12 text-center">
-          <p className="text-[13px] uppercase tracking-[0.2em] text-[var(--muted)]">Nothing to show yet</p>
-          <p className="mx-auto mt-3 max-w-[48ch] text-[14px] leading-relaxed text-[var(--muted)]">Your services, what each includes, and their renewal dates will appear here.</p>
-        </section>
-      )}
+      {me.account.type === 'PARTNER' ? <PartnerHome /> : <CustomerHome />}
     </Shell>
   );
 }
