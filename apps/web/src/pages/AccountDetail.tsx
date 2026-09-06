@@ -6,13 +6,13 @@ import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, money, relative } from '../lib/format';
 import {
-  Badge, Button, Card, CardHeader, ConfirmDialog, DataTable, DefinitionList, EmptyState, ErrorNote,
-  Field, Input, Loading, Modal, PageHeader, Select, StatTile, Tabs, Textarea, useToast,
+  Badge, Button, Card, CardHeader, ConfirmDialog, DataTable, DefinitionList, EmptyState, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, StatTile, Tabs, Textarea, useToast,
 } from '../components/ui';
 import { AccountPicker, ListSelect, OwnerSelect } from '../components/pickers';
 import { ActivityPanel, type ActivityRecord } from '../components/timeline';
 import { AttachmentPanel } from '../components/attachments';
 import { CustomFieldInputs, CustomFieldValues, type CustomValues } from '../components/customFields';
+import { LogoField } from './Settings';
 import { LifecycleRail, accountHint, accountJourney } from '../components/lifecycle';
 import { DealForm } from './Deals';
 import { ContactForm } from './Contacts';
@@ -242,6 +242,8 @@ export default function AccountDetail() {
             )}
           </Card>
 
+          {(account.type === 'PARTNER' || account.type === 'CUSTOMER') && can('portal', 'read') ? <PortalCard accountId={account.id} /> : null}
+
           <Card>
             <CardHeader title="Files" subtitle="Trade licence, TRN certificate, signed agreements" />
             <AttachmentPanel parent="account" parentId={account.id} />
@@ -380,5 +382,82 @@ function MergeModal({ accountId, accountName, onClose }: { accountId: string; ac
         </Field>
       </div>
     </Modal>
+  );
+}
+
+type PortalAccountView = {
+  logo: string | null;
+  overrides: Record<string, boolean>;
+  global: Record<string, boolean>;
+  effective: Record<string, boolean>;
+  switches: Array<{ key: string; label: string }>;
+  users: Array<{ id: string; email: string; disabledAt: string | null; lastLoginAt: string | null; hasPassword: boolean }>;
+};
+
+/**
+ * What this account sees on the portal. Each switch is Default / On / Off: Default follows
+ * Settings → Portal access, the other two override it for this account only — and only
+ * within what the code allows out. The logo appears in their portal header.
+ */
+function PortalCard({ accountId }: { accountId: string }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const editable = can('portal', 'update');
+  const { data } = useQuery({ queryKey: ['portal-account', accountId], queryFn: () => api.get<PortalAccountView>(`/portal-admin/accounts/${accountId}`) });
+  const save = useMutation({
+    mutationFn: (body: { overrides?: Record<string, boolean | null>; logo?: string | null }) => api.patch(`/portal-admin/accounts/${accountId}`, body),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['portal-account', accountId] }); toast.push('Portal settings saved.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
+  });
+  if (!data) return null;
+
+  return (
+    <Card>
+      <CardHeader title="Portal" subtitle="What this account sees when its people sign in. Default follows the global switch." />
+      <div className="flex flex-col gap-4 px-4 py-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {data.switches.map((sw) => {
+            const override = data.overrides[sw.key];
+            return (
+              <label key={sw.key} className="flex flex-col gap-1 text-[11px] uppercase tracking-[0.08em] text-muted">
+                {sw.label}
+                <Select
+                  value={override === undefined ? 'default' : override ? 'on' : 'off'}
+                  disabled={!editable}
+                  onChange={(e) => save.mutate({ overrides: { [sw.key]: e.target.value === 'default' ? null : e.target.value === 'on' } })}
+                  options={[
+                    { value: 'default', label: `Default (${data.global[sw.key] ? 'shown' : 'hidden'})` },
+                    { value: 'on', label: 'Shown for this account' },
+                    { value: 'off', label: 'Hidden for this account' },
+                  ]}
+                />
+              </label>
+            );
+          })}
+        </div>
+        <div>
+          <p className="mb-2 text-[11px] uppercase tracking-[0.08em] text-muted">Their logo on the portal</p>
+          <LogoField value={data.logo} disabled={!editable} onChange={(logo) => save.mutate({ logo })} />
+        </div>
+        <div>
+          <p className="mb-2 text-[11px] uppercase tracking-[0.08em] text-muted">People with access</p>
+          {data.users.length === 0 ? (
+            <p className="text-[12px] text-muted">Nobody yet — grant access from Settings → Portal access.</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {data.users.map((u) => (
+                <li key={u.id} className="flex flex-wrap items-center gap-2 text-[13px]">
+                  <span>{u.email}</span>
+                  <Badge tone={u.disabledAt ? 'neutral' : u.hasPassword ? 'secure' : 'watch'}>{u.disabledAt ? 'Revoked' : u.hasPassword ? 'Active' : 'Invited'}</Badge>
+                  <span className="text-[12px] text-muted">{u.lastLoginAt ? `last sign-in ${relative(u.lastLoginAt)}` : 'never signed in'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {editable ? <Button size="sm" variant="ghost" onClick={() => window.open('/settings/portal', '_self')}>Manage in Settings → Portal access</Button> : null}
+      </div>
+    </Card>
   );
 }

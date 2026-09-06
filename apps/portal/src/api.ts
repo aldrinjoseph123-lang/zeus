@@ -23,3 +23,12 @@ export interface Me {
   /** Present when a Protect24x7 admin is previewing the portal as this person. */
   viewingAs?: string;
 }
+
+export interface Branding {
+  companyName: string;
+  logo: string | null;
+  accountLogo: string | null;
+  welcome: string;
+  banner: string | null;
+  contact: string;
+}

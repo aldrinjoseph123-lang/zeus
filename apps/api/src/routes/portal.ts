@@ -5,6 +5,7 @@ import { badRequest, clientIp } from '../lib/http.js';
 import { loginWithPassword, requestLink, setPasswordFromLink } from '../portal/auth.js';
 import { clearPortalSession, issuePortalSession, verifyViewAsToken } from '../portal/session.js';
 import { partnerRegistrations } from '../portal/registrations.js';
+import { brandingFor } from '../portal/branding.js';
 
 /**
  * What an outsider can call. Auth routes are the only writes; everything else is a
@@ -65,6 +66,9 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     // Allowlist: what leaves is named here and nowhere else.
     return { name: s.name, email: s.email, account: { name: s.accountName, type: s.accountType }, ...(s.viewingAs ? { viewingAs: s.viewingAs.name } : {}) };
   });
+
+  /** Logos, welcome line, banner and contact details — admin-set, nothing personal. */
+  app.get('/api/portal/branding', async (request) => brandingFor(request.portal));
 
   // ── partner view ───────────────────────────────────────────────────────────
 

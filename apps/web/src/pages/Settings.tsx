@@ -125,6 +125,9 @@ const LABELS: Record<string, string> = {
   'portal.lockout.attempts': 'Wrong passwords before lockout', 'portal.lockout.minutes': 'Lockout length (minutes)',
   'portal.link.expiryMinutes': 'Set-password link valid for (minutes)',
   'portal.partner.showRegNumber': 'Partners see the vendor registration number', 'portal.partner.showDealValue': 'Partners see the deal value',
+  'portal.branding.welcome.partner': 'Welcome line — partners', 'portal.branding.welcome.customer': 'Welcome line — customers',
+  'portal.branding.banner.partner': 'Banner — partners (blank = none)', 'portal.branding.banner.customer': 'Banner — customers (blank = none)',
+  'portal.branding.contact': 'Contact details shown to customers (e.g. support@… · +971 4 …)',
   'company.name': 'Trading name', 'company.legalName': 'Legal name', 'company.trn': 'TRN (tax registration number)',
   'company.addressLine1': 'Address line 1', 'company.addressLine2': 'Address line 2', 'company.city': 'City',
   'company.emirate': 'Emirate', 'company.country': 'Country', 'company.poBox': 'P.O. Box', 'company.phone': 'Phone',
@@ -193,11 +196,13 @@ function SetupNotice() {
   );
 }
 
-function SettingsGroup({ prefix, title, description, extraPrefixes = [] }: {
+function SettingsGroup({ prefix, title, description, extraPrefixes = [], hide = [] }: {
   prefix: string;
   title: string;
   description: string;
   extraPrefixes?: string[];
+  /** Keys rendered elsewhere with a purpose-built control (a logo, say). */
+  hide?: string[];
 }) {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -237,6 +242,7 @@ function SettingsGroup({ prefix, title, description, extraPrefixes = [] }: {
     .filter((key) => prefixes.some((p) => key.startsWith(p)))
     // Lists and rate tables get their own editors; a text box would print [object Object].
     .filter((key) => typeof data!.values[key] !== 'object' || data!.values[key] === null)
+    .filter((key) => !hide.includes(key))
     .sort();
 
   const value = (key: string) => (key in draft ? draft[key] : data!.values[key]);
@@ -3126,6 +3132,12 @@ function PortalAccessSection() {
 
   const { data: users, isLoading } = useQuery({ queryKey: ['portal-users'], queryFn: () => api.get<PortalUserRow[]>('/portal-admin/users') });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['portal-users'] });
+  const { data: settingsAll } = useQuery({ queryKey: ['settings'], queryFn: () => api.get<{ values: Record<string, unknown> }>('/settings') });
+  const saveLogo = useMutation({
+    mutationFn: (logo: string) => api.put('/settings', { 'portal.branding.logo': logo }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['settings'] }); toast.push('Logo saved.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save the logo.', 'error'),
+  });
 
   const act = useMutation({
     mutationFn: ({ id, action }: { id: string; action: 'link' | 'revoke' | 'restore' }) => api.post<{ to?: string }>(`/portal-admin/users/${id}/${action}`, {}),
@@ -3176,7 +3188,13 @@ function PortalAccessSection() {
 
   return (
     <div className="flex flex-col gap-3">
-      <SettingsGroup prefix="portal." title="Portal" description="The switches. Off means every visitor — partner or customer — gets “not available”; View as still works so you can set things up first." />
+      <SettingsGroup prefix="portal." title="Portal" description="The switches. Off means every visitor — partner or customer — gets “not available”; View as still works so you can set things up first." hide={['portal.branding.logo']} />
+      <Card>
+        <CardHeader title="Company logo on the portal" subtitle="Shown top-left on every portal screen. A partner's or customer's own logo is set on their account page." />
+        <div className="px-4 py-4">
+          <LogoField value={String(settingsAll?.values['portal.branding.logo'] ?? '') || null} disabled={!editable} onChange={(logo) => saveLogo.mutate(logo ?? '')} />
+        </div>
+      </Card>
       <Card>
         <CardHeader
           title="People with access"
@@ -3234,5 +3252,39 @@ function GrantAccessModal({ open, onClose, onGranted }: { open: boolean; onClose
         )}
       </div>
     </Modal>
+  );
+}
+
+/**
+ * A logo as a data URL. Reads the chosen file in the browser, refuses anything but a
+ * small image before it is sent, shows what is stored. No file plumbing: the value is
+ * the setting, and the portal serves it straight from there.
+ */
+export function LogoField({ value, onChange, disabled }: { value: string | null; onChange: (dataUrl: string | null) => void; disabled?: boolean }) {
+  const toast = useToast();
+  const pick = (file: File | undefined) => {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(file.type)) { toast.push('Use a PNG, JPEG, WebP or SVG.', 'error'); return; }
+    if (file.size > 150 * 1024) { toast.push('Keep the logo under 150 KB.', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = () => onChange(String(reader.result));
+    reader.readAsDataURL(file);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-4">
+      <div className="flex h-16 w-40 items-center justify-center border border-line bg-sunken px-3">
+        {value ? <img src={value} alt="Logo" className="max-h-12 max-w-full object-contain" /> : <span className="text-[11px] uppercase tracking-[0.1em] text-muted">No logo</span>}
+      </div>
+      {!disabled ? (
+        <div className="flex items-center gap-2">
+          <label className="cursor-pointer border border-line px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] hover:bg-sunken">
+            {value ? 'Replace' : 'Upload'}
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+          {value ? <Button size="sm" variant="ghost" onClick={() => onChange(null)}>Remove</Button> : null}
+        </div>
+      ) : null}
+      <p className="basis-full text-[12px] text-muted">PNG, JPEG, WebP or SVG, under 150 KB. Shown on a dark background.</p>
+    </div>
   );
 }

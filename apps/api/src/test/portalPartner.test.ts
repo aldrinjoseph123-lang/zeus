@@ -139,3 +139,47 @@ describe('portal: the partner screen', () => {
     assert.equal((await request(app).get('/api/portal/registrations')).status, 401);
   });
 });
+
+describe('portal: the three layers of control', () => {
+  it('a per-account override narrows or widens the global switch, and only for that account', async () => {
+    const a = await partner('Partner A', 'a@partner.example');
+    const b = await partner('Partner B', 'b@partner.example');
+    await register(await deal('A deal', 40000), { side: 'PARTNER', partnerId: a.accountId, status: 'APPROVED', regNumber: 'PRT-A', expiresAt: at(10) });
+    await register(await deal('B deal', 50000), { side: 'PARTNER', partnerId: b.accountId, status: 'APPROVED', regNumber: 'PRT-B', expiresAt: at(10) });
+
+    // Global: number on, value off. Override A: number off, value on.
+    const patched = await request(app, fx.admin).patch(`/api/portal-admin/accounts/${a.accountId}`, { overrides: { showRegNumber: false, showDealValue: true, notASwitch: true } });
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    const view = patched.body as { overrides: Record<string, boolean>; effective: Record<string, boolean>; switches: Array<{ key: string }> };
+    assert.deepEqual(view.overrides, { showRegNumber: false, showDealValue: true }, 'the unknown key was dropped, never stored');
+    assert.deepEqual(view.effective, { showRegNumber: false, showDealValue: true });
+    assert.deepEqual(view.switches.map((s) => s.key).sort(), ['showDealValue', 'showRegNumber']);
+
+    const [rowA] = (await request(app, asPortal(a.cookie)).get('/api/portal/registrations')).body as Row[];
+    assert.equal('regNumber' in rowA.ours, false, 'A: number withheld by override');
+    assert.equal(rowA.deal.value, 40000, 'A: value shown by override');
+    const [rowB] = (await request(app, asPortal(b.cookie)).get('/api/portal/registrations')).body as Row[];
+    assert.equal(rowB.ours.regNumber, 'PRT-B', 'B: still the global default');
+    assert.equal(rowB.deal.value, undefined);
+
+    // null clears an override; the global default applies again.
+    const cleared = (await request(app, fx.admin).patch(`/api/portal-admin/accounts/${a.accountId}`, { overrides: { showRegNumber: null } })).body as { effective: Record<string, boolean> };
+    assert.equal(cleared.effective.showRegNumber, true);
+  });
+
+  it('a logo must be a small image data URL; branding is served per audience', async () => {
+    const a = await partner('Partner A', 'a@partner.example');
+    const png = 'data:image/png;base64,' + Buffer.from('not-really-a-png-but-fine-for-storage').toString('base64');
+    assert.equal((await request(app, fx.admin).patch(`/api/portal-admin/accounts/${a.accountId}`, { logo: 'https://evil.example/x.png' })).status, 400, 'a URL is not accepted');
+    assert.equal((await request(app, fx.admin).patch(`/api/portal-admin/accounts/${a.accountId}`, { logo: 'data:text/html;base64,PHNjcmlwdD4=' })).status, 400, 'only images');
+    assert.equal((await request(app, fx.admin).patch(`/api/portal-admin/accounts/${a.accountId}`, { logo: 'data:image/png;base64,' + 'A'.repeat(210_000) })).status, 400, 'too large');
+    assert.equal((await request(app, fx.admin).patch(`/api/portal-admin/accounts/${a.accountId}`, { logo: png })).status, 200);
+
+    await request(app, fx.admin).put('/api/settings', { 'portal.branding.welcome.partner': 'Welcome, partner.', 'portal.branding.banner.partner': 'Q4 registrations close 15 Dec.' });
+    const b = (await request(app, asPortal(a.cookie)).get('/api/portal/branding')).body as { accountLogo: string | null; welcome: string; banner: string | null; contact: string };
+    assert.equal(b.accountLogo, png);
+    assert.equal(b.welcome, 'Welcome, partner.');
+    assert.equal(b.banner, 'Q4 registrations close 15 Dec.');
+    assert.equal((await request(app, fx.rep).patch(`/api/portal-admin/accounts/${a.accountId}`, { logo: null })).status, 403);
+  });
+});

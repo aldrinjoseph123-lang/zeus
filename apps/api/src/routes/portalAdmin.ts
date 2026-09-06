@@ -5,7 +5,9 @@ import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, notFound, requirePermission } from '../lib/http.js';
 import { issueLinkFor } from '../portal/auth.js';
 import { signViewAsToken } from '../portal/session.js';
+import { PARTNER_SWITCHES, resolvePartnerSwitches, sanitizeOverrides, validLogo, type PartnerSwitch } from '../portal/switches.js';
 import { env } from '../env.js';
+import { getSetting } from '../lib/settings.js';
 
 /**
  * The internal side of the portal: who has access. Grant is a deliberate act on a
@@ -70,6 +72,59 @@ export default async function portalAdminRoutes(app: FastifyInstance): Promise<v
     const token = await signViewAsToken(id, { userId: request.user.id, name: request.user.name });
     await audit({ user: request.user, action: 'read', entity: 'PortalUser', entityId: id, summary: `Opened the portal as ${user.email}`, ip: clientIp(request) });
     return { url: `${env.PORTAL_URL.replace(/\/$/, '')}/view-as?token=${token}` };
+  });
+
+  // ── per-account: overrides of the field switches, and a logo ───────────────
+
+  const accountView = async (accountId: string) => {
+    const account = await prisma.account.findFirst({ where: { id: accountId, deletedAt: null }, select: { id: true, name: true, type: true, portalOverrides: true, portalLogo: true } });
+    if (!account) throw notFound('Account not found.');
+    const overrides = sanitizeOverrides(account.portalOverrides);
+    const effective = await resolvePartnerSwitches(accountId);
+    // The global default per switch, so the page can say what "Default" currently means.
+    const global = {} as Record<PartnerSwitch, boolean>;
+    for (const key of Object.keys(PARTNER_SWITCHES) as PartnerSwitch[]) global[key] = await getSetting<boolean>(PARTNER_SWITCHES[key].setting, PARTNER_SWITCHES[key].fallback);
+    return {
+      id: account.id, name: account.name, type: account.type,
+      logo: account.portalLogo,
+      overrides,
+      global,
+      effective,
+      // The allowlist, with labels, so the page can only ever offer what the code allows.
+      switches: (Object.keys(PARTNER_SWITCHES) as PartnerSwitch[]).map((key) => ({ key, label: PARTNER_SWITCHES[key].label })),
+      users: await prisma.portalUser.findMany({ where: { contact: { accountId } }, select: { id: true, email: true, disabledAt: true, lastLoginAt: true, passwordHash: true } })
+        .then((rows) => rows.map(({ passwordHash, ...rest }) => ({ ...rest, hasPassword: Boolean(passwordHash) }))),
+    };
+  };
+
+  app.get('/api/portal-admin/accounts/:id', { preHandler: requirePermission('portal', 'read') }, async (request) => accountView((request.params as { id: string }).id));
+
+  app.patch('/api/portal-admin/accounts/:id', { preHandler: requirePermission('portal', 'update') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const body = z.object({
+      // null clears the override for that switch; absent leaves it alone.
+      overrides: z.record(z.string(), z.boolean().nullable()).optional(),
+      logo: z.string().nullable().optional(),
+    }).parse(request.body);
+    const account = await prisma.account.findFirst({ where: { id, deletedAt: null }, select: { portalOverrides: true, name: true } });
+    if (!account) throw notFound('Account not found.');
+
+    const data: { portalOverrides?: Record<string, boolean>; portalLogo?: string | null } = {};
+    if (body.overrides) {
+      const merged: Record<string, boolean> = { ...sanitizeOverrides(account.portalOverrides) };
+      for (const [key, value] of Object.entries(body.overrides)) {
+        if (!(key in PARTNER_SWITCHES)) continue; // not on the allowlist: ignored, never stored
+        if (value === null) delete merged[key]; else merged[key] = value;
+      }
+      data.portalOverrides = merged;
+    }
+    if (body.logo !== undefined) {
+      if (body.logo !== null && !validLogo(body.logo)) throw badRequest('The logo must be a PNG, JPEG, WebP or SVG image under 150 KB.');
+      data.portalLogo = body.logo;
+    }
+    await prisma.account.update({ where: { id }, data });
+    await audit({ user: request.user, action: 'update', entity: 'Account', entityId: id, summary: `Portal settings for ${account.name}: ${[body.overrides ? `overrides ${JSON.stringify(data.portalOverrides)}` : null, body.logo !== undefined ? (body.logo ? 'logo set' : 'logo removed') : null].filter(Boolean).join(', ')}`, ip: clientIp(request) });
+    return accountView(id);
   });
 
   for (const [action, disabledAt] of [['revoke', () => new Date()], ['restore', () => null]] as const) {

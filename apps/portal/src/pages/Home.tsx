@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { Shell } from '../shell';
-import { useMe } from '../me';
+import { useBranding, useMe } from '../me';
 import PartnerHome from './PartnerHome';
 
 /**
@@ -11,6 +11,7 @@ import PartnerHome from './PartnerHome';
  */
 export default function Home() {
   const me = useMe();
+  const branding = useBranding();
   const navigate = useNavigate();
   const signOut = async () => {
     await api('POST', '/auth/logout').catch(() => undefined);
@@ -29,10 +30,14 @@ export default function Home() {
           <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">{me.account.type === 'PARTNER' ? 'Channel partner' : 'Customer'}</p>
           <h1 className="mt-1 text-[26px] font-bold leading-none">{me.account.name}</h1>
           <p className="mt-2 text-[13px] text-[var(--muted)]">Signed in as {me.name} · {me.email}</p>
+          {branding?.welcome ? <p className="mt-3 max-w-[60ch] text-[14px] leading-relaxed">{branding.welcome}</p> : null}
         </div>
         <button onClick={signOut} className="text-[12px] uppercase tracking-[0.15em] text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Sign out</button>
       </div>
 
+      {branding?.banner ? (
+        <div role="note" className="mt-6 border border-[var(--line)] bg-[var(--card)] px-4 py-3 text-[13px] leading-relaxed">{branding.banner}</div>
+      ) : null}
       {me.account.type === 'PARTNER' ? <PartnerHome /> : (
         <section className="mt-10 border border-dashed border-[var(--line)] px-6 py-12 text-center">
           <p className="text-[13px] uppercase tracking-[0.2em] text-[var(--muted)]">Nothing to show yet</p>

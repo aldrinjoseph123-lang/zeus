@@ -98,6 +98,13 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   // What a partner sees on a registration. The vendor number is already in the expiry mail.
   'portal.partner.showRegNumber': true,
   'portal.partner.showDealValue': false,
+  // Branding: what dresses the portal. The logo is a data URL set from the Portal access page.
+  'portal.branding.logo': '',
+  'portal.branding.welcome.partner': '',
+  'portal.branding.welcome.customer': '',
+  'portal.branding.banner.partner': '',
+  'portal.branding.banner.customer': '',
+  'portal.branding.contact': '',
   /// Below this margin a deal needs approving whatever it is worth — the discount
   /// giveaway is what a sales manager actually wants to catch.
   'approvals.dealMinMarginPct': 0,

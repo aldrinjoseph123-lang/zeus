@@ -1,6 +1,6 @@
 import { prisma } from '../db.js';
-import { getSetting } from '../lib/settings.js';
 import { portalScope, type PortalSession } from './access.js';
+import { resolvePartnerSwitches } from './switches.js';
 
 /**
  * What a partner sees: their registered deals, both sides of the channel.
@@ -41,11 +41,8 @@ const stillWorthShowing = (r: { status: string; expiresAt: Date | null }) =>
   r.status !== 'EXPIRED' || !r.expiresAt || Date.now() - r.expiresAt.getTime() < EXPIRED_GRACE_DAYS * 86_400_000;
 
 export async function partnerRegistrations(session: PortalSession): Promise<PortalRegistration[]> {
-  const [showRegNumber, showDealValue] = await Promise.all([
-    getSetting<boolean>('portal.partner.showRegNumber', true),
-    getSetting<boolean>('portal.partner.showDealValue', false),
-  ]);
   const { accountId } = portalScope(session);
+  const { showRegNumber, showDealValue } = await resolvePartnerSwitches(accountId);
 
   const rows = await prisma.dealRegistration.findMany({
     where: { side: 'PARTNER', partnerId: accountId, status: { in: [...VISIBLE] }, deal: { deletedAt: null } },

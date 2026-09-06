@@ -133,6 +133,11 @@ model Account {
   poBox          String?
   linkedinUrl    String?
   description    String?
+  /// Partner & customer portal: per-account overrides of the global field switches
+  /// ({ showRegNumber?: bool, showDealValue?: bool }) and a logo shown in this account's
+  /// portal header. Overrides can only select within the code allowlist, never past it.
+  portalOverrides Json    @default("{}")
+  portalLogo      String?
   ownerId        String?
   owner          User?       @relation("AccountOwner", fields: [ownerId], references: [id])
   /// Rolls forward on any activity, deal change or note. Drives the stale-account alert.
