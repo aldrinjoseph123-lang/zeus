@@ -52,8 +52,9 @@ main() {
   set_tag "$tag"
   docker compose pull -q app
 
-  # 4. restart just the app; db and caddy keep running.
-  docker compose up -d --no-build app
+  # 4. bring the stack up at the new tag. db and caddy have unchanged config so compose
+  #    leaves them alone; on a freshly wiped box this is also what starts them.
+  docker compose up -d --no-build
   if wait_healthy 180; then
     echo "▸ $tag is live: $(curl -fsS http://localhost/api/health)"
     echo "▸ previous image kept for rollback: ./docker/deploy.sh ${prev:-<previous tag>}"
@@ -67,7 +68,7 @@ main() {
     echo "▸ rolling back to $prev" >&2
     git checkout -q "$prev" || true
     set_tag "$prev"
-    docker compose up -d --no-build app
+    docker compose up -d --no-build
     wait_healthy 180 && echo "▸ $prev is back" >&2
   fi
   echo "▸ data as of before this deploy: $dump" >&2
