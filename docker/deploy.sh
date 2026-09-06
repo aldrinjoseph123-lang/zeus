@@ -37,7 +37,8 @@ main() {
   # 1. backup — plain pg_dump on this host, next to the repo. Independent of the app
   #    being healthy, which matters most on the day it is not.
   mkdir -p backups
-  local dump="backups/pre-deploy-${tag}-$(date +%Y%m%dT%H%M%S).sql.gz"
+  local dump
+  dump="backups/pre-deploy-${tag}-$(date +%Y%m%dT%H%M%S).sql.gz"
   # The db container already carries POSTGRES_USER/DB from compose; use its copy.
   docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$dump"
   echo "▸ database dumped to $dump ($(du -h "$dump" | cut -f1))"
