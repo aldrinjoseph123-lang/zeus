@@ -69,3 +69,36 @@ export async function mailPartnerAboutRegistration(reg: RegistrationForMail): Pr
   await prisma.dealRegistration.update({ where: { id: reg.id }, data: { partnerNotifiedAt: new Date() } });
   return { ok: true, to: email };
 }
+
+/**
+ * The positive half of the partner story. The scheduler already tells a partner when
+ * protection is running out; nothing told them when it was granted, so the only mail
+ * they ever got from Zeus was bad news. Sent once, when a PARTNER-side registration
+ * moves to APPROVED. Same facts block as the expiry mail so the two read as a pair.
+ */
+export async function mailPartnerRegistrationApproved(reg: RegistrationForMail): Promise<MailResult> {
+  const email = reg.partnerContact?.email?.trim();
+  if (!email) return { ok: false, reason: 'No partner contact with an email address is set on this registration.' };
+  const company = await getSetting<string>('company.name', 'Protect24x7');
+
+  const title = `Deal registration approved — ${reg.deal.account.name}`;
+  const until = reg.expiresAt ? ` until ${dayjs(reg.expiresAt)}` : '';
+  const body = `Your registration on ${reg.deal.account.name} is approved. The opportunity is locked with ${company}${until} — work it with confidence, and tell us if the timeline moves so we can extend the protection.`;
+
+  try {
+    await sendMail({
+      to: [email],
+      subject: title,
+      html: emailTemplate(title, body, undefined, [
+        { title: 'End customer', value: reg.deal.account.name },
+        { title: 'Opportunity', value: reg.deal.name },
+        { title: 'Registration', value: reg.regNumber ?? reg.deal.reference },
+        ...(reg.expiresAt ? [{ title: 'Protected until', value: dayjs(reg.expiresAt) }] : []),
+        { title: 'Registered with', value: company },
+      ]),
+    });
+  } catch (err) {
+    return { ok: false, reason: `Could not send the mail: ${(err as Error).message}` };
+  }
+  return { ok: true, to: email };
+}
