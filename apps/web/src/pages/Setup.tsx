@@ -65,8 +65,9 @@ export default function Setup() {
         />
         <ul className="divide-y divide-line">
           {visible.map((item) => (
-            <li key={item.key} className="flex items-start gap-3 px-4 py-3">
-              <span className="mt-0.5 shrink-0" aria-hidden>
+            // Stacks on narrow screens: side by side, the buttons squeeze the text to a word a line.
+            <li key={item.key} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
+              <span className="mt-0.5 hidden shrink-0 sm:block" aria-hidden>
                 {item.done
                   ? <Check size={16} className="text-secure" />
                   : item.skipped
@@ -82,7 +83,7 @@ export default function Setup() {
                 <p className="mt-0.5 text-[13px] text-muted">{item.description}</p>
               </div>
               {!item.done ? (
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1 self-end sm:self-start">
                   {editable && !item.required ? (
                     <Button variant="ghost" size="sm" onClick={() => skip.mutate({ key: item.key, skipped: true })}>
                       Skip for now
