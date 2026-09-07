@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { prisma } from '../db.js';
 import { whereFrom } from '../lib/whereFrom.js';
+import { alertOnNewSignIn } from './loginAlerts.js';
 
 /**
  * The session store: one row per sign-in, checked on every request.
@@ -86,12 +87,19 @@ export async function createSession(input: CreateSessionInput): Promise<string> 
   });
 
   if (request) {
-    void whereFrom(request)
+    const settled = whereFrom(request)
       .then((w) => prisma.session.update({
         where: { id: row.id },
         data: { ip: w.ip, city: w.city, region: w.region, country: w.country, isp: w.isp },
       }))
+      // Only once the place is known — judging "new country" before it lands would call
+      // every sign-in unfamiliar.
+      .then(() => alertOnNewSignIn(row.id))
       .catch(() => undefined);
+    // Fire-and-forget in production: neither the lookup nor an alert may hold up the
+    // door. Awaited under test, or the work outlives its request and lands in the middle
+    // of the next test's reset.
+    if (process.env.NODE_ENV === 'test') await settled;
   }
   return row.id;
 }

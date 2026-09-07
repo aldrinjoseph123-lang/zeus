@@ -260,6 +260,16 @@ devices* is the same list narrowed to you, with one button to sign out everywher
 else. Ending someone else's session needs the same permission as deactivating them,
 and every such sign-out is audited.
 
+**Was this you?** A sign-in from a device or a country the account has not used in
+the last 90 days alerts the person *and* the administrators — one message per sign-in,
+naming the device, the place and the time, linking to My account where it can be
+ended. Being told about your own account is not something the notification rules can
+switch off. Ordinary sign-ins are silent: a first sign-in has nothing to compare
+against, a familiar laptop in a familiar country says nothing, and an administrator
+previewing the portal is somebody looking on purpose, not a stranger arriving. Portal
+users have no account inside Zeus to receive an in-app notice, so they are mailed
+directly and the administrators get the in-app alert.
+
 **On upgrade** nobody is signed out: a cookie issued before this existed carries no
 session id and is honoured until it expires, and the next sign-in gets a row. Ended
 sessions are kept 30 days — long enough to still show where someone signed in from

@@ -55,7 +55,7 @@ async function sub(accountId: string, data: Partial<{ status: string; endDate: D
   } });
 }
 
-type Row = { reference: string; description: string; product: string | null; quantity: number; unit: string; endDate: string; daysLeft: number; status: string };
+type Row = Record<string, unknown> & { reference: string; description: string; product: string | null; quantity: number; unit: string; endDate: string; daysLeft: number; status: string };
 
 describe('portal: the customer screen', () => {
   it('shows the account\'s live services, allowlisted, soonest renewal first', async () => {
@@ -74,8 +74,12 @@ describe('portal: the customer screen', () => {
     assert.equal(rows[1].quantity, 40);
     assert.equal(rows[1].unit, 'endpoint');
     assert.equal(rows[1].daysLeft, 90);
-    // No economics.
-    assert.doesNotMatch(JSON.stringify(rows), /unitCost|unitPrice|termValue|120|200|vendor|ownerId/);
+    // No economics. Assert on the field names, not on the digits: bare numbers matched
+    // any id that happened to contain them, which passed by luck rather than by rule.
+    const keys = new Set(rows.flatMap((r) => Object.keys(r)));
+    for (const banned of ['unitCost', 'unitPrice', 'termValue', 'vendorId', 'vendor', 'ownerId', 'accountId']) {
+      assert.equal(keys.has(banned), false, `${banned} must not reach a customer`);
+    }
   });
 
   it('shows LAPSED for 30 days then drops it; never CANCELLED or RENEWED', async () => {
