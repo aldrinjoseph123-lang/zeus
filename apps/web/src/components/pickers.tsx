@@ -63,9 +63,29 @@ export function Lookup<T extends { id: string }>({
       const inside = ref.current?.contains(target) || menuRef.current?.contains(target);
       if (!inside) setOpen(false);
     };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    // Capture, not bubble: Modal stops mousedown propagating so a click on the overlay
+    // does not reach the form. On the bubble phase that also swallowed this listener, so
+    // clicking another field left the menu open on top of the fields underneath it.
+    document.addEventListener('mousedown', onClick, true);
+    return () => document.removeEventListener('mousedown', onClick, true);
   }, []);
+
+  /**
+   * Escape closes the menu, not whatever is behind it. The menu is the innermost layer,
+   * so it takes the key first (capture) and stops it — otherwise the modal's own Escape
+   * handler fires and the half-filled form is gone.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+      inputRef.current?.blur();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open]);
 
   const { data, isFetching } = useQuery({
     queryKey: ['lookup', endpoint, debounced, extraParams],
