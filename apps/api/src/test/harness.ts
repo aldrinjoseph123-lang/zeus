@@ -75,6 +75,9 @@ export function migrateTestDatabase(): void {
 }
 
 export async function resetDatabase(): Promise<void> {
+  // The session cache would otherwise vouch for rows this truncate is about to delete.
+  const { clearSessionCache } = await import('../auth/sessionStore.js');
+  clearSessionCache();
   const tables = await allTables();
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE ${tables.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`,
@@ -141,12 +144,16 @@ export async function seedFixtures(app: FastifyInstance): Promise<Fixtures> {
   // suite should be protecting rather than switching off. One test still logs in for
   // real, which is what proves the endpoint itself.
   const { SESSION_COOKIE, signSessionToken } = await import('../auth/session.js');
+  const { createSession } = await import('../auth/sessionStore.js');
 
   const make = async (name: string, roleName: string, teamId: string | null) => {
     const user = await prisma.user.create({
       data: { email: `${name}@test.local`, name, passwordHash, roleId: roles.get(roleName)!, teamId },
     });
-    const token = await signSessionToken(user.id, 12);
+    // A real session row behind every fixture cookie, so the whole suite exercises the
+    // path production uses rather than the legacy no-sid one kept for the upgrade.
+    const sid = await createSession({ kind: 'internal', userId: user.id, expiresAt: new Date(Date.now() + 12 * 3_600_000) });
+    const token = await signSessionToken(user.id, 12, sid);
     return { id: user.id, email: user.email, name, roleName, cookie: `${SESSION_COOKIE}=${token}` };
   };
 

@@ -220,6 +220,31 @@ Each event (deal won, deal lost, stale account, stuck deal, registration expirin
 overdue task, backup failed, target at risk…) has its own row where you choose the
 channels, the threshold in days, and who receives it.
 
+### Sessions
+
+Every sign-in — staff and portal alike — creates a `Session` row, and the session id
+travels inside the cookie. Each request checks that the row is still live, which is
+what makes ending a session mean something: before this, a signed cookie was good
+until it expired, so signing out only deleted the browser's copy and deactivating
+someone left their open tabs working.
+
+A session ends when the person signs out, when they change their password (their
+*other* sessions go, not the one doing it), when an administrator deactivates them or
+resets their password, or when portal access is revoked. Revoking is final: restoring
+access does not bring an old session back, the person signs in again.
+
+**Cost and timing.** The check is a primary-key read behind a 60-second in-process
+cache, and `lastSeenAt` is written at most once every five minutes per session, so an
+open tab does not turn reads into writes. Anything Zeus revokes itself drops that
+cache entry immediately, so it takes effect on the very next request; a change made
+directly in the database takes up to a minute to be noticed. (If Zeus is ever run as
+more than one app container, that minute also applies between containers.)
+
+**On upgrade** nobody is signed out: a cookie issued before this existed carries no
+session id and is honoured until it expires, and the next sign-in gets a row. Ended
+sessions are kept 30 days — long enough to still show where someone signed in from
+last week — then pruned with the nightly 03:00 job.
+
 ### Email log
 
 Every email Zeus sends is recorded — quotes, invoices, purchase orders, portal

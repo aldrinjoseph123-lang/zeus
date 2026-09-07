@@ -12,6 +12,7 @@ import { ratesAreStale, refreshRates } from '../services/fx.js';
 import { takePipelineSnapshot, takeWeeklyDealSnapshot } from '../services/snapshots.js';
 import { logSystem, pruneSystemLogs } from '../services/systemLog.js';
 import { pruneEmailLog } from '../routes/emailLog.js';
+import { pruneSessions } from '../auth/sessionStore.js';
 import { alertOnTransitions } from '../services/healthMonitor.js';
 import { componentStatuses, recordComponentChecks } from '../services/systemStatus.js';
 import { recordResourceSample, pruneResourceSamples } from '../services/resources.js';
@@ -500,7 +501,10 @@ export function startScheduler(): void {
     // Email history is a business record: a year of rows, but the stored copy of a
     // failed message is dropped after a month — by then it is either resent or moot.
     const mail = await pruneEmailLog(365, 30);
-    if (removed || count || resources || mail) console.log(`[scheduler] pruned ${removed} log + ${count} health + ${resources} resource + ${mail} email rows`);
+    // Ended sessions are kept a month so the screen can still say where someone signed
+    // in from last week; after that the row has nothing left to tell anyone.
+    const sessions = await pruneSessions(30);
+    if (removed || count || resources || mail || sessions) console.log(`[scheduler] pruned ${removed} log + ${count} health + ${resources} resource + ${mail} email + ${sessions} session rows`);
   }), { timezone: TZ }));
 
   // Daily data-integrity sweep. 05:30 GST — after the 01:00-05:00 backup window has

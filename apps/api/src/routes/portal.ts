@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, limit } from '../lib/http.js';
+import { revokeSession } from '../auth/sessionStore.js';
 import { loginWithPassword, requestLink, setPasswordFromLink } from '../portal/auth.js';
-import { clearPortalSession, issuePortalSession, verifyViewAsToken } from '../portal/session.js';
+import { clearPortalSession, issuePortalSession, portalClaimsFromRequest, verifyViewAsToken } from '../portal/session.js';
 import { partnerRegistrations } from '../portal/registrations.js';
 import { brandingFor } from '../portal/branding.js';
 import { customerSubscriptions } from '../portal/subscriptions.js';
@@ -40,7 +41,7 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     // Wrong shape, wrong password, unknown address, locked out: one answer.
     const result = parsed.success ? await loginWithPassword(parsed.data.email, parsed.data.password) : ({ ok: false } as const);
     if (!result.ok) return reply.status(401).send({ error: 'Email or password is incorrect.' });
-    await issuePortalSession(reply, result.portalUserId);
+    await issuePortalSession(reply, result.portalUserId, undefined, request);
     await audit({ user: null, action: 'login', entity: 'PortalUser', entityId: result.portalUserId, summary: `portal sign-in ${parsed.success ? parsed.data.email : ''}`, ip: clientIp(request) });
     return { ok: true };
   });
@@ -50,12 +51,15 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     const parsed = z.object({ token: z.string().min(20) }).safeParse(request.body);
     const claim = parsed.success ? await verifyViewAsToken(parsed.data.token) : null;
     if (!claim) throw badRequest('This preview link is not valid any more. Open View as again from Settings.');
-    await issuePortalSession(reply, claim.portalUserId, claim.admin);
+    await issuePortalSession(reply, claim.portalUserId, claim.admin, request);
     await audit({ user: null, action: 'login', entity: 'PortalUser', entityId: claim.portalUserId, summary: `portal preview by ${claim.admin.name}`, ip: clientIp(request) });
     return { ok: true };
   });
 
-  app.post('/api/portal/auth/logout', async (_request, reply) => {
+  app.post('/api/portal/auth/logout', async (request, reply) => {
+    // Same as the internal side: end the row, not only the browser's copy.
+    const claims = await portalClaimsFromRequest(request);
+    if (claims?.sessionId) await revokeSession(claims.sessionId, 'self');
     clearPortalSession(reply);
     return { ok: true };
   });

@@ -8,7 +8,8 @@ import { audit } from '../lib/audit.js';
 import { closeChallenge, openChallenge, readChallenge, verifySecondFactor } from '../services/twoFactor.js';
 import * as twoFactor from '../services/twoFactor.js';
 import { badRequest, clientIp, HttpError } from '../lib/http.js';
-import { clearSession, issueSession } from '../auth/session.js';
+import { revokeAllFor, revokeSession } from '../auth/sessionStore.js';
+import { clearSession, issueSession, sessionIdFromRequest } from '../auth/session.js';
 import { recordLogin } from '../services/loginTelemetry.js';
 import { authorizeUrl, adminConsentUrl, exchangeCode, verifyState } from '../auth/entra.js';
 import { getM365, markM365 } from '../services/graph.js';
@@ -82,7 +83,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-    await issueSession(reply, user.id);
+    await issueSession(reply, user.id, request);
     await audit({ action: 'login', entity: 'User', entityId: user.id, summary: `${user.name} signed in with a password`, ip: clientIp(request) });
     recordLogin(user, clientIp(request), request.headers['user-agent']);
     return { ok: true };
@@ -110,7 +111,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!user.isActive) throw new HttpError(401, 'That account is no longer active.');
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-    await issueSession(reply, user.id);
+    await issueSession(reply, user.id, request);
     await audit({
       action: 'login', entity: 'User', entityId: user.id,
       summary: `${user.name} signed in with a password and ${factor === 'recovery' ? 'a recovery code' : 'an authenticator code'}`,
@@ -122,7 +123,11 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true, usedRecoveryCode: factor === 'recovery' };
   });
 
-  app.post('/api/auth/logout', async (_request, reply) => {
+  app.post('/api/auth/logout', async (request, reply) => {
+    // Ending the row is what makes this a real sign-out: clearing the cookie alone
+    // leaves a copied token working until it expires.
+    const sid = await sessionIdFromRequest(request);
+    if (sid) await revokeSession(sid, 'self');
     clearSession(reply);
     return { ok: true };
   });
@@ -156,7 +161,10 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
       where: { id: user.id },
       data: { passwordHash: await bcrypt.hash(parsed.data.newPassword, 10) },
     });
-    await audit({ user: request.user, action: 'update', entity: 'User', entityId: user.id, summary: 'Changed own password', ip: clientIp(request) });
+    // A new password ends the old sessions — except this one, so the person changing it
+    // is not signed out by their own success.
+    const ended = await revokeAllFor({ userId: user.id }, 'password_change', await sessionIdFromRequest(request));
+    await audit({ user: request.user, action: 'update', entity: 'User', entityId: user.id, summary: `Changed own password${ended ? ` · signed out ${ended} other session(s)` : ''}`, ip: clientIp(request) });
     return { ok: true };
   });
 
@@ -213,7 +221,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!user.isActive) return fail('That account is deactivated.');
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-    await issueSession(reply, user.id);
+    await issueSession(reply, user.id, request);
     await audit({ action: 'login', entity: 'User', entityId: user.id, summary: `${user.name} signed in with Microsoft`, ip: clientIp(request) });
     recordLogin(user, clientIp(request), request.headers['user-agent']);
     return reply.redirect(`${env.APP_URL}${state.nextPath}`);

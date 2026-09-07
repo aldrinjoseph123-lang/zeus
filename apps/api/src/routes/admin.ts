@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { audit, diff } from '../lib/audit.js';
+import { revokeAllFor } from '../auth/sessionStore.js';
 import { badRequest, clientIp, listParams, notFound, paged, patchOf, requirePermission } from '../lib/http.js';
 import { MODULES, PROTECTED_FIELDS, SYSTEM_ROLES, type PermissionMap } from '../auth/rbac.js';
 import { getSettings, invalidateSettings, setSetting, SETTING_DEFAULTS } from '../lib/settings.js';
@@ -121,6 +122,10 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       data: { ...data, ...(data.email ? { email: data.email.toLowerCase().trim() } : {}), ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) },
       select: { id: true, email: true, name: true, isActive: true, role: { select: { name: true } } },
     });
+    // Switched off, or given a new password by an administrator: the open sessions go
+    // with it. Without this they stayed signed in until their cookie expired.
+    if (data.isActive === false) await revokeAllFor({ userId: id }, 'deactivated');
+    else if (password) await revokeAllFor({ userId: id }, 'password_change');
     await audit({
       user: request.user, action: 'update', entity: 'User', entityId: id, summary: user.name,
       changes: diff(existing as unknown as Record<string, unknown>, { ...data } as Record<string, unknown>),
@@ -134,6 +139,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (id === request.user.id) throw badRequest('You cannot deactivate your own account.');
     // Deactivate, never delete — audit history and record ownership must survive.
     await prisma.user.update({ where: { id }, data: { isActive: false } });
+    await revokeAllFor({ userId: id }, 'deactivated');
     await audit({ user: request.user, action: 'update', entity: 'User', entityId: id, summary: 'Deactivated', ip: clientIp(request) });
     return { ok: true };
   });

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { audit } from '../lib/audit.js';
+import { revokeAllFor } from '../auth/sessionStore.js';
 import { badRequest, clientIp, notFound, requirePermission } from '../lib/http.js';
 import { issueLinkFor } from '../portal/auth.js';
 import { grantPortalAccess, PORTAL_USER_SELECT, shapePortalUser } from '../portal/grant.js';
@@ -154,6 +155,9 @@ export default async function portalAdminRoutes(app: FastifyInstance): Promise<v
       const user = await prisma.portalUser.findUnique({ where: { id } });
       if (!user) throw notFound('Portal user not found.');
       const updated = await prisma.portalUser.update({ where: { id }, data: { disabledAt: disabledAt() }, select });
+      // Revoking access ends the sessions they are holding right now, not only their
+      // next sign-in attempt.
+      if (action === 'revoke') await revokeAllFor({ portalUserId: id }, 'portal_revoked');
       await audit({ user: request.user, action: 'update', entity: 'PortalUser', entityId: id, summary: `Portal access ${action === 'revoke' ? 'revoked for' : 'restored for'} ${user.email}`, ip: clientIp(request) });
       return shape(updated);
     });

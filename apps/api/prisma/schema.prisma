@@ -71,6 +71,8 @@ model User {
   scheduledReports          ScheduledReport[]
   accessRequests            AccessRequest[]
   emailLogs                 EmailLog[]
+  sessions                  Session[]     @relation("UserSessions")
+  viewedSessions            Session[]     @relation("ViewedSessions")
 
   /// TOTP shared secret, AES-256-GCM at rest. Null until the user enrols.
   totpSecret    String?
@@ -1522,6 +1524,7 @@ model PortalUser {
   linkExpiresAt  DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  sessions      Session[]
 
   @@index([email])
 }
@@ -1632,4 +1635,43 @@ model EmailLog {
   @@index([status, createdAt])
   @@index([entity, entityId])
   @@index([kind, createdAt])
+}
+
+/// One row per sign-in, for staff and portal users alike.
+///
+/// The cookie proves who you are; this row proves you are still welcome. Without it a
+/// signed token was good until it expired, so signing out only deleted the browser's
+/// copy and deactivating someone left their open tabs working. With it, revoking is
+/// real: the next request that presents a revoked session is refused.
+model Session {
+  id           String    @id @default(cuid())
+  /// internal | portal
+  kind         String
+  userId       String?
+  user         User?       @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+  portalUserId String?
+  portalUser   PortalUser? @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  /// A portal preview: the admin behind the session, so the list can say whose it is.
+  viewingAsId  String?
+  viewingAs    User?       @relation("ViewedSessions", fields: [viewingAsId], references: [id])
+
+  createdAt  DateTime @default(now())
+  /// Touched at most every few minutes, not on every request.
+  lastSeenAt DateTime @default(now())
+  /// Mirrors the token's own expiry, so the row can be judged without decoding it.
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  /// self | admin | password_change | deactivated | portal_revoked
+  revokedBy  String?
+
+  ip      String?
+  device  String?
+  city    String?
+  region  String?
+  country String?
+  isp     String?
+
+  @@index([userId, revokedAt, lastSeenAt])
+  @@index([portalUserId, revokedAt, lastSeenAt])
+  @@index([expiresAt])
 }

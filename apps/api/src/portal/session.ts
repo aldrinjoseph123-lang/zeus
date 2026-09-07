@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../env.js';
 import { getSetting } from '../lib/settings.js';
+import { createSession, sessionIsLive } from '../auth/sessionStore.js';
 
 /**
  * The portal's own session cookie. Same signing secret as the internal app but a
@@ -20,10 +21,10 @@ const VIEW_AS_ISSUER = 'zeus-portal-view-as';
 const secret = new TextEncoder().encode(env.APP_SECRET);
 
 export interface ViewingAs { userId: string; name: string }
-export interface PortalClaims { portalUserId: string; viewingAs?: ViewingAs }
+export interface PortalClaims { portalUserId: string; viewingAs?: ViewingAs; sessionId?: string }
 
-export async function signPortalToken(portalUserId: string, minutes: number, viewingAs?: ViewingAs): Promise<string> {
-  const jwt = new SignJWT({ sub: portalUserId, ...(viewingAs ? { act: viewingAs } : {}) })
+export async function signPortalToken(portalUserId: string, minutes: number, viewingAs?: ViewingAs, sid?: string): Promise<string> {
+  const jwt = new SignJWT({ sub: portalUserId, ...(viewingAs ? { act: viewingAs } : {}), ...(sid ? { sid } : {}) })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setIssuer(ISSUER)
@@ -31,10 +32,15 @@ export async function signPortalToken(portalUserId: string, minutes: number, vie
   return jwt.sign(secret);
 }
 
-export async function issuePortalSession(reply: FastifyReply, portalUserId: string, viewingAs?: ViewingAs): Promise<void> {
+export async function issuePortalSession(reply: FastifyReply, portalUserId: string, viewingAs?: ViewingAs, request?: FastifyRequest): Promise<void> {
   // A preview is short by design; a real session runs to the configured idle time.
   const minutes = viewingAs ? 30 : Number(await getSetting<number>('portal.session.idleMinutes', 1440));
-  const token = await signPortalToken(portalUserId, minutes, viewingAs);
+  // A preview is a session too — listed and revocable, attributed to the admin behind it.
+  const sid = await createSession({
+    kind: 'portal', portalUserId, viewingAsId: viewingAs?.userId,
+    expiresAt: new Date(Date.now() + minutes * 60_000), request,
+  });
+  const token = await signPortalToken(portalUserId, minutes, viewingAs, sid);
   reply.setCookie(PORTAL_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -54,8 +60,16 @@ export async function portalClaimsFromRequest(request: FastifyRequest): Promise<
   try {
     const { payload } = await jwtVerify(token, secret, { issuer: ISSUER });
     if (typeof payload.sub !== 'string') return null;
+    // As on the internal side: a token from before sessions existed still works until
+    // it expires, but one carrying a session id must have a live row behind it.
+    const sid = typeof payload.sid === 'string' ? payload.sid : undefined;
+    if (sid && !(await sessionIsLive(sid))) return null;
     const act = payload.act as ViewingAs | undefined;
-    return { portalUserId: payload.sub, viewingAs: act && typeof act.userId === 'string' ? { userId: act.userId, name: String(act.name ?? '') } : undefined };
+    return {
+      portalUserId: payload.sub,
+      viewingAs: act && typeof act.userId === 'string' ? { userId: act.userId, name: String(act.name ?? '') } : undefined,
+      sessionId: sid,
+    };
   } catch {
     return null;
   }

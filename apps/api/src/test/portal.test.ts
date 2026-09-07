@@ -171,8 +171,13 @@ describe('portal: the door closes on the next request', () => {
     assert.equal((await request(app, fx.admin).post(`/api/portal-admin/users/${portalUserId}/revoke`, {})).status, 200);
     assert.equal((await request(app, asPortal(cookie)).get('/api/portal/me')).status, 401, 'same cookie, now refused');
 
+    // Restoring access does not resurrect the session that was deliberately ended —
+    // revoking now closes the row, so they sign in again. The old cookie stays dead.
     assert.equal((await request(app, fx.admin).post(`/api/portal-admin/users/${portalUserId}/restore`, {})).status, 200);
-    assert.equal((await request(app, asPortal(cookie)).get('/api/portal/me')).status, 200);
+    assert.equal((await request(app, asPortal(cookie)).get('/api/portal/me')).status, 401, 'the revoked session stays revoked');
+    const fresh = await signIn(email, 'correct-horse-battery-staple');
+    assert.equal(fresh.status, 200, 'but signing in again works');
+    assert.equal((await request(app, asPortal(fresh.cookie)).get('/api/portal/me')).status, 200);
   });
 
   it('a customer qualifies only while a subscription is live', async () => {
