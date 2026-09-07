@@ -70,6 +70,7 @@ model User {
   pipelineSnapshots         PipelineSnapshot[] @relation("SnapshotOwner")
   scheduledReports          ScheduledReport[]
   accessRequests            AccessRequest[]
+  emailLogs                 EmailLog[]
 
   /// TOTP shared secret, AES-256-GCM at rest. Null until the user enrols.
   totpSecret    String?
@@ -1592,4 +1593,43 @@ model Delivery {
 
   @@index([entitlementId])
   @@index([status, scheduledFor])
+}
+
+/// Every email Zeus sends, recorded by sendMail itself so no caller can forget.
+///
+/// Status is what Microsoft actually tells us: Graph accepts a message (202) or
+/// refuses it. Accepted is not delivered — there is no delivery receipt on this API —
+/// so the column says SENT, meaning handed over, and never claims more than that.
+///
+/// The body is kept only as a short preview. A failure keeps the whole payload as
+/// well, so the send can be replayed exactly; that payload is dropped once it goes
+/// through, and pruned with the row.
+model EmailLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  to          String[]
+  cc          String[]
+  subject     String
+  preview     String?
+  /// quote | invoice | purchase_order | portal_link | registration | notification | scheduled_report | test
+  kind        String   @default("other")
+  /// SENT (Graph accepted it) | FAILED
+  status      String
+  error       String?
+  /// The record it belongs to, so the log links back to the quote or deal.
+  entity      String?
+  entityId    String?
+  /// Who pressed send. Null for the scheduler and other background sends.
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  attachments String[]
+  /// Only on a failure: the exact message, for a faithful resend. Cleared once resent.
+  payload     Json?
+  /// Set on the row created by a resend, pointing at the failure it replaced.
+  resentFromId String?
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([entity, entityId])
+  @@index([kind, createdAt])
 }

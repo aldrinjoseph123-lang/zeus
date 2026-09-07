@@ -117,6 +117,7 @@ export default async function integrationRoutes(app: FastifyInstance): Promise<v
   app.post('/api/integrations/microsoft365/test-email', { preHandler: requirePermission('integrations', 'update') }, async (request) => {
     const { to } = z.object({ to: z.string().email() }).parse(request.body);
     await sendMail({
+      log: { kind: 'test', userId: request.user.id },
       to: [to],
       subject: '[Zeus] Test message',
       html: emailTemplate(

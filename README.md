@@ -220,7 +220,28 @@ Each event (deal won, deal lost, stale account, stuck deal, registration expirin
 overdue task, backup failed, target at risk…) has its own row where you choose the
 channels, the threshold in days, and who receives it.
 
-### Backups to OneDrive
+### Email log
+
+Every email Zeus sends is recorded — quotes, invoices, purchase orders, portal
+sign-in links, partner registration mail, alerts and scheduled reports. Settings →
+Email log lists them newest first, filtered by status or kind and searchable by
+recipient. The row is written by `sendMail()` itself, so a new caller cannot forget
+to log and an old one cannot drift.
+
+**What "sent" means.** Microsoft Graph's `sendMail` returns *202 Accepted*: it has
+taken the message. There is no delivery receipt on that API, so the log says **Sent**
+(handed over) or **Failed** (refused, with the exact error) and never claims a
+message was delivered or read. Bounce detection would need `Mail.Read` on the sending
+mailbox and is deliberately not built.
+
+**What is kept.** Recipients, subject, kind, who pressed send, attachment filenames,
+and the first 300 characters of the body as plain text — enough to know what went,
+without storing customer correspondence twice. A failure additionally keeps the whole
+message so it can be replayed exactly; **Send it again** on the failed row replays it
+and then drops that copy. Rows are kept a year; stored copies of failures are dropped
+after a month. Both run in the nightly 03:00 prune.
+
+## Backups to OneDrive
 
 Set the backup account and folder in Settings → Microsoft 365, then turn on
 `backup.enabled` and set `backup.cron` in Settings → Backups. OneDrive is one of three

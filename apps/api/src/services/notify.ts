@@ -222,6 +222,7 @@ export async function notify(input: NotifyInput): Promise<void> {
       const to = users.map((u) => u.email).filter(Boolean);
       if (to.length) {
         await sendMail({
+          log: { kind: 'notification', entity: 'Notification', entityId: input.event },
           to,
           subject: `[Zeus] ${input.title}`,
           html: emailTemplate(input.title, input.body, absoluteLink, input.facts),
@@ -258,6 +259,7 @@ export async function sendPendingDigests(): Promise<number> {
     if (!items.length || !user.email) continue;
     try {
       await sendMail({
+        log: { kind: 'notification', userId: user.id },
         to: [user.email],
         subject: `[Zeus] ${items.length} update${items.length === 1 ? '' : 's'} while you were away`,
         html: digestTemplate(items),

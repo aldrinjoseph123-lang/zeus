@@ -50,6 +50,7 @@ export async function mailPartnerAboutRegistration(reg: RegistrationForMail): Pr
 
   try {
     await sendMail({
+      log: { kind: 'registration', entity: 'Registration', entityId: reg.id },
       to: [email],
       subject: title,
       html: emailTemplate(title, body, undefined, [
@@ -87,6 +88,7 @@ export async function mailPartnerRegistrationApproved(reg: RegistrationForMail):
 
   try {
     await sendMail({
+      log: { kind: 'registration', entity: 'Registration', entityId: reg.id },
       to: [email],
       subject: title,
       html: emailTemplate(title, body, undefined, [

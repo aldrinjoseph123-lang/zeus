@@ -42,7 +42,10 @@ export async function issueLinkFor(portalUserId: string): Promise<{ ok: true; to
   const title = `Set your ${company} portal password`;
   const body = `Use the button below to choose a password for the ${company} portal. The link works once and expires in ${minutes} minutes. If you did not ask for this, ignore it — nothing changes until the link is used.`;
   try {
-    await sendMail({ to: [session.email], subject: title, html: emailTemplate(title, body, url, undefined, 'SET PASSWORD') });
+    await sendMail({
+      log: { kind: 'portal_link', entity: 'PortalUser', entityId: portalUserId },
+      to: [session.email], subject: title, html: emailTemplate(title, body, url, undefined, 'SET PASSWORD'),
+    });
   } catch (err) {
     return { ok: false, reason: `Could not send the mail: ${(err as Error).message}` };
   }

@@ -1,15 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, Bell, Building2, Globe, CalendarClock, Check, ChevronDown, Database, GitBranch, HardDrive, KeyRound, ListTree, Plug, ScrollText,
-  ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, Plus, RefreshCw, RotateCcw, ShieldCheck, X,
+  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, Globe, HardDrive, KeyRound, ListTree, Mail, Plug, Plus, RefreshCw, RotateCcw, ScrollText, ShieldCheck, ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, X,
 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { dateTime, money, quarterOf, relative } from '../lib/format';
 import {
-  Avatar, Badge, Button, Card, CardHeader, Checkbox, ConfirmDialog, CopyButton, cx, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal, PageHeader, ProgressBar, SearchInput, Select, Textarea, useToast,
+  Avatar, Badge, Button, Card, CardHeader, Checkbox, ConfirmDialog, CopyButton, cx, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal, PageHeader, ProgressBar, SearchInput, Select, Textarea, useDebounced, useToast,
 } from '../components/ui';
 import type { Column } from '../components/ui';
 import { Toolbar } from '../components/pickers';
@@ -34,6 +33,7 @@ const SECTIONS = [
   { path: 'backups', label: 'Backups', icon: HardDrive, module: 'backups' },
   { path: 'audit', label: 'Audit trail', icon: ScrollText, module: 'audit' },
   { path: 'status', label: 'System status', icon: Activity, module: 'audit' },
+  { path: 'email-log', label: 'Email log', icon: Mail, module: 'audit' },
   { path: 'logs', label: 'System log', icon: Terminal, module: 'audit' },
   { path: 'profile', label: 'My account', icon: KeyRound, module: '*' },
 ];
@@ -108,6 +108,7 @@ export default function Settings() {
             section.path === 'backups' ? <BackupsSection /> :
             section.path === 'audit' ? <AuditSection /> :
             section.path === 'status' ? <StatusSection /> :
+            section.path === 'email-log' ? <EmailLogSection /> :
             section.path === 'logs' ? <SystemLogSection /> :
             <ProfileSection />}
         </div>
@@ -2862,6 +2863,152 @@ function StatusSection() {
         </dl>
       </Card>
     </div>
+  );
+}
+
+// ── email log ───────────────────────────────────────────────────────────────────
+
+type EmailRow = {
+  id: string; createdAt: string; to: string[]; cc: string[]; subject: string; preview: string | null;
+  kind: string; status: string; error: string | null; entity: string | null; entityId: string | null;
+  attachments: string[]; resentFromId: string | null; user: { id: string; name: string } | null;
+};
+
+const MAIL_KINDS: Record<string, string> = {
+  quote: 'Quote', invoice: 'Invoice', purchase_order: 'Purchase order', portal_link: 'Portal link',
+  registration: 'Registration', notification: 'Alert', scheduled_report: 'Scheduled report', test: 'Test', other: 'Other',
+};
+/** Where a row's record lives, and what to call it, so the log links back to what the email was about. */
+const MAIL_LINK: Record<string, { path: string; label: string }> = {
+  Quote: { path: '/quotes', label: 'quote' },
+  Invoice: { path: '/invoices', label: 'invoice' },
+  PurchaseOrder: { path: '/purchase-orders', label: 'purchase order' },
+  Deal: { path: '/deals', label: 'deal' },
+};
+
+function EmailLogSection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState('');
+  const [kind, setKind] = useState('');
+  const [search, setSearch] = useState('');
+  const debounced = useDebounced(search, 300);
+  const [open, setOpen] = useState<EmailRow | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['email-log', page, status, kind, debounced],
+    queryFn: () => api.get<{ data: EmailRow[]; total: number; totalPages: number }>(`/email-log${qs({ page, status, kind, search: debounced, pageSize: 50 })}`),
+    refetchInterval: 60_000,
+  });
+  const { data: summary } = useQuery({
+    queryKey: ['email-log-summary'],
+    queryFn: () => api.get<{ last30: { sent: number; failed: number }; total: number }>('/email-log/summary'),
+    refetchInterval: 60_000,
+  });
+
+  const resend = useMutation({
+    mutationFn: (id: string) => api.post(`/email-log/${id}/resend`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['email-log'] });
+      void queryClient.invalidateQueries({ queryKey: ['email-log-summary'] });
+      setOpen(null);
+      toast.push('Sent again.');
+    },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not send it again.', 'error'),
+  });
+
+  return (
+    <Card>
+      <CardHeader
+        title="Email log"
+        subtitle={
+          summary
+            ? `${summary.last30.sent} sent and ${summary.last30.failed} failed in the last 30 days · ${summary.total} all time. "Sent" means Microsoft accepted the message — Graph reports no delivery receipt.`
+            : 'Every email Zeus has sent, and what happened to it.'
+        }
+      />
+      <Toolbar>
+        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Recipient, subject or text…" className="w-full sm:w-72" />
+        <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} placeholder="Sent and failed"
+          options={[{ value: 'SENT', label: 'Sent' }, { value: 'FAILED', label: 'Failed' }]} className="w-[150px]" />
+        <Select value={kind} onChange={(e) => { setKind(e.target.value); setPage(1); }} placeholder="Every kind"
+          options={Object.entries(MAIL_KINDS).map(([value, label]) => ({ value, label }))} className="w-[170px]" />
+      </Toolbar>
+
+      {isLoading ? (
+        <Loading />
+      ) : (data?.data ?? []).length === 0 ? (
+        <EmptyState
+          title={status || kind || debounced ? 'Nothing matches' : 'No email sent yet'}
+          message={status || kind || debounced
+            ? 'No email matches these filters. Clear them to see everything.'
+            : 'Quotes, invoices, portal links and alerts appear here the moment Zeus sends one.'}
+          icon={<Mail size={22} />}
+        />
+      ) : (
+        <>
+          <ol className="max-h-[560px] overflow-y-auto">
+            {(data?.data ?? []).map((e) => (
+              <li key={e.id} className="flex items-start gap-3 border-b border-line px-4 py-2.5">
+                <Badge tone={e.status === 'FAILED' ? 'accent' : 'secure'}>{e.status === 'FAILED' ? 'Failed' : 'Sent'}</Badge>
+                <button type="button" onClick={() => setOpen(e)} className="min-w-0 flex-1 text-left">
+                  <p className="truncate text-[13px] font-semibold">{e.subject}</p>
+                  <p className="truncate text-[12px] text-muted">
+                    to {e.to.join(', ')}{e.attachments.length ? ` · ${e.attachments.length} attachment${e.attachments.length === 1 ? '' : 's'}` : ''}
+                    {e.resentFromId ? ' · resent' : ''}
+                  </p>
+                  {e.status === 'FAILED' && e.error ? <p className="mt-0.5 truncate text-[12px] text-accent">{e.error}</p> : null}
+                </button>
+                <div className="shrink-0 text-right">
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-muted">{MAIL_KINDS[e.kind] ?? e.kind}</p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">{dateTime(e.createdAt)}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="flex items-center justify-between border-t border-line px-3 py-2">
+            <span className="text-xs text-muted">{data?.total ?? 0} email{(data?.total ?? 0) === 1 ? '' : 's'}</span>
+            <div className="flex gap-1">
+              <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
+              <Button size="sm" variant="ghost" disabled={page >= (data?.totalPages ?? 1)} onClick={() => setPage(page + 1)}>Next</Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {open ? (
+        <Modal open onClose={() => setOpen(null)} title={open.subject} subtitle={`${MAIL_KINDS[open.kind] ?? open.kind} · ${dateTime(open.createdAt)}`}>
+          <div className="flex flex-col gap-3 text-[13px]">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Field label="To"><p className="break-words">{open.to.join(', ')}</p></Field>
+              {open.cc.length ? <Field label="Cc"><p className="break-words">{open.cc.join(', ')}</p></Field> : null}
+              <Field label="Sent by"><p>{open.user?.name ?? 'Zeus, on a schedule'}</p></Field>
+              <Field label="Status">
+                <p className={open.status === 'FAILED' ? 'text-accent' : 'text-secure'}>
+                  {open.status === 'FAILED' ? 'Refused by Microsoft' : 'Accepted by Microsoft'}
+                </p>
+              </Field>
+            </div>
+            {open.attachments.length ? <Field label="Attachments"><p>{open.attachments.join(', ')}</p></Field> : null}
+            {open.entity && MAIL_LINK[open.entity] && open.entityId ? (
+              <Link to={`${MAIL_LINK[open.entity].path}/${open.entityId}`} className="text-[13px] underline underline-offset-4">
+                Open the {MAIL_LINK[open.entity].label} this was about
+              </Link>
+            ) : null}
+            {open.preview ? <Field label="What it said"><p className="text-muted">{open.preview}…</p></Field> : null}
+            {open.error ? <Field label="Why it failed"><p className="break-words text-accent">{open.error}</p></Field> : null}
+            {open.status === 'FAILED' && can('audit', 'update') ? (
+              <div className="flex items-center gap-2 border-t border-line pt-3">
+                <Button size="sm" variant="accent" loading={resend.isPending} onClick={() => resend.mutate(open.id)}>Send it again</Button>
+                <span className="text-[12px] text-muted">Sends the original message exactly as it was.</span>
+              </div>
+            ) : null}
+          </div>
+        </Modal>
+      ) : null}
+    </Card>
   );
 }
 

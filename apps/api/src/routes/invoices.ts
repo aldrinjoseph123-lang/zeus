@@ -382,6 +382,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
     const subject = parsed.data.subject ?? `${label} ${fresh!.number} — ${fresh!.account.name}`;
 
     await sendMail({
+      log: { kind: 'invoice', entity: 'Invoice', entityId: fresh!.id, userId: request.user.id },
       to: parsed.data.to,
       cc: parsed.data.cc,
       subject,

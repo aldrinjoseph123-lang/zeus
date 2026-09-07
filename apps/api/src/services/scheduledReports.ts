@@ -53,6 +53,7 @@ async function runOne(schedule: ScheduledReport): Promise<void> {
     : await tablePdf({ title: def.name, subtitle, columns: def.columns, rows: result.rows, summary: result.summary });
 
   await sendMail({
+    log: { kind: 'scheduled_report', entity: 'ScheduledReport', entityId: schedule.id },
     to: schedule.recipientEmails,
     subject: `[Zeus] ${schedule.label || def.name} — ${stamp}`,
     html: `<p style="font-family:sans-serif;font-size:14px;color:#0a0a0a">${def.name}, attached. Generated ${new Date().toLocaleString('en-GB')}.</p>`,

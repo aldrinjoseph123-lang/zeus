@@ -388,6 +388,7 @@ export default async function purchaseOrderRoutes(app: FastifyInstance): Promise
     const subject = `Purchase Order ${po.number}`;
 
     await sendMail({
+      log: { kind: 'purchase_order', entity: 'PurchaseOrder', entityId: po.id, userId: request.user.id },
       to: parsed.data.to,
       cc: parsed.data.cc,
       subject,

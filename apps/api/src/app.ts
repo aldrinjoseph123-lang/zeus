@@ -41,6 +41,7 @@ import coachingRoutes from './routes/coaching.js';
 import portalRoutes from './routes/portal.js';
 import portalAdminRoutes from './routes/portalAdmin.js';
 import accessRequestRoutes from './routes/accessRequests.js';
+import emailLogRoutes from './routes/emailLog.js';
 import { registerPortalGate } from './portal/gate.js';
 
 /**
@@ -178,6 +179,7 @@ export async function buildApp() {
   await app.register(coachingRoutes);
   await app.register(portalAdminRoutes);
   await app.register(accessRequestRoutes);
+  await app.register(emailLogRoutes);
 
   // ── partner & customer portal: its own gate, its own routes ──────────────────
   registerPortalGate(app);

@@ -135,12 +135,58 @@ export interface MailInput {
   subject: string;
   html: string;
   attachments?: Array<{ filename: string; contentBytes: string; contentType: string }>;
+  /**
+   * What this message is and what it belongs to. Optional so a forgotten caller still
+   * sends, but every caller in the tree passes it — without it the log says "other"
+   * and links nowhere, which is the one thing the log exists to avoid.
+   */
+  log?: { kind: string; entity?: string; entityId?: string; userId?: string | null; resentFromId?: string };
 }
 
+/** The body as a couple of readable lines: enough to know what went, no stored correspondence. */
+function previewOf(html: string): string {
+  return html
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    // A space only where the markup was a line break; inline tags close up, or the text
+    // reads "there , your quote" wherever a word was bolded.
+    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h[1-6]|td)>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+}
+
+/**
+ * Send, and record it either way.
+ *
+ * The row is written by this function rather than by the ten places that call it, so
+ * a new caller cannot forget and an old one cannot drift. A failure keeps the whole
+ * message so it can be replayed exactly, then rethrows — callers behave exactly as
+ * they did before this log existed.
+ */
 export async function sendMail(mail: MailInput): Promise<void> {
+  const record = async (status: 'SENT' | 'FAILED', error?: string) => {
+    await prisma.emailLog.create({
+      data: {
+        to: mail.to, cc: mail.cc ?? [], subject: mail.subject, preview: previewOf(mail.html),
+        kind: mail.log?.kind ?? 'other', status, error: error?.slice(0, 2000) ?? null,
+        entity: mail.log?.entity ?? null, entityId: mail.log?.entityId ?? null, userId: mail.log?.userId ?? null,
+        attachments: (mail.attachments ?? []).map((a) => a.filename),
+        resentFromId: mail.log?.resentFromId ?? null,
+        // Only a failure keeps the payload, and only until it is resent.
+        payload: status === 'FAILED' ? ({ html: mail.html, attachments: mail.attachments ?? [] } as never) : undefined,
+      },
+    }).catch((err) => console.error('[mail] could not record the send:', (err as Error).message));
+  };
+
   const m365 = await getM365();
   const sender = m365?.config.senderUpn;
-  if (!sender) throw new Error('No sender mailbox set. Settings → Integrations → Sending mailbox.');
+  if (!sender) {
+    const message = 'No sender mailbox set. Settings → Integrations → Sending mailbox.';
+    await record('FAILED', message);
+    throw new Error(message);
+  }
 
   const payload = {
     message: {
@@ -158,11 +204,24 @@ export async function sendMail(mail: MailInput): Promise<void> {
     saveToSentItems: true,
   };
 
-  const res = await graphFetch(`/users/${encodeURIComponent(sender)}/sendMail`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`Graph sendMail failed (${res.status}): ${await res.text()}`);
+  let res: Response;
+  try {
+    res = await graphFetch(`/users/${encodeURIComponent(sender)}/sendMail`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    // Graph unreachable at all — no HTTP status to report, just the network error.
+    await record('FAILED', (err as Error).message);
+    throw err;
+  }
+  if (!res.ok) {
+    const message = `Graph sendMail failed (${res.status}): ${await res.text()}`;
+    await record('FAILED', message);
+    throw new Error(message);
+  }
+  // 202 Accepted: Microsoft has the message. That is the most this API ever tells us.
+  await record('SENT');
 }
 
 /** Resolve the drive backups go to: an explicit drive id, or a user's OneDrive. */

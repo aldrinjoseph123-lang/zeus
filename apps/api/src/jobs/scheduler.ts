@@ -11,6 +11,7 @@ import { sweepRenewals } from '../services/renewals.js';
 import { ratesAreStale, refreshRates } from '../services/fx.js';
 import { takePipelineSnapshot, takeWeeklyDealSnapshot } from '../services/snapshots.js';
 import { logSystem, pruneSystemLogs } from '../services/systemLog.js';
+import { pruneEmailLog } from '../routes/emailLog.js';
 import { alertOnTransitions } from '../services/healthMonitor.js';
 import { componentStatuses, recordComponentChecks } from '../services/systemStatus.js';
 import { recordResourceSample, pruneResourceSamples } from '../services/resources.js';
@@ -496,7 +497,10 @@ export function startScheduler(): void {
     const removed = await pruneSystemLogs(30);
     const { count } = await prisma.componentCheck.deleteMany({ where: { at: { lt: new Date(Date.now() - 30 * 86_400_000) } } });
     const resources = await pruneResourceSamples(7);
-    if (removed || count || resources) console.log(`[scheduler] pruned ${removed} log + ${count} health + ${resources} resource rows`);
+    // Email history is a business record: a year of rows, but the stored copy of a
+    // failed message is dropped after a month — by then it is either resent or moot.
+    const mail = await pruneEmailLog(365, 30);
+    if (removed || count || resources || mail) console.log(`[scheduler] pruned ${removed} log + ${count} health + ${resources} resource + ${mail} email rows`);
   }), { timezone: TZ }));
 
   // Daily data-integrity sweep. 05:30 GST — after the 01:00-05:00 backup window has

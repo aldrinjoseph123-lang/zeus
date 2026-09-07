@@ -402,6 +402,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     const subject = parsed.data.subject ?? `Quotation ${quote.number} — ${quote.account.name}`;
 
     await sendMail({
+      log: { kind: 'quote', entity: 'Quote', entityId: quote.id, userId: request.user.id },
       to: parsed.data.to,
       cc: parsed.data.cc,
       subject,
