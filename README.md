@@ -240,6 +240,26 @@ cache entry immediately, so it takes effect on the very next request; a change m
 directly in the database takes up to a minute to be noticed. (If Zeus is ever run as
 more than one app container, that minute also applies between containers.)
 
+**Where from.** Behind Cloudflare the answer arrives on the request and costs nothing:
+`CF-Connecting-IP` is the visitor rather than the tunnel, and the visitor-location
+headers give city, region and country. Turn them on once at **Cloudflare → your domain
+→ Rules → Settings → Add visitor location headers**; without it only the country
+arrives. Anything Cloudflare has not tagged — LAN access straight to the server —
+falls back to an `ipinfo.io` lookup, which is only ever asked about public addresses
+and never holds up a sign-in. This is IP-level: a home connection often resolves to
+the ISP's hub city rather than the person's, and a VPN shows its exit node. Country
+and network are the reliable parts; city is a hint.
+
+**Seeing them.** *Settings → Active sessions* lists everyone signed in — staff and
+portal — with device, place, when they signed in and when they were last seen, marking
+which row is the one you are reading it on. Active means used in the last 15 minutes;
+older sessions are idle, not gone. Filters narrow to staff or to partners and
+customers, and *Include ended* shows the last month with the reason each one closed.
+A portal preview is labelled with the administrator behind it. *My account → Your
+devices* is the same list narrowed to you, with one button to sign out everywhere
+else. Ending someone else's session needs the same permission as deactivating them,
+and every such sign-out is audited.
+
 **On upgrade** nobody is signed out: a cookie issued before this existed carries no
 session id and is honoured until it expires, and the next sign-in gets a row. Ended
 sessions are kept 30 days — long enough to still show where someone signed in from

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, Globe, HardDrive, KeyRound, ListTree, Mail, Plug, Plus, RefreshCw, RotateCcw, ScrollText, ShieldCheck, ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, X,
+  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, Globe, HardDrive, KeyRound, ListTree, LogOut, Mail, MonitorSmartphone, Plug, Plus, RefreshCw, RotateCcw, ScrollText, ShieldCheck, ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, X,
 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -31,6 +31,7 @@ const SECTIONS = [
   { path: 'integrations', label: 'Integrations', icon: Plug, module: 'integrations' },
   { path: 'portal', label: 'Portal access', icon: Globe, module: 'portal' },
   { path: 'backups', label: 'Backups', icon: HardDrive, module: 'backups' },
+  { path: 'sessions', label: 'Active sessions', icon: MonitorSmartphone, module: 'users' },
   { path: 'audit', label: 'Audit trail', icon: ScrollText, module: 'audit' },
   { path: 'status', label: 'System status', icon: Activity, module: 'audit' },
   { path: 'email-log', label: 'Email log', icon: Mail, module: 'audit' },
@@ -108,6 +109,7 @@ export default function Settings() {
             section.path === 'backups' ? <BackupsSection /> :
             section.path === 'audit' ? <AuditSection /> :
             section.path === 'status' ? <StatusSection /> :
+            section.path === 'sessions' ? <SessionsSection /> :
             section.path === 'email-log' ? <EmailLogSection /> :
             section.path === 'logs' ? <SystemLogSection /> :
             <ProfileSection />}
@@ -2866,6 +2868,144 @@ function StatusSection() {
   );
 }
 
+// ── active sessions ─────────────────────────────────────────────────────────────
+
+type SessionRow = {
+  id: string; kind: string; who: string; email: string | null; account: string | null;
+  device: string | null; where: string; country: string | null; ip: string | null;
+  startedAt: string; lastSeenAt: string; expiresAt: string; revokedAt: string | null; revokedBy: string | null;
+  active: boolean; previewBy: string | null; isCurrent: boolean;
+};
+
+const REVOKED_REASON: Record<string, string> = {
+  self: 'signed out', admin: 'ended by an administrator', password_change: 'password changed',
+  deactivated: 'account deactivated', portal_revoked: 'portal access revoked',
+};
+
+/** One row of the list, shared by the admin view and My account. */
+function SessionLine({ row, onEnd, ending, canEnd }: { row: SessionRow; onEnd: (id: string) => void; ending: boolean; canEnd: boolean }) {
+  return (
+    <li className="flex flex-wrap items-start gap-3 border-b border-line px-4 py-3">
+      <Badge tone={row.revokedAt ? 'neutral' : row.active ? 'secure' : 'watch'}>
+        {row.revokedAt ? 'Ended' : row.active ? 'Active' : 'Idle'}
+      </Badge>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold">
+          {row.who}
+          {row.isCurrent ? <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-accent">This device</span> : null}
+          {row.previewBy ? <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-muted">Preview by {row.previewBy}</span> : null}
+          {row.kind === 'portal' ? <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-muted">Portal</span> : null}
+        </p>
+        <p className="text-[12px] text-muted">
+          {row.device ?? 'Unknown device'} · {row.where}
+          {row.account ? ` · ${row.account}` : ''}
+        </p>
+        <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">
+          {row.revokedAt
+            ? `Ended ${relative(row.revokedAt)}${row.revokedBy ? ` — ${REVOKED_REASON[row.revokedBy] ?? row.revokedBy}` : ''}`
+            : `Signed in ${relative(row.startedAt)} · last seen ${relative(row.lastSeenAt)}`}
+        </p>
+      </div>
+      {canEnd && !row.revokedAt && !row.isCurrent ? (
+        <Button size="sm" variant="ghost" loading={ending} onClick={() => onEnd(row.id)}>Sign out</Button>
+      ) : null}
+    </li>
+  );
+}
+
+/** Settings → Active sessions: everyone who is signed in, staff and portal alike. */
+function SessionsSection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const [state, setState] = useState('');
+  const [kind, setKind] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['sessions', state, kind],
+    queryFn: () => api.get<SessionRow[]>(`/sessions${qs({ state, kind })}`),
+    refetchInterval: 30_000,
+  });
+  const end = useMutation({
+    mutationFn: (id: string) => api.del(`/sessions/${id}`),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['sessions'] }); toast.push('Signed out.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not sign that session out.', 'error'),
+  });
+
+  const rows = data ?? [];
+  const live = rows.filter((r) => !r.revokedAt).length;
+  const now = rows.filter((r) => r.active).length;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Active sessions"
+        subtitle={`${now} active in the last 15 minutes · ${live} signed in. Signing one out takes effect on its next request.`}
+      />
+      <Toolbar>
+        <Select value={state} onChange={(e) => setState(e.target.value)} placeholder="Signed in now"
+          options={[{ value: 'all', label: 'Include ended' }]} className="w-[170px]" />
+        <Select value={kind} onChange={(e) => setKind(e.target.value)} placeholder="Staff and portal"
+          options={[{ value: 'internal', label: 'Staff' }, { value: 'portal', label: 'Partners & customers' }]} className="w-[190px]" />
+      </Toolbar>
+
+      {isLoading ? (
+        <Loading />
+      ) : rows.length === 0 ? (
+        <EmptyState title="Nobody is signed in" message="Sessions appear here as people sign in." icon={<MonitorSmartphone size={22} />} />
+      ) : (
+        <ol className="max-h-[560px] overflow-y-auto">
+          {rows.map((r) => (
+            <SessionLine key={r.id} row={r} ending={end.isPending} canEnd={can('users', 'update')} onEnd={(id) => end.mutate(id)} />
+          ))}
+        </ol>
+      )}
+    </Card>
+  );
+}
+
+/** My account → Your devices: the same list, narrowed to me, with one button to clear the rest. */
+function MyDevicesPanel() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { data } = useQuery({ queryKey: ['sessions-mine'], queryFn: () => api.get<SessionRow[]>('/sessions/mine') });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['sessions-mine'] });
+  const end = useMutation({
+    mutationFn: (id: string) => api.del(`/sessions/${id}`),
+    onSuccess: () => { refresh(); toast.push('Signed out.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not sign that device out.', 'error'),
+  });
+  const others = useMutation({
+    mutationFn: () => api.post<{ ended: number }>('/sessions/mine/sign-out-others', {}),
+    onSuccess: (r) => { refresh(); toast.push(r.ended ? `Signed out ${r.ended} other device${r.ended === 1 ? '' : 's'}.` : 'There was nothing else signed in.'); },
+    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not sign the others out.', 'error'),
+  });
+
+  const rows = data ?? [];
+  return (
+    <div className="mt-6 border-t border-line pt-5">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="eyebrow">Your devices</span>
+        {rows.length > 1 ? (
+          <Button size="sm" variant="ghost" loading={others.isPending} onClick={() => others.mutate()}>
+            <LogOut size={13} /> Sign out the others
+          </Button>
+        ) : null}
+      </div>
+      <p className="mb-3 text-[12px] text-muted">Everywhere your account is signed in. If you do not recognise one, sign it out and change your password.</p>
+      {rows.length === 0 ? (
+        <p className="text-[12px] text-muted">Nothing to show yet.</p>
+      ) : (
+        <ol className="border-y border-line">
+          {rows.map((r) => (
+            <SessionLine key={r.id} row={r} ending={end.isPending} canEnd onEnd={(id) => end.mutate(id)} />
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 // ── email log ───────────────────────────────────────────────────────────────────
 
 type EmailRow = {
@@ -3132,6 +3272,7 @@ function ProfileSection() {
         </div>
 
         <TwoFactorPanel />
+        <MyDevicesPanel />
       </div>
     </Card>
   );

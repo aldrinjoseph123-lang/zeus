@@ -1,6 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import { prisma } from '../db.js';
-import { clientIp } from '../lib/http.js';
+import { whereFrom } from '../lib/whereFrom.js';
 
 /**
  * The session store: one row per sign-in, checked on every request.
@@ -63,8 +63,16 @@ export interface CreateSessionInput {
   request?: FastifyRequest;
 }
 
-/** Record a sign-in and return the id that goes into the token. */
+/**
+ * Record a sign-in and return the id that goes into the token.
+ *
+ * Where-from is resolved after the row exists, not before: behind Cloudflare it is
+ * free, but the fallback is an external lookup, and nobody should wait on a third
+ * party to finish signing in. A slow or unreachable provider leaves the location
+ * blank on a row that is otherwise complete.
+ */
 export async function createSession(input: CreateSessionInput): Promise<string> {
+  const request = input.request;
   const row = await prisma.session.create({
     data: {
       kind: input.kind,
@@ -72,11 +80,19 @@ export async function createSession(input: CreateSessionInput): Promise<string> 
       portalUserId: input.portalUserId ?? null,
       viewingAsId: input.viewingAsId ?? null,
       expiresAt: input.expiresAt,
-      ip: input.request ? clientIp(input.request) : null,
-      device: deviceFromUA(input.request?.headers['user-agent']),
+      device: deviceFromUA(request?.headers['user-agent']),
     },
     select: { id: true },
   });
+
+  if (request) {
+    void whereFrom(request)
+      .then((w) => prisma.session.update({
+        where: { id: row.id },
+        data: { ip: w.ip, city: w.city, region: w.region, country: w.country, isp: w.isp },
+      }))
+      .catch(() => undefined);
+  }
   return row.id;
 }
 

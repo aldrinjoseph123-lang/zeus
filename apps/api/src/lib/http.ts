@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { visitorIp } from './whereFrom.js';
 import { can, type Module, type SessionUser } from '../auth/rbac.js';
 
 declare module 'fastify' {
@@ -86,10 +87,13 @@ export function paged<T>(data: T[], total: number, params: ListParams): Paged<T>
   };
 }
 
+/**
+ * The address to record against an action. Delegates to the one place that knows the
+ * hops in front of us, so an audit row behind Cloudflare names the visitor rather than
+ * the tunnel.
+ */
 export function clientIp(request: FastifyRequest): string {
-  const fwd = request.headers['x-forwarded-for'];
-  if (typeof fwd === 'string') return fwd.split(',')[0].trim();
-  return request.ip;
+  return visitorIp(request);
 }
 
 export function sendError(reply: FastifyReply, err: unknown): FastifyReply {

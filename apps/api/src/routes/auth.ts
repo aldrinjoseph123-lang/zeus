@@ -7,7 +7,7 @@ import { getSetting } from '../lib/settings.js';
 import { audit } from '../lib/audit.js';
 import { closeChallenge, openChallenge, readChallenge, verifySecondFactor } from '../services/twoFactor.js';
 import * as twoFactor from '../services/twoFactor.js';
-import { badRequest, clientIp, HttpError } from '../lib/http.js';
+import { badRequest, clientIp, HttpError, limit } from '../lib/http.js';
 import { revokeAllFor, revokeSession } from '../auth/sessionStore.js';
 import { clearSession, issueSession, sessionIdFromRequest } from '../auth/session.js';
 import { recordLogin } from '../services/loginTelemetry.js';
@@ -35,7 +35,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.post('/api/auth/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
+  app.post('/api/auth/login', { config: limit(10, '5 minutes') }, async (request, reply) => {
     if (!(await getSetting<boolean>('auth.allowLocalLogin', true))) {
       throw new HttpError(403, 'Password sign-in is disabled. Use Microsoft sign-in.');
     }
@@ -93,7 +93,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
    * The second step. Rate-limited harder than the password: a six-digit code is a million
    * guesses, which is nothing without a limit and a great deal with one.
    */
-  app.post('/api/auth/2fa/verify', { config: { rateLimit: { max: 6, timeWindow: '5 minutes' } } }, async (request, reply) => {
+  app.post('/api/auth/2fa/verify', { config: limit(6, '5 minutes') }, async (request, reply) => {
     const parsed = z.object({ challenge: z.string().min(1), code: z.string().min(1) }).safeParse(request.body);
     if (!parsed.success) throw badRequest('Enter the code from your authenticator, or a recovery code.');
 

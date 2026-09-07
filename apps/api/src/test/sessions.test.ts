@@ -164,3 +164,77 @@ describe('sessions: the portal side', () => {
     assert.ok(preview.expiresAt.getTime() - Date.now() < 45 * 60_000, 'a preview is short');
   });
 });
+
+describe('sessions: the screens behind them', () => {
+  it('an administrator sees everyone, marked with which one is theirs', async () => {
+    const { cookie } = await signIn(fx.admin.email, PASSWORD);
+    await signIn(fx.rep.email, PASSWORD);
+
+    const rows = (await request(app, asCookie(cookie)).get('/api/sessions')).body as Array<{ who: string; isCurrent: boolean; active: boolean; device: string; where: string }>;
+    assert.ok(rows.length >= 2);
+    assert.ok(rows.some((r) => r.who === 'rep'), 'the rep is in the list');
+    assert.equal(rows.filter((r) => r.isCurrent).length, 1, 'exactly one row is this session');
+    const mine = rows.find((r) => r.isCurrent)!;
+    assert.ok(mine.active, 'just signed in, so active');
+    assert.ok(mine.device.length > 0);
+    assert.ok(mine.where.length > 0, 'always says something, even if only the address');
+  });
+
+  it('a rep sees only their own devices, and cannot list everyone', async () => {
+    const rep = await signIn(fx.rep.email, PASSWORD);
+    await signIn(fx.admin.email, PASSWORD);
+
+    assert.equal((await request(app, asCookie(rep.cookie)).get('/api/sessions')).status, 403);
+    const mine = (await request(app, asCookie(rep.cookie)).get('/api/sessions/mine')).body as Array<{ who: string; isCurrent: boolean }>;
+    assert.ok(mine.length >= 1);
+    assert.ok(mine.every((r) => r.who === 'rep'), 'nobody else appears');
+    assert.equal(mine.filter((r) => r.isCurrent).length, 1);
+  });
+
+  it('signing out the others leaves exactly this one', async () => {
+    const first = await signIn(fx.rep.email, PASSWORD);
+    const second = await signIn(fx.rep.email, PASSWORD);
+
+    const res = await request(app, asCookie(second.cookie)).post('/api/sessions/mine/sign-out-others', {});
+    assert.equal(res.status, 200);
+    assert.ok((res.body as { ended: number }).ended >= 1);
+
+    assert.equal((await request(app, asCookie(second.cookie)).get('/api/auth/me')).status, 200, 'the one that asked survives');
+    assert.equal((await request(app, asCookie(first.cookie)).get('/api/auth/me')).status, 401);
+    const left = (await request(app, asCookie(second.cookie)).get('/api/sessions/mine')).body as unknown[];
+    assert.equal(left.length, 1);
+  });
+
+  it('an administrator can end someone else\'s; a rep cannot, and nobody ends the one they are using', async () => {
+    const rep = await signIn(fx.rep.email, PASSWORD);
+    const admin = await signIn(fx.admin.email, PASSWORD);
+    const repRow = await prisma.session.findFirstOrThrow({ where: { userId: fx.rep.id, revokedAt: null }, orderBy: { createdAt: 'desc' } });
+    const adminRow = await prisma.session.findFirstOrThrow({ where: { userId: fx.admin.id, revokedAt: null }, orderBy: { createdAt: 'desc' } });
+
+    assert.equal((await request(app, asCookie(rep.cookie)).del(`/api/sessions/${adminRow.id}`)).status, 403, 'a rep cannot reach into someone else\'s');
+    assert.equal((await request(app, asCookie(admin.cookie)).del(`/api/sessions/${adminRow.id}`)).status, 400, 'not the one you are holding');
+
+    assert.equal((await request(app, asCookie(admin.cookie)).del(`/api/sessions/${repRow.id}`)).status, 200);
+    assert.equal((await request(app, asCookie(rep.cookie)).get('/api/auth/me')).status, 401, 'the rep is out at once');
+    assert.equal((await prisma.session.findUniqueOrThrow({ where: { id: repRow.id } })).revokedBy, 'admin');
+    assert.equal((await request(app, asCookie(admin.cookie)).del(`/api/sessions/${repRow.id}`)).status, 400, 'already ended');
+  });
+
+  it('a portal preview says whose eyes it really is', async () => {
+    const { cookie } = await signIn(fx.admin.email, PASSWORD);
+    await setSetting('portal.enabled', true, 'portal');
+    invalidateSettings();
+    const account = await request(app, fx.admin).post('/api/accounts', { name: 'Preview Co', type: 'PARTNER', ignoreDuplicates: true });
+    const contact = await request(app, fx.admin).post('/api/contacts', { firstName: 'Peek', lastName: 'Partner', email: 'peek@partner.example', accountId: (account.body as { id: string }).id, ignoreDuplicates: true });
+    const granted = await request(app, fx.admin).post('/api/portal-admin/users', { contactId: (contact.body as { id: string }).id });
+    const view = await request(app, fx.admin).post(`/api/portal-admin/users/${(granted.body as { id: string }).id}/view-as`, {});
+    const token = String((view.body as { url: string }).url).split('token=')[1];
+    await request(app).post('/api/portal/auth/view-as', { token });
+
+    const rows = (await request(app, asCookie(cookie)).get('/api/sessions?kind=portal')).body as Array<{ previewBy: string | null; who: string }>;
+    const preview = rows.find((r) => r.previewBy);
+    assert.ok(preview, 'the preview is listed');
+    assert.equal(preview.previewBy, 'admin');
+    assert.equal(preview.who, 'Peek Partner', 'shown as the contact, flagged as a preview');
+  });
+});
