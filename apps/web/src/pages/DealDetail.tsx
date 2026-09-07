@@ -789,7 +789,7 @@ function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
               onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
             />
           </Field>
-          <Field label="Approved disc %">
+          <Field label="Discount %" hint="Approved by the vendor.">
             <Input type="number" min="0" max="100" step="0.5" value={form.approvedDiscount} onChange={(e) => setForm({ ...form, approvedDiscount: e.target.value })} />
           </Field>
         </div>
