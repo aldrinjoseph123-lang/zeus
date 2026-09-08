@@ -76,7 +76,7 @@ export default async function portalAdminRoutes(app: FastifyInstance): Promise<v
       effective,
       // The allowlist, with labels, so the page can only ever offer what the code allows.
       switches: (Object.keys(PARTNER_SWITCHES) as PartnerSwitch[]).map((key) => ({ key, label: PARTNER_SWITCHES[key].label })),
-      users: await prisma.portalUser.findMany({ where: { contact: { accountId } }, select: { id: true, email: true, disabledAt: true, lastLoginAt: true, passwordHash: true } })
+      users: await prisma.portalUser.findMany({ where: { contact: { accountId } }, select: { id: true, email: true, disabledAt: true, lastLoginAt: true, passwordHash: true, contact: { select: { firstName: true, lastName: true, isPrimary: true } } }, orderBy: { email: 'asc' } })
         .then((rows) => rows.map(({ passwordHash, ...rest }) => ({ ...rest, hasPassword: Boolean(passwordHash) }))),
     };
   };

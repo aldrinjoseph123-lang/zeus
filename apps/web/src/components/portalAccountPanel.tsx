@@ -23,7 +23,7 @@ export type PortalAccountView = {
   global: Record<string, boolean>;
   effective: Record<string, boolean>;
   switches: Array<{ key: string; label: string }>;
-  users: Array<{ id: string; email: string; disabledAt: string | null; lastLoginAt: string | null; hasPassword: boolean; contact?: { firstName: string; lastName: string } }>;
+  users: Array<{ id: string; email: string; disabledAt: string | null; lastLoginAt: string | null; hasPassword: boolean; contact?: { firstName: string; lastName: string; isPrimary: boolean } }>;
 };
 
 export function PortalAccountPanel({ accountId, editable, onGrant }: { accountId: string; editable: boolean; onGrant?: () => void }) {
@@ -93,6 +93,9 @@ export function PortalAccountPanel({ accountId, editable, onGrant }: { accountId
           <p className="text-[11px] uppercase tracking-[0.08em] text-muted">People with access</p>
           {editable && onGrant ? <Button size="sm" variant="ghost" onClick={onGrant}>Grant access</Button> : null}
         </div>
+        {editable && data.users.length > 1 ? (
+          <p className="mb-2 text-[12px] text-muted">The primary contact sees every deal at this account; everyone else sees only the deals under their own name. Who is primary is set on the account's contacts.</p>
+        ) : null}
         {data.users.length === 0 ? (
           <p className="text-[12px] text-muted">Nobody yet. Grant access to a contact at this account and they get a set-password link.</p>
         ) : (
@@ -101,9 +104,10 @@ export function PortalAccountPanel({ accountId, editable, onGrant }: { accountId
               <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-[13px]">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{who(u)} <span className="font-normal text-muted">· {u.email}</span></p>
-                  <p className="text-[12px] text-muted">
+                  <p className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
                     <Badge tone={u.disabledAt ? 'neutral' : u.hasPassword ? 'secure' : 'watch'}>{u.disabledAt ? 'Revoked' : u.hasPassword ? 'Active' : 'Invited'}</Badge>
-                    <span className="ml-2">{u.lastLoginAt ? `last sign-in ${relative(u.lastLoginAt)}` : 'never signed in'}</span>
+                    <span>{u.lastLoginAt ? `last sign-in ${relative(u.lastLoginAt)}` : 'never signed in'}</span>
+                    <span>· {u.contact?.isPrimary ? 'primary contact — sees every deal' : 'sees their own deals'}</span>
                   </p>
                 </div>
                 {editable ? (

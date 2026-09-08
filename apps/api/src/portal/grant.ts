@@ -10,7 +10,7 @@ import { issueLinkFor } from './auth.js';
  */
 export const PORTAL_USER_SELECT = {
   id: true, email: true, enabledAt: true, disabledAt: true, lastLoginAt: true, lockedUntil: true, linkExpiresAt: true, passwordHash: true,
-  contact: { select: { id: true, firstName: true, lastName: true, account: { select: { id: true, name: true, type: true } } } },
+  contact: { select: { id: true, firstName: true, lastName: true, isPrimary: true, account: { select: { id: true, name: true, type: true } } } },
 } as const;
 
 export function shapePortalUser<T extends { passwordHash: string | null }>(u: T): Omit<T, 'passwordHash'> & { hasPassword: boolean } {

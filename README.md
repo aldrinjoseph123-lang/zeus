@@ -558,12 +558,35 @@ state. Open a row and everything about that account is in one place:
   override it for this account only. Neither can reach a field the code does not
   allow out at all.
 - **People with access** — grant, send a set-password link, view the portal as
-  them, revoke, restore.
+  them, revoke, restore. Each person is marked either *primary contact — sees every
+  deal* or *sees their own deals* (see below).
 
 The same panel sits on the account's own page under *Portal*, for sales who are
 already there. Company branding (your logo, welcome line, banner, contact details)
 has its own card; password, lockout and session settings are folded away under
 *Security and sessions* since they are rarely changed.
+
+### Who at a partner sees which deals
+
+A partner is a company with several account managers, and one of them must not see
+another's pipeline. Every registration names the partner contact who brought it, and a
+person signing in sees only the registrations under their own name. The exception is the
+account's **primary contact** — the flag sales already set when they add people to an
+account — who sees every registration at the account, including any nobody has been
+named on yet. There is exactly one primary contact per account, so exactly one admin;
+to hand it to somebody else, mark them primary on the account's contacts. Partners
+cannot change it themselves. The portal says which view a person has: *You see every
+deal registered under X* or *You see the deals registered under your name*.
+
+### Narrowing hundreds of registrations
+
+The list takes a search (customer or reference), a status (with the vendor / approved /
+expired / not approved), a vendor, a stage (when stage is shown), an expiry window
+(next 30, 60 or 90 days, or already lapsed) and a sort (soonest expiry, newest, or
+highest value when deal value is shown). Filters live in the URL, so *CrowdStrike,
+expiring in 30 days* is a link a partner can keep. The choices offered come from that
+person's own rows — a filter narrows what they may already see, never widens it. A
+rejected registration stays visible for 30 days after the decision; drafts never appear.
 
 ## Backups
 

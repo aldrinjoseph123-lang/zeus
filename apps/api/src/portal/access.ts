@@ -17,6 +17,8 @@ export interface PortalSession {
   accountName: string;
   email: string;
   name: string;
+  /** The account's primary contact is its admin and sees every registration; anyone else only those under their own name. */
+  role: 'admin' | 'member';
   /** Set when an admin is previewing the portal as this person. */
   viewingAs?: { userId: string; name: string };
 }
@@ -50,6 +52,7 @@ export async function resolvePortalSession(portalUserId: string, viewingAs?: { u
     accountName: account.name,
     email: pu.email,
     name: `${contact.firstName} ${contact.lastName}`.trim(),
+    role: contact.isPrimary ? 'admin' : 'member',
     ...(viewingAs ? { viewingAs } : {}),
   };
 }
@@ -57,4 +60,17 @@ export async function resolvePortalSession(portalUserId: string, viewingAs?: { u
 /** Every portal query goes through this. No route ever reads an account id from the request. */
 export function portalScope(session: PortalSession): { accountId: string } {
   return { accountId: session.accountId };
+}
+
+/**
+ * Which registrations a partner's person may see. A partner is a company with several
+ * account managers, and one of them must not see another's deals: a member is scoped to
+ * the registrations that name them as the partner contact. The account's primary contact
+ * — the one flag sales already set when they add people — is the partner's admin and
+ * sees the whole account, including rows nobody has been named on yet.
+ */
+export function registrationScope(session: PortalSession): { partnerId: string; partnerContactId?: string } {
+  return session.role === 'admin'
+    ? { partnerId: session.accountId }
+    : { partnerId: session.accountId, partnerContactId: session.contactId };
 }

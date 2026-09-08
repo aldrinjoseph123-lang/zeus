@@ -70,7 +70,8 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
     const s = request.portal;
     await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · me${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
     // Allowlist: what leaves is named here and nowhere else.
-    return { name: s.name, email: s.email, account: { name: s.accountName, type: s.accountType }, ...(s.viewingAs ? { viewingAs: s.viewingAs.name } : {}) };
+    return { name: s.name,
+      role: s.role, email: s.email, account: { name: s.accountName, type: s.accountType }, ...(s.viewingAs ? { viewingAs: s.viewingAs.name } : {}) };
   });
 
   /** Logos, welcome line, banner and contact details — admin-set, nothing personal. */
@@ -82,8 +83,19 @@ export default async function portalRoutes(app: FastifyInstance): Promise<void> 
   app.get('/api/portal/registrations', async (request, reply) => {
     const s = request.portal;
     if (s.accountType !== 'PARTNER') return reply.status(404).send({ error: 'Not found.' });
-    const rows = await partnerRegistrations(s);
-    await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · registrations (${rows.length})${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
+    const q = request.query as Record<string, string | undefined>;
+    const filters = z.object({
+      q: z.string().max(100).optional(),
+      vendor: z.string().max(100).optional(),
+      status: z.enum(['APPROVED', 'SUBMITTED', 'EXPIRED', 'REJECTED']).optional(),
+      stage: z.string().max(60).optional(),
+      expiring: z.enum(['30', '60', '90', 'lapsed']).optional(),
+      sort: z.enum(['expiry', 'value', 'newest']).optional(),
+      page: z.coerce.number().int().positive().optional(),
+      pageSize: z.coerce.number().int().positive().max(100).optional(),
+    }).safeParse(q);
+    const rows = await partnerRegistrations(s, filters.success ? filters.data : {});
+    await audit({ user: null, action: 'portal_read', entity: 'PortalUser', entityId: s.portalUserId, summary: `${s.email} · registrations (${rows.data.length} of ${rows.total})${s.viewingAs ? ` (viewed by ${s.viewingAs.name})` : ''}`, ip: clientIp(request) });
     return rows;
   });
 

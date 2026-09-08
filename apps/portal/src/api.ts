@@ -18,6 +18,7 @@ export async function api<T>(method: 'GET' | 'POST', path: string, body?: unknow
 
 export interface Me {
   name: string;
+  role?: 'admin' | 'member';
   email: string;
   account: { name: string; type: 'PARTNER' | 'CUSTOMER' };
   /** Present when a Protect24x7 admin is previewing the portal as this person. */
