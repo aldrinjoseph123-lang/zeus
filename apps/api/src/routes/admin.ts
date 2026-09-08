@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { audit, diff } from '../lib/audit.js';
 import { revokeAllFor } from '../auth/sessionStore.js';
+import { applyBackupSchedule } from '../jobs/scheduler.js';
 import { badRequest, clientIp, listParams, notFound, paged, patchOf, requirePermission } from '../lib/http.js';
 import { MODULES, PROTECTED_FIELDS, SYSTEM_ROLES, type PermissionMap } from '../auth/rbac.js';
 import { getSettings, invalidateSettings, setSetting, SETTING_DEFAULTS } from '../lib/settings.js';
@@ -390,6 +391,9 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       await setSetting(key, value, key.split('.')[0]);
     }
     invalidateSettings();
+    // The backup jobs are built from these settings. Without this, switching backups on
+    // did nothing until the next restart — the toggle stuck and no nightly ever ran.
+    if (Object.keys(body).some((key) => key.startsWith('backup.'))) await applyBackupSchedule();
     await audit({ user: request.user, action: 'update', entity: 'Setting', summary: `Updated ${Object.keys(body).join(', ')}`, ip: clientIp(request) });
     return { ok: true, values: await getSettings() };
   });

@@ -436,6 +436,70 @@ async function safely(name: string, fn: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * The backup jobs, registered from settings — and re-registered whenever those settings
+ * change.
+ *
+ * This used to run once at boot and never again, which meant turning backups on in
+ * Settings did nothing at all until the next restart: the toggle stuck, "Back up now"
+ * worked, and no nightly ever ran. Silent, and about the one thing that must not be.
+ * Now the settings route calls this after any backup.* change, so switching backups on
+ * schedules them there and then.
+ */
+let backupTasks: ScheduledTask[] = [];
+
+export async function applyBackupSchedule(): Promise<void> {
+  for (const task of backupTasks) task.stop();
+  backupTasks = [];
+
+  try {
+    // Reading settings hits the database. If that is briefly unreachable at boot, an
+    // unhandled rejection here would take the whole API down — so it is caught and the
+    // API starts anyway, with backups simply not scheduled.
+    if (!(await getSetting<boolean>('backup.enabled', false))) {
+      console.log('[scheduler] backups are switched off — nothing scheduled');
+      return;
+    }
+
+    const physicalExpr = String(await getSetting<string>('backup.cron', '0 2 * * *'));
+    const windowStart = Number(await getSetting<number>('backup.windowStartHour', 1)) % 24;
+    // Logical daily and config weekly are fixed at a quarter and three-quarters past the
+    // window's start hour, so moving backup.windowStartHour shifts all three together.
+    const logicalExpr = `15 ${windowStart} * * *`;
+    const configExpr = `45 ${windowStart} * * 0`;
+
+    const schedule = (kind: 'physical' | 'logical' | 'config', expression: string): void => {
+      if (!cron.validate(expression)) {
+        console.error(`[scheduler] ${kind} backup cron "${expression}" is not a valid cron expression — disabled.`);
+        return;
+      }
+      // runScheduledBackup applies the overlap, window and skip-if-unchanged guards that
+      // a manual "Back up now" click deliberately bypasses.
+      backupTasks.push(cron.schedule(expression, () => void safely(`backup:${kind}`, async () => {
+        const result = await runScheduledBackup(kind);
+        if ('skipped' in result) console.log(`[scheduler] ${kind} backup skipped: ${result.skipped}`);
+      }), { timezone: TZ }));
+      console.log(`[scheduler] ${kind} backup scheduled (${expression} ${TZ})`);
+    };
+
+    schedule('physical', physicalExpr);
+    schedule('logical', logicalExpr);
+    schedule('config', configExpr);
+
+    // Weekly proof the backups are actually restorable, well clear of the maintenance
+    // window so it checks that week's fresh files, not last week's.
+    backupTasks.push(cron.schedule('0 6 * * 1', () => void safely('weeklyAutoVerify', weeklyAutoVerify), { timezone: TZ }));
+    console.log(`[scheduler] weekly backup verification scheduled (0 6 * * 1 ${TZ})`);
+  } catch (err) {
+    console.error('[scheduler] could not read the backup schedule — backups not scheduled:', (err as Error).message);
+  }
+}
+
+/** What is actually registered right now — so the System status page can say so. */
+export function backupScheduleCount(): number {
+  return backupTasks.length;
+}
+
 export function startScheduler(): void {
   // Task reminders: often enough to be useful, rare enough to stay quiet.
   tasks.push(cron.schedule('*/15 * * * *', () => void safely('taskReminders', taskReminders), { timezone: TZ }));
@@ -563,40 +627,7 @@ export function startScheduler(): void {
   // Reading settings hits the database. If that is briefly unreachable at boot, an
   // unhandled rejection here would take the whole API down — so it is caught and the
   // API starts anyway, with backups simply not scheduled.
-  void (async () => {
-    try {
-      const enabled = await getSetting<boolean>('backup.enabled', false);
-      if (!enabled) return;
-
-      const physicalExpr = String(await getSetting<string>('backup.cron', '0 2 * * *'));
-      const windowStart = Number(await getSetting<number>('backup.windowStartHour', 1)) % 24;
-      const logicalExpr = `15 ${windowStart} * * *`;
-      const configExpr = `45 ${windowStart} * * 0`;
-
-      const schedule = (kind: 'physical' | 'logical' | 'config', expression: string): void => {
-        if (!cron.validate(expression)) {
-          console.error(`[scheduler] ${kind} backup cron "${expression}" is not a valid cron expression — disabled.`);
-          return;
-        }
-        tasks.push(cron.schedule(expression, () => void safely(`backup:${kind}`, async () => {
-          const result = await runScheduledBackup(kind);
-          if ('skipped' in result) console.log(`[scheduler] ${kind} backup skipped: ${result.skipped}`);
-        }), { timezone: TZ }));
-        console.log(`[scheduler] ${kind} backup scheduled (${expression} ${TZ})`);
-      };
-
-      schedule('physical', physicalExpr);
-      schedule('logical', logicalExpr);
-      schedule('config', configExpr);
-
-      // Weekly proof the backups are actually restorable, well clear of the
-      // maintenance window so it checks that week's fresh files, not last week's.
-      tasks.push(cron.schedule('0 6 * * 1', () => void safely('weeklyAutoVerify', weeklyAutoVerify), { timezone: TZ }));
-      console.log(`[scheduler] weekly backup verification scheduled (0 6 * * 1 ${TZ})`);
-    } catch (err) {
-      console.error('[scheduler] could not read the backup schedule — backups not scheduled:', (err as Error).message);
-    }
-  })();
+  void applyBackupSchedule();
 
   console.log(`[scheduler] started — ${tasks.length} job(s), timezone ${TZ}`);
 }
