@@ -2309,7 +2309,7 @@ function IntegrationsSection() {
       </div>
 
       <div className="mt-3">
-        <SettingsGroup prefix="auth." title="Sign-in" description="Control which sign-in methods are accepted." />
+        <SettingsGroup prefix="auth." title="Sign-in" description="Control which sign-in methods are accepted." hide={['auth.turnstileOnLogin']} />
       </div>
 
       <div className="mt-3">
