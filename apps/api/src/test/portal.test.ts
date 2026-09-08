@@ -136,7 +136,8 @@ describe('portal: link → password → sign-in', () => {
 
     const me = await request(app, asPortal(cookie)).get('/api/portal/me');
     assert.equal(me.status, 200);
-    assert.deepEqual(me.body, { name: 'Pat Partner', email, account: { name: 'Channel Partner LLC', type: 'PARTNER' } });
+    // The allowlist is the point: exactly these fields, nothing the contact row carries leaks through.
+    assert.deepEqual(me.body, { name: 'Pat Partner', role: 'member', email, account: { name: 'Channel Partner LLC', type: 'PARTNER' } });
 
     assert.equal((await request(app, asPortal(cookie)).post('/api/portal/me', {})).status, 405);
     assert.equal((await request(app).get('/api/portal/me')).status, 401);
