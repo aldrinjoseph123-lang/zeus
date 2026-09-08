@@ -234,6 +234,12 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'auth.autoProvisionEntra': false,
   'auth.defaultRoleName': 'Sales Executive',
   'auth.sessionHours': 12,
+  /**
+   * Bot check on the staff sign-in. Off even once Turnstile is configured: turning the
+   * keys on for the portal's request form must not be able to gate the whole team's
+   * login as a side effect. Microsoft sign-in ignores it, so there is always a way in.
+   */
+  'auth.turnstileOnLogin': false,
   /// Password guesses against one account, counted regardless of which IP they came
   /// from — the per-IP rate limit on /auth/login alone does not stop a distributed
   /// credential-stuffing attempt aimed at a single email.

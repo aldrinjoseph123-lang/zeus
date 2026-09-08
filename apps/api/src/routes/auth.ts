@@ -8,6 +8,8 @@ import { audit } from '../lib/audit.js';
 import { closeChallenge, openChallenge, readChallenge, verifySecondFactor } from '../services/twoFactor.js';
 import * as twoFactor from '../services/twoFactor.js';
 import { badRequest, clientIp, HttpError, limit } from '../lib/http.js';
+import { turnstileConfig, verifyTurnstile } from '../portal/requests.js';
+import { logSystem } from '../services/systemLog.js';
 import { revokeAllFor, revokeSession } from '../auth/sessionStore.js';
 import { clearSession, issueSession, sessionIdFromRequest } from '../auth/session.js';
 import { recordLogin } from '../services/loginTelemetry.js';
@@ -22,16 +24,21 @@ const loginSchema = z.object({
 export default async function authRoutes(app: FastifyInstance): Promise<void> {
   /** What the login screen renders — which methods are switched on. */
   app.get('/api/auth/config', async () => {
-    const [allowLocal, allowEntra, productName] = await Promise.all([
+    const [allowLocal, allowEntra, productName, botCheck] = await Promise.all([
       getSetting<boolean>('auth.allowLocalLogin', true),
       getSetting<boolean>('auth.allowEntraLogin', true),
       getSetting<string>('branding.productName', 'Zeus'),
+      getSetting<boolean>('auth.turnstileOnLogin', false),
     ]);
     const m365 = await getM365();
+    const turnstile = await turnstileConfig();
     return {
       localLogin: allowLocal,
       microsoftLogin: allowEntra && Boolean(m365?.config.clientId && m365?.secrets?.clientSecret),
       productName,
+      // Only when both the keys exist and the toggle is on — the site key is public, but
+      // sending it when nothing checks it would make the page draw a widget for nothing.
+      turnstileSiteKey: botCheck && turnstile.configured ? turnstile.siteKey : null,
     };
   });
 
@@ -41,6 +48,24 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) throw badRequest('Enter a valid email and password.');
+
+    /**
+     * The bot check comes first, before a password is even hashed: the point is to make
+     * automated guessing expensive for the guesser rather than for us. Only a refusal
+     * stops the sign-in — if Cloudflare cannot be reached the attempt goes through and
+     * says so in the log, because an outage at their end must not lock the team out of
+     * their own CRM. The lockout and the rate limit are still standing behind it.
+     */
+    if (await getSetting<boolean>('auth.turnstileOnLogin', false)) {
+      const check = await verifyTurnstile((request.body as { turnstileToken?: string }).turnstileToken ?? '', clientIp(request));
+      if (check === 'rejected') {
+        await audit({ action: 'login_failed', entity: 'User', summary: `${String((request.body as { email?: string }).email ?? '')} — bot check refused`, ip: clientIp(request) });
+        throw new HttpError(400, 'The bot check did not pass. Reload the page and try again.');
+      }
+      if (check === 'unavailable') {
+        logSystem('warn', 'auth', 'Turnstile could not be reached; the sign-in went ahead without a bot check', { ip: clientIp(request) });
+      }
+    }
 
     const email = parsed.data.email.toLowerCase().trim();
     const user = await prisma.user.findUnique({ where: { email } });

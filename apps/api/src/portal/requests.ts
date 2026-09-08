@@ -34,13 +34,24 @@ export async function saveTurnstile(siteKey: string, secret?: string): Promise<v
   });
 }
 
-export type Verifier = (token: string, ip: string | null) => Promise<boolean>;
+/**
+ * Three outcomes, not two.
+ *
+ * "Cloudflare said no" and "Cloudflare could not be reached" are different facts, and
+ * treating them the same is how a bot check locks the staff out of their own CRM during
+ * somebody else's outage. A rejection is refused; an outage is allowed through and
+ * logged, because the password, the lockout and the rate limit are all still standing
+ * behind it.
+ */
+export type TurnstileResult = 'ok' | 'rejected' | 'unavailable' | 'not-configured';
 
 /** Server-side check with Cloudflare. Injectable so the tests never leave the machine. */
-export async function verifyTurnstile(token: string, ip: string | null, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+export async function verifyTurnstile(token: string, ip: string | null, fetchImpl: typeof fetch = fetch): Promise<TurnstileResult> {
   const row = await prisma.integration.findUnique({ where: { provider: 'turnstile' } });
   const secret = decryptJson<{ secret: string }>(row?.secrets)?.secret;
-  if (!secret) return true; // not configured: nothing to verify
+  if (!secret) return 'not-configured';
+  // No token at all is a rejection, not an outage — nothing was even attempted.
+  if (!token) return 'rejected';
   try {
     const res = await fetchImpl('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method: 'POST',
@@ -48,10 +59,11 @@ export async function verifyTurnstile(token: string, ip: string | null, fetchImp
       body: new URLSearchParams({ secret, response: token, ...(ip ? { remoteip: ip } : {}) }),
       signal: AbortSignal.timeout(5000),
     });
+    if (!res.ok) return 'unavailable';
     const body = (await res.json()) as { success?: boolean };
-    return body.success === true;
+    return body.success === true ? 'ok' : 'rejected';
   } catch {
-    return false;
+    return 'unavailable';
   }
 }
 

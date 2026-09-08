@@ -220,6 +220,34 @@ Each event (deal won, deal lost, stale account, stuck deal, registration expirin
 overdue task, backup failed, target at risk…) has its own row where you choose the
 channels, the threshold in days, and who receives it.
 
+### Bot protection
+
+Cloudflare Turnstile guards the two doors that face the open internet: the portal's
+request-access form, and — when you switch it on — the staff sign-in at
+`zeus.protect24x7.com`.
+
+**Setting it up.** In Cloudflare → **Turnstile** → *Add widget*, mode **Managed**, with
+both hostnames on the one widget (`portal.protect24x7.com` and
+`zeus.protect24x7.com`). Paste the site key and secret into **Settings → Integrations →
+Bot protection**. The secret is encrypted at rest; the site key is public by design.
+The portal form starts using it immediately. The staff sign-in does not — tick **Also
+protect the staff sign-in** for that, so configuring the portal cannot gate the whole
+team as a side effect.
+
+**It cannot lock you out.** Three outcomes are distinguished, not two: a *refusal* from
+Cloudflare stops the sign-in, but an *outage* — Cloudflare unreachable or answering an
+error — lets it through and writes a warning to the system log, because somebody else's
+downtime must not shut the team out of their own CRM. The password, the per-account
+lockout and the rate limit are all still in front of anyone who gets past it. Microsoft
+sign-in ignores the check entirely, and the whole thing can be switched off from
+Settings, or in the last resort with
+`update "Setting" set value='false' where key='auth.turnstileOnLogin';`.
+
+**Testing it.** Cloudflare publishes dummy keys that always pass
+(`1x00000000000000000000AA` / `1x0000000000000000000000000000000AA`) or always fail
+(`2x00000000000000000000AB` / `2x0000000000000000000000000000000AA`), which exercise
+the real service without minting production keys.
+
 ### Sessions
 
 Every sign-in — staff and portal alike — creates a `Session` row, and the session id

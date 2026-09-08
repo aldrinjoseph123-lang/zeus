@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { clientIp, limit } from '../lib/http.js';
 import { recordAccessRequest, turnstileConfig, verifyTurnstile } from '../portal/requests.js';
+import { logSystem } from '../services/systemLog.js';
 
 /**
  * The portal's request-access form, from the public side. Two routes, both open, both
@@ -27,8 +28,12 @@ export default async function accessRequestRoutes(app: FastifyInstance): Promise
     if (!parsed.success) return NEUTRAL;
 
     const ip = clientIp(request) || null;
-    const { configured } = await turnstileConfig();
-    if (configured && !(await verifyTurnstile(parsed.data.turnstileToken ?? '', ip))) return NEUTRAL;
+    const check = await verifyTurnstile(parsed.data.turnstileToken ?? '', ip);
+    // A refusal is dropped. An outage is not: swallowing genuine requests because
+    // Cloudflare is unreachable loses business quietly, and this row is quarantine
+    // anyway — an administrator looks at it before it becomes anything.
+    if (check === 'rejected') return NEUTRAL;
+    if (check === 'unavailable') logSystem('warn', 'auth', 'Turnstile could not be reached; the access request was accepted without a bot check', { ip });
 
     await recordAccessRequest({ ...parsed.data, ip });
     return NEUTRAL;

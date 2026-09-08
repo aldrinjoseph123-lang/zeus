@@ -122,6 +122,7 @@ export default function Settings() {
 // ── generic key/value settings ────────────────────────────────────────────────
 
 const LABELS: Record<string, string> = {
+  'auth.turnstileOnLogin': 'Require the bot check to sign in to Zeus',
   'portal.enabled': 'Portal switched on (off = every visitor gets "not available")',
   'portal.partner.enabled': 'Partners can sign in', 'portal.customer.enabled': 'Customers can sign in',
   'portal.session.idleMinutes': 'Session length (minutes)', 'portal.password.minLength': 'Minimum password length',
@@ -2295,6 +2296,7 @@ function IntegrationsSection() {
       </div>
 
       <div className="mt-3">
+        <TurnstilePanel />
         <WebhooksPanel />
       </div>
     </>
@@ -2313,6 +2315,8 @@ interface WebhookRow {
  * The secret is shown once, at creation, because that is the only moment Zeus has it in
  * the clear — after that it is encrypted and there is nothing to display.
  */
+function TurnstilePanel() { const { can } = useAuth(); return <TurnstileCard editable={can('integrations', 'update')} />; }
+
 function WebhooksPanel() {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -3494,7 +3498,7 @@ function PortalAccessSection() {
         )}
       </Card>
       <AccessRequestsCard editable={editable} />
-      <TurnstileCard editable={editable} />
+      <p className="px-1 text-[12px] text-muted">The bot check on that form is configured in Settings → Integrations.</p>
       <GrantAccessModal open={grantOpen} onClose={() => setGrantOpen(false)} onGranted={() => { setGrantOpen(false); refresh(); }} />
     </div>
   );
@@ -3592,16 +3596,26 @@ function TurnstileCard({ editable }: { editable: boolean }) {
   const key = siteKey ?? data.siteKey ?? '';
   return (
     <Card>
-      <CardHeader title="Bot check on the request form" subtitle={`Cloudflare Turnstile. ${data.configured ? 'Configured — the public form shows the challenge.' : 'Not set — the form works without a challenge.'}`} />
+      <CardHeader
+        title="Bot protection"
+        subtitle={`Cloudflare Turnstile. ${data.configured ? 'Configured — the portal request form shows a challenge.' : 'Not set. Create a widget in Cloudflare → Turnstile with your portal and Zeus hostnames on it.'}`}
+      />
       <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
-        <Field label="Site key">
+        <Field label="Site key" hint="Public — it appears in the page source.">
           <Input value={key} disabled={!editable} onChange={(e) => setSiteKey(e.target.value)} placeholder="0x4AAAA…" />
         </Field>
-        <Field label={data.configured ? 'Secret (leave blank to keep)' : 'Secret'}>
+        <Field label={data.configured ? 'Secret (leave blank to keep)' : 'Secret'} hint="Stored encrypted. Never leaves the server.">
           <Input type="password" value={secret} disabled={!editable} onChange={(e) => setSecret(e.target.value)} placeholder="0x4AAAA…" />
         </Field>
         {editable ? <div className="sm:col-span-2"><Button size="sm" variant="accent" loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div> : null}
       </div>
+      {data.configured ? (
+        <SettingsGroup
+          prefix="auth.turnstileOnLogin"
+          title="Also protect the staff sign-in"
+          description="Adds the challenge to zeus.protect24x7.com. Microsoft sign-in ignores it, and if Cloudflare cannot be reached the sign-in goes ahead and says so in the system log — a bot check must not lock the team out during somebody else's outage."
+        />
+      ) : null}
     </Card>
   );
 }

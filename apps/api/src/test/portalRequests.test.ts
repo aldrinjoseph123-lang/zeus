@@ -59,12 +59,16 @@ describe('request access: the public form', () => {
     assert.equal(res.status, 200);
     assert.equal(await prisma.accessRequest.count(), 0, 'nothing stored without a token');
 
-    // The verifier itself, with Cloudflare stubbed out.
+    // The verifier itself, with Cloudflare stubbed out. Three outcomes, not two: being
+    // told no and being unable to ask are different facts, and only one of them is the
+    // visitor's doing.
     const okFetch = (async () => new Response(JSON.stringify({ success: true }))) as unknown as typeof fetch;
     const badFetch = (async () => new Response(JSON.stringify({ success: false }))) as unknown as typeof fetch;
-    assert.equal(await verifyTurnstile('tok', '1.2.3.4', okFetch), true);
-    assert.equal(await verifyTurnstile('tok', '1.2.3.4', badFetch), false);
-    assert.equal(await verifyTurnstile('tok', null, (async () => { throw new Error('network'); }) as unknown as typeof fetch), false, 'an outage fails closed');
+    assert.equal(await verifyTurnstile('tok', '1.2.3.4', okFetch), 'ok');
+    assert.equal(await verifyTurnstile('tok', '1.2.3.4', badFetch), 'rejected');
+    assert.equal(await verifyTurnstile('', '1.2.3.4', okFetch), 'rejected', 'no token is a refusal, not an outage');
+    assert.equal(await verifyTurnstile('tok', null, (async () => { throw new Error('network'); }) as unknown as typeof fetch), 'unavailable');
+    assert.equal(await verifyTurnstile('tok', null, (async () => new Response('nope', { status: 502 })) as unknown as typeof fetch), 'unavailable');
   });
 });
 

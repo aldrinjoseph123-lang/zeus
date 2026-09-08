@@ -1,4 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: { sitekey: string; theme?: string; callback: (token: string) => void; 'expired-callback'?: () => void }) => string;
+      reset: (id?: string) => void;
+    };
+  }
+}
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck } from 'lucide-react';
@@ -17,11 +26,13 @@ export default function Login() {
 
   /** Set once the password is accepted and a second factor is owed. */
   const [challenge, setChallenge] = useState<string | null>(null);
+  const [botToken, setBotToken] = useState<string | null>(null);
+  const widget = useRef<HTMLDivElement>(null);
   const [code, setCode] = useState('');
 
   const { data: config, isLoading, error: configError } = useQuery({
     queryKey: ['auth-config'],
-    queryFn: () => api.get<{ localLogin: boolean; microsoftLogin: boolean; productName: string }>('/auth/config'),
+    queryFn: () => api.get<{ localLogin: boolean; microsoftLogin: boolean; productName: string; turnstileSiteKey: string | null }>('/auth/config'),
   });
 
   // Already signed in? Skip the form.
@@ -29,13 +40,34 @@ export default function Login() {
     api.get('/auth/me').then(() => navigate(next, { replace: true })).catch(() => {});
   }, [navigate, next]);
 
+  /**
+   * The bot check, drawn only when the server says it is switched on. Nothing is loaded
+   * from Cloudflare otherwise, so a sign-in page with this turned off is exactly what it
+   * was before.
+   */
+  const siteKey = config?.turnstileSiteKey ?? null;
+  useEffect(() => {
+    if (!siteKey || !widget.current || challenge) return;
+    const mount = () => {
+      if (window.turnstile && widget.current && !widget.current.hasChildNodes()) {
+        window.turnstile.render(widget.current, { sitekey: siteKey, theme: 'auto', callback: setBotToken, 'expired-callback': () => setBotToken(null) });
+      }
+    };
+    if (window.turnstile) { mount(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.onload = mount;
+    document.head.appendChild(script);
+  }, [siteKey, challenge]);
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
       const result = await api.post<{ ok: boolean; twoFactorRequired?: boolean; challenge?: string }>(
-        '/auth/login', { email, password },
+        '/auth/login', { email, password, turnstileToken: botToken ?? undefined },
       );
       // The password was right but it is not a session yet.
       if (result.twoFactorRequired && result.challenge) {
@@ -46,6 +78,9 @@ export default function Login() {
       location.reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Sign-in failed.');
+      // A Turnstile token is single-use: after any failure the old one is spent, so ask
+      // the widget for another or the next attempt fails for the wrong reason.
+      if (config?.turnstileSiteKey) { setBotToken(null); window.turnstile?.reset(); }
     } finally {
       setBusy(false);
     }
@@ -184,7 +219,8 @@ export default function Login() {
                   <Field label="Password">
                     <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
                   </Field>
-                  <Button type="submit" variant="accent" loading={busy} className="w-full">
+                  {siteKey ? <div ref={widget} className="min-h-[65px]" /> : null}
+                  <Button type="submit" variant="accent" loading={busy} disabled={Boolean(siteKey) && !botToken} className="w-full">
                     Sign in
                   </Button>
                 </form>
