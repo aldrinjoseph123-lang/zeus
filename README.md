@@ -543,6 +543,28 @@ the portal and the other way round.
 
 Dev: `npm run dev:portal` (port 5175). Tests: `apps/api/src/test/portal.test.ts`.
 
+### Controlling what a partner sees
+
+*Settings → Portal access* is arranged around accounts, not people. Three master
+switches at the top (portal on, partners, customers); then **Partners & customers** —
+one row per account that has anyone on the portal, summarising who they are and their
+state. Open a row and everything about that account is in one place:
+
+- **Their logo**, shown beside yours on every screen their people see.
+- **What their people see** — one Default / Shown / Hidden choice per field:
+  opportunity stage, deal value, quoted amount (the total on the latest quote that
+  actually went out — never a draft), and the vendor registration number. *Default*
+  follows *What partners see by default* further down the page; the other two
+  override it for this account only. Neither can reach a field the code does not
+  allow out at all.
+- **People with access** — grant, send a set-password link, view the portal as
+  them, revoke, restore.
+
+The same panel sits on the account's own page under *Portal*, for sales who are
+already there. Company branding (your logo, welcome line, banner, contact details)
+has its own card; password, lockout and session settings are folded away under
+*Security and sessions* since they are rarely changed.
+
 ## Backups
 
 Three kinds, each on its own schedule, all configured in **Settings → Backups**:

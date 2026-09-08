@@ -12,8 +12,10 @@ import { getSetting } from '../lib/settings.js';
  * reach a field the code never allowed out.
  */
 export const PARTNER_SWITCHES = {
+  showStage: { setting: 'portal.partner.showStage', fallback: true, label: 'Opportunity stage' },
   showRegNumber: { setting: 'portal.partner.showRegNumber', fallback: true, label: 'Vendor registration number' },
   showDealValue: { setting: 'portal.partner.showDealValue', fallback: false, label: 'Deal value' },
+  showQuotedValue: { setting: 'portal.partner.showQuotedValue', fallback: false, label: 'Quoted amount (latest quote)' },
 } as const;
 export type PartnerSwitch = keyof typeof PARTNER_SWITCHES;
 export type PartnerOverrides = Partial<Record<PartnerSwitch, boolean>>;

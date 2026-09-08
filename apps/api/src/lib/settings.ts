@@ -97,7 +97,9 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'portal.link.expiryMinutes': 60,
   // What a partner sees on a registration. The vendor number is already in the expiry mail.
   'portal.partner.showRegNumber': true,
+  'portal.partner.showStage': true,
   'portal.partner.showDealValue': false,
+  'portal.partner.showQuotedValue': false,
   // Branding: what dresses the portal. The logo is a data URL set from the Portal access page.
   'portal.branding.logo': '',
   'portal.branding.welcome.partner': '',

@@ -7,7 +7,7 @@ import { api } from '../api';
  * partner's quiet fear is protection lapsing without anyone saying so.
  */
 type Side = { status: 'SUBMITTED' | 'APPROVED' | 'EXPIRED'; submittedAt: string | null; approvedAt: string | null; expiresAt: string | null; daysLeft: number | null; regNumber?: string | null };
-type Row = { id: string; deal: { reference: string; endCustomer: string; value?: number }; ours: Side; vendors: Array<Side & { vendor: string }> };
+type Row = { id: string; deal: { reference: string; endCustomer: string; stage?: string; value?: number; quoted?: number }; ours: Side; vendors: Array<Side & { vendor: string }> };
 
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null);
 const aed = (n: number) => new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED', maximumFractionDigits: 0 }).format(n);
@@ -56,7 +56,16 @@ export default function PartnerHome() {
             <div>
               <p className="text-[11px] uppercase tracking-[0.15em] text-[var(--muted)]">{r.deal.reference}</p>
               <p className="mt-1 text-[17px] font-semibold leading-tight">{r.deal.endCustomer}</p>
-              {r.deal.value !== undefined ? <p className="mt-1 text-[13px] text-[var(--muted)]">{aed(r.deal.value)}</p> : null}
+              {r.deal.stage ? (
+                <p className="mt-1.5">
+                  <span className={`inline-block border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] ${r.deal.stage === 'Won' ? 'border-[var(--secure)] text-[var(--secure)]' : r.deal.stage === 'Lost' ? 'border-[var(--line)] text-[var(--muted)]' : 'border-[var(--line)] text-[var(--ink)]'}`}>
+                    {r.deal.stage}
+                  </span>
+                </p>
+              ) : null}
+              {r.deal.quoted !== undefined ? <p className="mt-1.5 text-[13px]">Quoted <b>{aed(r.deal.quoted)}</b></p> : null}
+              {r.deal.value !== undefined && r.deal.quoted === undefined ? <p className="mt-1 text-[13px] text-[var(--muted)]">{aed(r.deal.value)}</p> : null}
+              {r.deal.value !== undefined && r.deal.quoted !== undefined ? <p className="mt-0.5 text-[12px] text-[var(--muted)]">Deal value {aed(r.deal.value)}</p> : null}
             </div>
             <div className="flex flex-col gap-1.5">
               <p className="text-[11px] uppercase tracking-[0.15em] text-[var(--muted)]">Your protection with us</p>

@@ -18,7 +18,15 @@ import { resolvePartnerSwitches } from './switches.js';
  */
 export interface PortalRegistration {
   id: string;
-  deal: { reference: string; endCustomer: string; value?: number };
+  deal: {
+    reference: string;
+    endCustomer: string;
+    /** Where the opportunity stands in our pipeline — "Proposal", "Negotiation", "Won". */
+    stage?: string;
+    value?: number;
+    /** The total on the latest quote we sent the customer, if there is one. */
+    quoted?: number;
+  };
   ours: RegistrationSide;
   vendors: Array<RegistrationSide & { vendor: string }>;
 }
@@ -42,7 +50,7 @@ const stillWorthShowing = (r: { status: string; expiresAt: Date | null }) =>
 
 export async function partnerRegistrations(session: PortalSession): Promise<PortalRegistration[]> {
   const { accountId } = portalScope(session);
-  const { showRegNumber, showDealValue } = await resolvePartnerSwitches(accountId);
+  const { showRegNumber, showDealValue, showStage, showQuotedValue } = await resolvePartnerSwitches(accountId);
 
   const rows = await prisma.dealRegistration.findMany({
     where: { side: 'PARTNER', partnerId: accountId, status: { in: [...VISIBLE] }, deal: { deletedAt: null } },
@@ -51,7 +59,11 @@ export async function partnerRegistrations(session: PortalSession): Promise<Port
       deal: {
         select: {
           id: true, reference: true, amount: true,
+          stage: { select: { name: true, isWon: true, isLost: true } },
           account: { select: { name: true } },
+          // "What did you quote them" is the latest quote that actually went out — a draft
+          // is not a number the customer has seen, and a rejected one is not the offer.
+          quotes: { where: { status: { in: ['SENT', 'ACCEPTED'] } }, orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }], take: 1, select: { total: true } },
           registrations: {
             where: { side: 'VENDOR', status: { in: [...VISIBLE] } },
             select: { status: true, submittedAt: true, approvedAt: true, expiresAt: true, regNumber: true, vendor: { select: { name: true } } },
@@ -76,7 +88,13 @@ export async function partnerRegistrations(session: PortalSession): Promise<Port
     .filter(stillWorthShowing)
     .map((r) => ({
       id: r.id,
-      deal: { reference: r.deal.reference, endCustomer: r.deal.account.name, ...(showDealValue ? { value: Number(r.deal.amount) } : {}) },
+      deal: {
+        reference: r.deal.reference,
+        endCustomer: r.deal.account.name,
+        ...(showStage ? { stage: r.deal.stage.isWon ? 'Won' : r.deal.stage.isLost ? 'Lost' : r.deal.stage.name } : {}),
+        ...(showDealValue ? { value: Number(r.deal.amount) } : {}),
+        ...(showQuotedValue && r.deal.quotes[0] ? { quoted: Number(r.deal.quotes[0].total) } : {}),
+      },
       ours: side(r),
       vendors: r.deal.registrations.filter(stillWorthShowing).map((v) => ({ ...side(v), vendor: v.vendor?.name ?? 'Vendor' })),
     }))

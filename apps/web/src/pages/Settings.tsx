@@ -10,7 +10,7 @@ import { dateTime, money, quarterOf, relative } from '../lib/format';
 import {
   Avatar, Badge, Button, Card, CardHeader, Checkbox, ConfirmDialog, CopyButton, cx, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal, PageHeader, ProgressBar, SearchInput, Select, Textarea, useDebounced, useToast,
 } from '../components/ui';
-import type { Column } from '../components/ui';
+import { PortalAccountPanel } from '../components/portalAccountPanel';
 import { Toolbar } from '../components/pickers';
 import { AccessDenied } from '../components/Layout';
 import { fileSize } from '../components/attachments';
@@ -128,7 +128,9 @@ const LABELS: Record<string, string> = {
   'portal.session.idleMinutes': 'Session length (minutes)', 'portal.password.minLength': 'Minimum password length',
   'portal.lockout.attempts': 'Wrong passwords before lockout', 'portal.lockout.minutes': 'Lockout length (minutes)',
   'portal.link.expiryMinutes': 'Set-password link valid for (minutes)',
+  'portal.partner.showStage': 'Partners see the opportunity stage',
   'portal.partner.showRegNumber': 'Partners see the vendor registration number', 'portal.partner.showDealValue': 'Partners see the deal value',
+  'portal.partner.showQuotedValue': 'Partners see the quoted amount (latest quote)',
   'portal.branding.welcome.partner': 'Welcome line — partners', 'portal.branding.welcome.customer': 'Welcome line — customers',
   'portal.branding.banner.partner': 'Banner — partners (blank = none)', 'portal.branding.banner.customer': 'Banner — customers (blank = none)',
   'portal.branding.contact': 'Contact details shown to customers (e.g. support@… · +971 4 …)',
@@ -3435,8 +3437,8 @@ function PortalAccessSection() {
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const [grantOpen, setGrantOpen] = useState(false);
+  const [open, setOpen] = useState<{ id: string; name: string; type: string } | null>(null);
   const editable = can('portal', 'update');
-
   const { data: users, isLoading } = useQuery({ queryKey: ['portal-users'], queryFn: () => api.get<PortalUserRow[]>('/portal-admin/users') });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['portal-users'] });
   const { data: settingsAll } = useQuery({ queryKey: ['settings'], queryFn: () => api.get<{ values: Record<string, unknown> }>('/settings') });
@@ -3446,75 +3448,92 @@ function PortalAccessSection() {
     onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save the logo.', 'error'),
   });
 
-  const act = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'link' | 'revoke' | 'restore' }) => api.post<{ to?: string }>(`/portal-admin/users/${id}/${action}`, {}),
-    onSuccess: (r, v) => { refresh(); toast.push(v.action === 'link' ? `Set-password link sent to ${r.to}.` : v.action === 'revoke' ? 'Access revoked — takes effect on their next request.' : 'Access restored.'); },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not do that.', 'error'),
-  });
-  const viewAs = useMutation({
-    mutationFn: (id: string) => api.post<{ url: string }>(`/portal-admin/users/${id}/view-as`, {}),
-    onSuccess: (r) => { window.open(r.url, '_blank', 'noopener'); },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not open the preview.', 'error'),
-  });
+  /**
+   * One row per partner or customer, not one per person. The question an administrator
+   * brings here is "what does Emtech see, and who at Emtech can see it" — so the list is
+   * accounts, and everything about one account lives behind its row.
+   */
+  const accounts = Object.values((users ?? []).reduce<Record<string, { id: string; name: string; type: string; people: PortalUserRow[] }>>((acc, u) => {
+    const account = u.contact.account;
+    if (!account) return acc;
+    (acc[account.id] ??= { id: account.id, name: account.name, type: account.type, people: [] }).people.push(u);
+    return acc;
+  }, {})).sort((a, b) => a.name.localeCompare(b.name));
 
-  const status = (u: PortalUserRow) => {
-    if (u.disabledAt) return <Badge tone="neutral">Revoked</Badge>;
-    if (u.lockedUntil && new Date(u.lockedUntil) > new Date()) return <Badge tone="watch">Locked</Badge>;
-    if (!u.hasPassword) {
-      const live = u.linkExpiresAt && new Date(u.linkExpiresAt) > new Date();
-      return <Badge tone={live ? 'info' : 'watch'}>{live ? 'Invited' : 'No password yet'}</Badge>;
-    }
-    return <Badge tone="secure">Active</Badge>;
-  };
-
-  const columns: Array<Column<PortalUserRow>> = [
-    { key: 'person', header: 'Person', render: (u) => (
-      <div className="min-w-0">
-        <p className="truncate text-[13px] font-semibold">{u.contact.firstName} {u.contact.lastName}</p>
-        <p className="truncate text-[12px] text-muted">{u.email}</p>
-      </div>
-    ) },
-    { key: 'account', header: 'Account', render: (u) => (
-      <div className="flex items-center gap-2">
-        <span className="text-[13px]">{u.contact.account?.name ?? '—'}</span>
-        {u.contact.account ? <Badge tone="neutral">{u.contact.account.type === 'PARTNER' ? 'Partner' : 'Customer'}</Badge> : null}
-      </div>
-    ) },
-    { key: 'status', header: 'Status', width: '130px', render: status },
-    { key: 'lastLoginAt', header: 'Last sign-in', width: '130px', render: (u) => <span className="text-[12px] text-muted">{u.lastLoginAt ? relative(u.lastLoginAt) : 'never'}</span> },
-    { key: 'actions', header: '', align: 'right', render: (u) => editable ? (
-      <div className="flex justify-end gap-1">
-        <Button size="sm" variant="ghost" onClick={() => viewAs.mutate(u.id)}>View as</Button>
-        {!u.disabledAt ? <Button size="sm" variant="ghost" onClick={() => act.mutate({ id: u.id, action: 'link' })}>Send link</Button> : null}
-        {u.disabledAt
-          ? <Button size="sm" onClick={() => act.mutate({ id: u.id, action: 'restore' })}>Restore</Button>
-          : <Button size="sm" variant="ghost" onClick={() => act.mutate({ id: u.id, action: 'revoke' })}>Revoke</Button>}
-      </div>
-    ) : null },
-  ];
+  const HIDE_FOR_SWITCHES = ['portal.branding.logo', 'portal.branding.welcome.partner', 'portal.branding.welcome.customer', 'portal.branding.banner.partner', 'portal.branding.banner.customer', 'portal.branding.contact',
+    'portal.session.idleMinutes', 'portal.password.minLength', 'portal.lockout.attempts', 'portal.lockout.minutes', 'portal.link.expiryMinutes',
+    'portal.partner.showStage', 'portal.partner.showRegNumber', 'portal.partner.showDealValue', 'portal.partner.showQuotedValue'];
 
   return (
     <div className="flex flex-col gap-3">
-      <SettingsGroup prefix="portal." title="Portal" description="The switches. Off means every visitor — partner or customer — gets “not available”; View as still works so you can set things up first." hide={['portal.branding.logo']} />
-      <Card>
-        <CardHeader title="Company logo on the portal" subtitle="Shown top-left on every portal screen. A partner's or customer's own logo is set on their account page." />
-        <div className="px-4 py-4">
-          <LogoField value={String(settingsAll?.values['portal.branding.logo'] ?? '') || null} disabled={!editable} onChange={(logo) => saveLogo.mutate(logo ?? '')} />
-        </div>
-      </Card>
+      <SettingsGroup prefix="portal." title="Portal" description="The three switches. Off means every visitor — partner or customer — gets “not available”; View as still works so you can set an account up first." hide={HIDE_FOR_SWITCHES} />
+
       <Card>
         <CardHeader
-          title="People with access"
-          subtitle="Each person is a contact you granted. Nobody gets in by merely being a contact at a partner or customer."
+          title="Partners & customers"
+          subtitle="Each account that has people on the portal. Open one to set its logo, choose what its people see, and manage who they are."
           actions={editable ? <Button variant="accent" size="sm" onClick={() => setGrantOpen(true)}>Grant access</Button> : undefined}
         />
-        {isLoading ? <Loading /> : (
-          <DataTable columns={columns} rows={users ?? []} rowKey={(u) => u.id} empty="Nobody has portal access yet." />
+        {isLoading ? <Loading /> : accounts.length === 0 ? (
+          <EmptyState title="No portal accounts yet" message="Grant access to a contact at a partner or customer. Their account appears here, and they get a set-password link." />
+        ) : (
+          <ul className="divide-y divide-line">
+            {accounts.map((a) => {
+              const active = a.people.filter((u) => !u.disabledAt && u.hasPassword).length;
+              const invited = a.people.filter((u) => !u.disabledAt && !u.hasPassword).length;
+              const revoked = a.people.filter((u) => u.disabledAt).length;
+              return (
+                <li key={a.id}>
+                  <button type="button" onClick={() => setOpen(a)} className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left hover:bg-accent-soft">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 text-[13px] font-semibold">
+                        {a.name}
+                        <Badge tone="neutral">{a.type === 'PARTNER' ? 'Partner' : 'Customer'}</Badge>
+                      </p>
+                      <p className="mt-0.5 truncate text-[12px] text-muted">
+                        {a.people.length} {a.people.length === 1 ? 'person' : 'people'}
+                        {active ? ` · ${active} active` : ''}{invited ? ` · ${invited} invited` : ''}{revoked ? ` · ${revoked} revoked` : ''}
+                        {' · '}{a.people.map((u) => `${u.contact.firstName} ${u.contact.lastName}`).join(', ')}
+                      </p>
+                    </div>
+                    <span className="text-[11px] uppercase tracking-[0.08em] text-muted">Open</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </Card>
+
+      <Card>
+        <CardHeader title="What partners see by default" subtitle="The starting point for every partner. Any one account can be set differently from its own row above." />
+        <SettingsGroup prefix="portal.partner.show" title="" description="" />
+      </Card>
+
+      <Card>
+        <CardHeader title="Company branding" subtitle="Your logo top-left on every portal screen, the welcome line, the banner, and how customers reach you. An account's own logo sits beside it." />
+        <div className="px-4 pt-4">
+          <LogoField value={String(settingsAll?.values['portal.branding.logo'] ?? '') || null} disabled={!editable} onChange={(logo) => saveLogo.mutate(logo ?? '')} />
+        </div>
+        <SettingsGroup prefix="portal.branding." title="" description="" hide={['portal.branding.logo']} />
+      </Card>
+
+      <details className="group">
+        <summary className="cursor-pointer select-none px-1 text-[12px] text-muted hover:text-ink">Security and sessions — password length, lockout, session and link expiry</summary>
+        <div className="mt-2">
+          <SettingsGroup prefix="portal." title="Security and sessions" description="Rarely changed. The defaults are sensible." hide={[...HIDE_FOR_SWITCHES.filter((k) => !/session|password|lockout|link\./.test(k)), 'portal.enabled', 'portal.partner.enabled', 'portal.customer.enabled']} />
+        </div>
+      </details>
+
       <AccessRequestsCard editable={editable} />
       <p className="px-1 text-[12px] text-muted">The bot check on that form is configured in Settings → Integrations.</p>
+
       <GrantAccessModal open={grantOpen} onClose={() => setGrantOpen(false)} onGranted={() => { setGrantOpen(false); refresh(); }} />
+      {open ? (
+        <Modal open onClose={() => setOpen(null)} title={open.name} subtitle={`${open.type === 'PARTNER' ? 'Partner' : 'Customer'} portal — logo, what their people see, and who they are.`} width="lg">
+          <PortalAccountPanel accountId={open.id} editable={editable} onGrant={() => { setOpen(null); setGrantOpen(true); }} />
+        </Modal>
+      ) : null}
     </div>
   );
 }

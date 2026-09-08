@@ -59,7 +59,7 @@ async function register(dealId: string, body: Record<string, unknown>) {
   return id(res);
 }
 
-type Row = { id: string; deal: { reference: string; endCustomer: string; value?: number }; ours: { status: string; daysLeft: number | null; regNumber?: string | null; expiresAt: string | null }; vendors: Array<{ vendor: string; status: string; daysLeft: number | null; regNumber?: string | null }> };
+type Row = { id: string; deal: { reference: string; endCustomer: string; stage?: string; value?: number; quoted?: number }; ours: { status: string; daysLeft: number | null; regNumber?: string | null; expiresAt: string | null }; vendors: Array<{ vendor: string; status: string; daysLeft: number | null; regNumber?: string | null }> };
 
 describe('portal: the partner screen', () => {
   it('shows only the signed-in partner\'s registrations, with the vendor side attached', async () => {
@@ -125,6 +125,33 @@ describe('portal: the partner screen', () => {
     assert.equal('regNumber' in row.ours, false, 'number withheld when switched off');
   });
 
+  it('shows where the opportunity stands and what we quoted — each behind its own switch', async () => {
+    const a = await partner('Partner S', 's@partner.example');
+    const dealId = await deal('Staged', 50000);
+    await register(dealId, { side: 'PARTNER', partnerId: a.accountId, status: 'APPROVED', expiresAt: at(30) });
+    // A draft quote is not a number the customer has seen; a sent one is.
+    const product = await request(app, fx.admin).post('/api/products', { sku: 'Q-1', name: 'Thing', unit: 'each', listPrice: 100, cost: 40 });
+    const draft = await request(app, fx.admin).post('/api/quotes', { accountId: fx.customer.id, dealId, lines: [{ productId: id(product), description: 'Thing', quantity: 1, unitPrice: 999, unitCost: 0, discountPct: 0, taxable: true }] });
+    assert.equal(draft.status, 201, JSON.stringify(draft.body));
+    const sent = await request(app, fx.admin).post('/api/quotes', { accountId: fx.customer.id, dealId, lines: [{ productId: id(product), description: 'Thing', quantity: 10, unitPrice: 380, unitCost: 0, discountPct: 0, taxable: true }] });
+    // Sent straight in the table: the approval workflow is its own test, not this one's.
+    const sentRow = await prisma.quote.update({ where: { id: id(sent) }, data: { status: 'SENT', sentAt: new Date() } });
+    const sentTotal = Number(sentRow.total);
+
+    // Defaults: stage shown, quoted amount hidden.
+    let [row] = (await request(app, asPortal(a.cookie)).get('/api/portal/registrations')).body as Row[];
+    assert.ok(row.deal.stage, 'the stage is on by default');
+    assert.equal('quoted' in row.deal, false, 'the quoted amount is off by default');
+
+    await setSetting('portal.partner.showQuotedValue', true, 'portal');
+    await setSetting('portal.partner.showStage', false, 'portal');
+    invalidateSettings();
+    [row] = (await request(app, asPortal(a.cookie)).get('/api/portal/registrations')).body as Row[];
+    assert.equal(row.deal.quoted, sentTotal, 'the latest sent quote, never the draft');
+    assert.notEqual(row.deal.quoted, 999);
+    assert.equal('stage' in row.deal, false, 'and the stage can be switched off');
+  });
+
   it('a customer gets nothing here, and an outsider gets 401', async () => {
     const customer = await request(app, fx.admin).post('/api/accounts', { name: 'Cust Co', type: 'CUSTOMER', ignoreDuplicates: true });
     const contact = await request(app, fx.admin).post('/api/contacts', { firstName: 'C', lastName: 'C', email: 'c@cust.example', accountId: id(customer), ignoreDuplicates: true });
@@ -152,8 +179,9 @@ describe('portal: the three layers of control', () => {
     assert.equal(patched.status, 200, JSON.stringify(patched.body));
     const view = patched.body as { overrides: Record<string, boolean>; effective: Record<string, boolean>; switches: Array<{ key: string }> };
     assert.deepEqual(view.overrides, { showRegNumber: false, showDealValue: true }, 'the unknown key was dropped, never stored');
-    assert.deepEqual(view.effective, { showRegNumber: false, showDealValue: true });
-    assert.deepEqual(view.switches.map((s) => s.key).sort(), ['showDealValue', 'showRegNumber']);
+    // The two untouched switches fall through to their global defaults.
+    assert.deepEqual(view.effective, { showStage: true, showRegNumber: false, showDealValue: true, showQuotedValue: false });
+    assert.deepEqual(view.switches.map((s) => s.key).sort(), ['showDealValue', 'showQuotedValue', 'showRegNumber', 'showStage']);
 
     const [rowA] = (await request(app, asPortal(a.cookie)).get('/api/portal/registrations')).body as Row[];
     assert.equal('regNumber' in rowA.ours, false, 'A: number withheld by override');
