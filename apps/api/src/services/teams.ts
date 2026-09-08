@@ -76,5 +76,13 @@ export async function postToTeams(card: CardInput, webhookId?: string | null): P
     ? await prisma.teamsWebhook.findUnique({ where: { id: webhookId } })
     : await prisma.teamsWebhook.findFirst({ where: { isDefault: true, isActive: true } });
   if (!hook || !hook.isActive) return;
-  await postToWebhook(hook.url, card);
+  // Remember how it went, either way. A channel deleted in Teams answers with an error
+  // for ever after, and until this was recorded the alerts simply stopped arriving.
+  try {
+    await postToWebhook(hook.url, card);
+    await prisma.teamsWebhook.update({ where: { id: hook.id }, data: { lastPostAt: new Date(), lastError: null } }).catch(() => undefined);
+  } catch (err) {
+    await prisma.teamsWebhook.update({ where: { id: hook.id }, data: { lastPostAt: new Date(), lastError: (err as Error).message.slice(0, 500) } }).catch(() => undefined);
+    throw err;
+  }
 }

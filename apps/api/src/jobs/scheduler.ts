@@ -500,6 +500,12 @@ export function backupScheduleCount(): number {
   return backupTasks.length;
 }
 
+/** Stop the backup jobs without rebuilding them. For tests, and for a clean shutdown. */
+export function stopBackupSchedule(): void {
+  for (const task of backupTasks) task.stop();
+  backupTasks = [];
+}
+
 export function startScheduler(): void {
   // Task reminders: often enough to be useful, rare enough to stay quiet.
   tasks.push(cron.schedule('*/15 * * * *', () => void safely('taskReminders', taskReminders), { timezone: TZ }));

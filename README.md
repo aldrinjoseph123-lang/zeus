@@ -220,6 +220,31 @@ Each event (deal won, deal lost, stale account, stuck deal, registration expirin
 overdue task, backup failed, target at risk…) has its own row where you choose the
 channels, the threshold in days, and who receives it.
 
+### System status
+
+*Settings → System status* is the heartbeat: every integration answers for itself,
+every five minutes, with uptime over the day and week beside it.
+
+| Component | What it actually checks |
+|---|---|
+| PostgreSQL | A real query, and how long it took |
+| Microsoft 365 | An app token can still be obtained |
+| Outbound email | Recent sends from the email log, then the sending mailbox itself — a token proves the app registration, not that mail can leave |
+| WhatsApp | The Business API answers |
+| Teams alerts | How the last post to each channel went |
+| Bot protection | Cloudflare answers siteverify, and whether it is guarding the sign-in |
+| Outbound webhooks | How many have been switched off by failures |
+| Backups | A successful run inside the expected window, and the newest file really on disk |
+| Scheduled jobs | What is registered — not just what is configured |
+
+An integration nobody has set up reads as healthy, not down: nothing depends on it yet.
+
+That last row exists because of how backups failed once. An install that booted with
+backups switched off registered no backup jobs, and switching them on afterwards
+changed nothing until a restart — the setting said yes and the scheduler held nothing.
+"Scheduled jobs" states what is actually registered, so that disagreement is visible
+instead of silent.
+
 ### Bot protection
 
 Cloudflare Turnstile guards the two doors that face the open internet: the portal's

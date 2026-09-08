@@ -117,7 +117,7 @@ export async function pingM365(): Promise<{ configured: boolean; ok: boolean; me
   }
 }
 
-async function graphFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function graphFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await appToken();
   return fetch(path.startsWith('http') ? path : `${GRAPH}${path}`, {
     ...init,

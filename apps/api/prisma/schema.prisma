@@ -1193,6 +1193,10 @@ model TeamsWebhook {
   isDefault Boolean            @default(false)
   isActive  Boolean            @default(true)
   createdAt DateTime           @default(now())
+  /// How the last post went. Without this a channel that has been deleted in Teams keeps
+  /// swallowing alerts and nobody finds out until they notice the quiet.
+  lastPostAt DateTime?
+  lastError  String?
   rules     NotificationRule[]
 }
 

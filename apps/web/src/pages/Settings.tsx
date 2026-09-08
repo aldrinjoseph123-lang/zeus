@@ -1999,10 +1999,25 @@ function BackupsSection() {
               { key: 'status', header: 'Status', width: '90px', render: (row) => <Badge tone={row.status === 'success' ? 'secure' : row.status === 'failed' ? 'accent' : row.status === 'running' ? 'info' : row.status === 'skipped' ? 'neutral' : 'watch'}>{row.status}</Badge> },
               { key: 'kind', header: 'Kind', width: '80px', render: (row) => <span className="text-[12px]">{BACKUP_KIND_LABEL[row.kind] ?? row.kind}</span> },
               { key: 'tier', header: 'Tier', width: '80px', render: (row) => <span className="text-[11px] uppercase tracking-[0.04em] text-muted">{row.tier}</span> },
-              { key: 'filename', header: 'File', render: (row) => <span className="text-[12px]">{row.filename ?? '—'}{row.encrypted ? <span title="Encrypted"> 🔒</span> : null}</span> },
+              {
+                // The note lives here rather than in a column of its own. A Graph failure is
+                // a paragraph of trace ids: given its own column it stretched the row into a
+                // wall of text, and squeezed into a narrow one it said nothing at all. Under
+                // the file it gets the width to be read, two lines of it, with the rest on hover.
+                key: 'filename', header: 'File',
+                render: (row) => (
+                  <span className="block min-w-0">
+                    <span className="block truncate text-[12px]" title={row.filename ?? undefined}>
+                      {row.filename ?? '—'}{row.encrypted ? <span title="Encrypted"> 🔒</span> : null}
+                    </span>
+                    {row.error ? (
+                      <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-accent" title={row.error}>{row.error}</span>
+                    ) : null}
+                  </span>
+                ),
+              },
               { key: 'destinations', header: 'Where', width: '150px', render: (row) => <span className="text-[11px] text-muted">{row.destinations.length ? row.destinations.join(', ') : '—'}</span> },
               { key: 'sizeBytes', header: 'Size', align: 'right', width: '80px', render: (row) => <span className="tabular text-[12px]">{row.sizeBytes ? fileSize(row.sizeBytes) : '—'}</span> },
-              { key: 'error', header: 'Note', render: (row) => row.error ? <span className="text-[11px] text-accent">{row.error}</span> : null },
               {
                 key: 'actions', header: '', width: '80px', align: 'right',
                 render: (row) => {

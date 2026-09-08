@@ -83,3 +83,33 @@ describe('backup schedule', () => {
     assert.equal(backupScheduleCount(), FULL_SCHEDULE, 'still there, not rebuilt for nothing');
   });
 });
+
+describe('the heartbeat covers every integration', () => {
+  it('names each one, and calls an unconfigured integration healthy rather than down', async () => {
+    const { componentStatuses } = await import('../services/systemStatus.js');
+    const keys = (await componentStatuses()).map((c) => c.key);
+    for (const expected of ['database', 'microsoft365', 'email', 'whatsapp', 'teams', 'turnstile', 'webhooks', 'backups', 'jobs']) {
+      assert.ok(keys.includes(expected), `${expected} is missing from the heartbeat`);
+    }
+
+    // Nothing is configured in the suite, so nothing may claim to be broken — an
+    // integration nobody has set up is not an outage.
+    const unconfigured = (await componentStatuses()).filter((c) => ['microsoft365', 'email', 'whatsapp', 'teams', 'turnstile', 'webhooks'].includes(c.key));
+    assert.ok(unconfigured.every((c) => c.ok), unconfigured.filter((c) => !c.ok).map((c) => `${c.key}: ${c.detail}`).join('; '));
+  });
+
+  it('says so when backups are on but nothing is registered — the silent failure, made loud', async () => {
+    const { componentStatuses } = await import('../services/systemStatus.js');
+    await setSetting('backup.enabled', true, 'backup');
+    invalidateSettings();
+    await applyBackupSchedule();
+    assert.equal((await componentStatuses()).find((c) => c.key === 'jobs')?.ok, true, 'registered, so healthy');
+
+    // Exactly what production did: the setting says yes, the scheduler holds nothing.
+    const { stopBackupSchedule } = await import('../jobs/scheduler.js');
+    stopBackupSchedule();
+    const jobs = (await componentStatuses()).find((c) => c.key === 'jobs');
+    assert.equal(jobs?.ok, false);
+    assert.match(String(jobs?.detail), /no backup job is registered/);
+  });
+});
