@@ -125,7 +125,7 @@ const LABELS: Record<string, string> = {
   'auth.turnstileOnLogin': 'Require the bot check to sign in to Zeus',
   'portal.enabled': 'Portal switched on (off = every visitor gets "not available")',
   'portal.partner.enabled': 'Partners can sign in', 'portal.customer.enabled': 'Customers can sign in',
-  'portal.session.idleMinutes': 'Session length (minutes)', 'portal.password.minLength': 'Minimum password length',
+  'portal.session.idleMinutes': 'Session length (minutes — 1440 is a day)', 'portal.password.minLength': 'Minimum password length',
   'portal.lockout.attempts': 'Wrong passwords before lockout', 'portal.lockout.minutes': 'Lockout length (minutes)',
   'portal.link.expiryMinutes': 'Set-password link valid for (minutes)',
   'portal.partner.showStage': 'Partners see the opportunity stage',
@@ -1443,6 +1443,15 @@ interface Rule {
   id: string; event: string; label: string; enabled: boolean; inApp: boolean; email: boolean; teams: boolean; whatsapp: boolean;
   thresholdDays: number | null; audience: string; teamsWebhookId: string | null;
 }
+
+/** Who a rule reaches. The old bare values said "admins" and quietly meant managers too. */
+const AUDIENCES: Array<[string, string]> = [
+  ['owner', "The record's owner"],
+  ['manager', "The owner's manager"],
+  ['admins', 'Administrators and Sales Managers'],
+  ['administrators', 'Administrators only'],
+  ['all', 'Everyone'],
+];
 interface Webhook { id: string; name: string; url: string; isDefault: boolean; isActive: boolean }
 
 function NotificationsSection() {
@@ -1601,8 +1610,8 @@ function NotificationsSection() {
                       onChange={(e) => update.mutate({ id: rule.id, audience: e.target.value })}
                       className="rounded-sharp border border-line bg-card px-2 py-1 text-[12px]"
                     >
-                      {['owner', 'manager', 'admins', 'all'].map((audience) => (
-                        <option key={audience} value={audience}>{audience}</option>
+                      {AUDIENCES.map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
                       ))}
                     </select>
                   </td>

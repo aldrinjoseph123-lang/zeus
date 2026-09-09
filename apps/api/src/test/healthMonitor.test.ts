@@ -8,6 +8,10 @@ import { uptimeSummary } from '../services/systemStatus.js';
  * The monitor should alert on the *edge* — a component flipping up→down, and back —
  * not on every poll while it stays down. The Backups component is the easiest to
  * drive: a fresh successful BackupRun makes it healthy, removing it makes it stale.
+ *
+ * Down takes two consecutive failed checks. A single failed probe is usually a blip —
+ * a timeout, one refused request — and an alarm that fires on those is one nobody
+ * trusts. Recovery is immediate: good news does not need confirming.
  */
 
 before(() => { migrateTestDatabase(); });
@@ -31,8 +35,13 @@ describe('health monitor', () => {
     await checkHealthAndAlert();
     assert.equal(await prisma.systemLog.count(), 0, 'baseline must not alert');
 
-    // Knock Backups down.
+    // Knock Backups down. One failed check is a blip, not an outage.
     await prisma.backupRun.deleteMany({});
+    await checkHealthAndAlert();
+    await new Promise((s) => setTimeout(s, 150));
+    assert.equal(await prisma.systemLog.count({ where: { level: 'error' } }), 0, 'one failed check must not alert');
+
+    // The second consecutive failure is the outage.
     await checkHealthAndAlert();
     const down = await waitFor(() => prisma.systemLog.findFirst({ where: { level: 'error', source: 'app', message: { contains: 'Backups' } } }));
     assert.ok(down, 'a down transition should log an error');
@@ -48,6 +57,21 @@ describe('health monitor', () => {
     await checkHealthAndAlert();
     const up = await waitFor(() => prisma.systemLog.findFirst({ where: { level: 'info', source: 'app', message: { contains: 'recovered' } } }));
     assert.ok(up, 'a recovery should log an info entry');
+  });
+
+  it('a single failed check that recovers immediately never alerts anybody', async () => {
+    await prisma.backupRun.create({ data: { status: 'success', startedAt: new Date(), filename: 'z.sql.gz' } });
+    await checkHealthAndAlert();
+
+    // One bad probe, then healthy again before the next check — the exact shape of the
+    // false alarm this threshold exists to swallow.
+    await prisma.backupRun.deleteMany({});
+    await checkHealthAndAlert();
+    await prisma.backupRun.create({ data: { status: 'success', startedAt: new Date(), filename: 'z2.sql.gz' } });
+    await checkHealthAndAlert();
+
+    await new Promise((s) => setTimeout(s, 150));
+    assert.equal(await prisma.systemLog.count(), 0, 'a blip is not an outage, and its recovery is not news');
   });
 
   it('computes day and week uptime percentages from samples', async () => {

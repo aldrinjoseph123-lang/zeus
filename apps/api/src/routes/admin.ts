@@ -611,7 +611,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       enabled: z.boolean().optional(), inApp: z.boolean().optional(), email: z.boolean().optional(), teams: z.boolean().optional(),
       whatsapp: z.boolean().optional(),
       thresholdDays: z.number().int().nonnegative().nullable().optional(),
-      audience: z.enum(['owner', 'manager', 'admins', 'all', 'specific']).optional(),
+      audience: z.enum(['owner', 'manager', 'admins', 'administrators', 'all', 'specific']).optional(),
       recipientIds: z.array(z.string()).optional(),
       teamsWebhookId: z.string().nullable().optional(),
     }).parse(request.body);

@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import { decryptJson, encryptJson } from '../lib/crypto.js';
 import { notify } from '../services/notify.js';
+import { logSystem } from '../services/systemLog.js';
 
 /**
  * Request access — the portal's only unauthenticated write.
@@ -59,10 +60,17 @@ export async function verifyTurnstile(token: string, ip: string | null, fetchImp
       body: new URLSearchParams({ secret, response: token, ...(ip ? { remoteip: ip } : {}) }),
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) return 'unavailable';
+    // "Unreachable" covers a refusal to answer as much as a silence — say which, or
+    // the alert leaves you guessing between an outage and our own probe being throttled.
+    if (!res.ok) {
+      logSystem('warn', 'auth', `Turnstile siteverify answered HTTP ${res.status} — treating the bot check as unavailable`);
+      return 'unavailable';
+    }
     const body = (await res.json()) as { success?: boolean };
     return body.success === true ? 'ok' : 'rejected';
-  } catch {
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    logSystem('warn', 'auth', `Turnstile siteverify could not be reached (${why}) — treating the bot check as unavailable`);
     return 'unavailable';
   }
 }

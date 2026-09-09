@@ -48,10 +48,22 @@ export const NOTIFICATION_EVENTS = [
   { event: 'fx_rate_suspect', label: 'Exchange rate looked wrong and was refused', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
   { event: 'target_at_risk', label: 'Quarterly target at risk', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
   { event: 'component_down', label: 'A system component went down', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
-  { event: 'component_recovered', label: 'A system component recovered', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
+  { event: 'component_recovered', label: 'A system component recovered', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number]['event'];
+
+/** Only an administrator can act on these — a sales manager cannot fix a backup. */
+const INFRASTRUCTURE_EVENTS = [
+  'backup_failed', 'backup_missed', 'backup_verify_failed', 'data_integrity_failed',
+  'component_down', 'component_recovered',
+] as const;
+
+/** Everyone who runs the business, managers included. */
+const ADMIN_EVENTS = [
+  'deal_won', 'deal_lost', 'portal_access_requested', 'login_new_device',
+  'login_new_country', 'target_at_risk', 'invoice_overdue',
+] as const;
 
 export interface NotifyInput {
   event: NotificationEvent | string;
@@ -79,9 +91,12 @@ async function resolveRecipients(audience: string, ownerId?: string | null, reci
     }
   }
 
-  if (audience === 'admins') {
+  // 'admins' has always meant managers too — right for a won deal, wrong for a failed
+  // backup. 'administrators' is the narrower audience for what only they can act on.
+  if (audience === 'admins' || audience === 'administrators') {
+    const names = audience === 'administrators' ? ['Administrator'] : ['Administrator', 'Sales Manager'];
     const admins = await prisma.user.findMany({
-      where: { isActive: true, role: { name: { in: ['Administrator', 'Sales Manager'] } } },
+      where: { isActive: true, role: { name: { in: names } } },
       select: { id: true },
     });
     for (const a of admins) ids.add(a.id);
@@ -119,9 +134,11 @@ export async function ensureNotificationRules(): Promise<number> {
         teams: false,
         whatsapp: false,
         thresholdDays: event.thresholdDays,
-        audience: ['deal_won', 'deal_lost', 'backup_failed', 'backup_missed', 'backup_verify_failed', 'data_integrity_failed', 'portal_access_requested', 'login_new_device', 'login_new_country', 'target_at_risk', 'invoice_overdue', 'component_down', 'component_recovered'].includes(event.event)
-          ? 'admins'
-          : 'owner',
+        audience: INFRASTRUCTURE_EVENTS.includes(event.event as never)
+          ? 'administrators'
+          : ADMIN_EVENTS.includes(event.event as never)
+            ? 'admins'
+            : 'owner',
       },
     });
   }

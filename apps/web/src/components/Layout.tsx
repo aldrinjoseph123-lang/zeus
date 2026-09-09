@@ -7,7 +7,7 @@ import {
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { relative } from '../lib/format';
-import { Avatar, Badge, Button, cx, Spinner } from './ui';
+import { Avatar, Badge, Button, cx, Spinner, useDebounced } from './ui';
 import { useRecentUndo } from '../lib/undo';
 
 interface NavItem {
@@ -419,6 +419,9 @@ const PAGES = [
 /** One search box across deals, accounts, leads and contacts — and a ⌘K palette. */
 function GlobalSearch() {
   const [term, setTerm] = useState('');
+  // Four requests per round, so query the settled term rather than every keystroke:
+  // typing a customer name was up to 44 calls against a rate limit the office shares.
+  const settled = useDebounced(term, 300);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -442,10 +445,10 @@ function GlobalSearch() {
   }, []);
 
   const { data, isFetching } = useQuery({
-    queryKey: ['global-search', term],
-    enabled: term.trim().length >= 2,
+    queryKey: ['global-search', settled],
+    enabled: settled.trim().length >= 2,
     queryFn: async () => {
-      const search = encodeURIComponent(term.trim());
+      const search = encodeURIComponent(settled.trim());
       const [deals, accounts, leads, contacts] = await Promise.all([
         can('deals', 'read') ? api.get<{ data: Array<{ id: string; reference: string; name: string; account: { name: string } }> }>(`/deals?search=${search}&pageSize=5`) : { data: [] },
         can('accounts', 'read') ? api.get<{ data: Array<{ id: string; name: string; type: string }> }>(`/accounts?search=${search}&pageSize=5`) : { data: [] },

@@ -8,11 +8,8 @@ import { Loading } from './components/ui';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Deals from './pages/Deals';
-import DealDetail from './pages/DealDetail';
 import Leads from './pages/Leads';
-import LeadDetail from './pages/LeadDetail';
 import Accounts from './pages/Accounts';
-import AccountDetail from './pages/AccountDetail';
 import Contacts from './pages/Contacts';
 import Activities from './pages/Activities';
 
@@ -24,6 +21,11 @@ import Activities from './pages/Activities';
  * — and none of them is where a working day starts. Splitting them out means the first
  * paint no longer waits for code most sessions never touch.
  */
+// The detail screens are the heaviest and nobody lands on one first: keep them out
+// of the chunk the login page has to wait for.
+const DealDetail = lazy(() => import('./pages/DealDetail'));
+const LeadDetail = lazy(() => import('./pages/LeadDetail'));
+const AccountDetail = lazy(() => import('./pages/AccountDetail'));
 const Setup = lazy(() => import('./pages/Setup'));
 const Quotes = lazy(() => import('./pages/Quotes'));
 const QuoteEditor = lazy(() => import('./pages/QuoteEditor'));

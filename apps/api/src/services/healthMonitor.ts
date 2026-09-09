@@ -12,7 +12,13 @@ import { logSystem } from './systemLog.js';
  * ponytail: in-process only; a multi-instance deploy would double-alert — move the
  * last-state to a shared row then.
  */
-const lastOk = new Map<string, boolean>();
+/**
+ * One failed probe is usually a blip — a five-second timeout, a single refused request.
+ * Two consecutive ones is an outage worth an email. The cost of waiting is one check
+ * interval; the cost of not waiting is an alarm nobody trusts.
+ */
+const STRIKES = 2;
+const watched = new Map<string, { reported: boolean; fails: number }>();
 
 export async function checkHealthAndAlert(): Promise<void> {
   await alertOnTransitions(await componentStatuses());
@@ -21,11 +27,18 @@ export async function checkHealthAndAlert(): Promise<void> {
 /** Alert on edges from an already-computed snapshot (the cron reuses one compute). */
 export async function alertOnTransitions(components: Component[]): Promise<void> {
   for (const c of components) {
-    const prev = lastOk.get(c.key);
-    lastOk.set(c.key, c.ok);
-    if (prev === undefined || prev === c.ok) continue; // baseline, or no change
+    const seen = watched.get(c.key);
+    const fails = c.ok ? 0 : (seen?.fails ?? 0) + 1;
 
-    if (!c.ok) {
+    // A fresh process has no outage to report: the first pass only sets the baseline.
+    if (!seen) { watched.set(c.key, { reported: c.ok, fails }); continue; }
+
+    const down = fails >= STRIKES;
+    // Nothing new to say: still healthy, or still down and already announced.
+    if (down === !seen.reported) { watched.set(c.key, { reported: seen.reported, fails }); continue; }
+    watched.set(c.key, { reported: !down, fails });
+
+    if (down) {
       logSystem('error', 'app', `${c.label} went down: ${c.detail}`, { component: c.key });
       await notify({ event: 'component_down', title: `${c.label} is down`, body: c.detail, severity: 'critical' });
     } else {
