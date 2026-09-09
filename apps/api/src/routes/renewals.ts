@@ -4,7 +4,7 @@ import type { SubscriptionStatus } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { audit, undoSoftDelete, undoUpdate, diff } from '../lib/audit.js';
 import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
-import { maskFields, ownerAllowed, scopeWhere } from '../auth/rbac.js';
+import { maskFields, ownerAllowed, permissionFor, scopeWhere, type SessionUser } from '../auth/rbac.js';
 import { round2 } from '../lib/money.js';
 import { getSetting } from '../lib/settings.js';
 import { createFromInvoice, createSubscription, openRenewalDeal, sweepRenewals, termEnd, wonDealsWithoutRenewal } from '../services/renewals.js';
@@ -44,6 +44,30 @@ const subscriptionSchema = z.object({
   notes: z.string().optional().nullable(),
   ownerId: z.string().optional().nullable(),
 });
+
+/**
+ * Subscriptions are gated on the deals permission, so they inherit its field rules —
+ * but the buy price is spelled differently here. The role hides the key `cost`, and
+ * maskFields strips exactly that; these rows carry `unitCost` and `termCost`, and the
+ * aggregates are added after the mask has already run. So a Sales Executive, whose
+ * deals permission hides cost, was reading the whole subscription book's buy price.
+ *
+ * Same rule, third spelling: the price book report and the coaching escalation each
+ * leaked it once before, which is why this is a list rather than a single name.
+ */
+const COST_FIELDS = new Set(['cost', 'unitCost', 'termCost', 'totalCost', 'margin', 'marginAmount', 'marginPct']);
+
+function withoutCost<T>(user: SessionUser, value: T): T {
+  if (permissionFor(user, 'deals').fields?.cost !== 'hidden') return value;
+  const strip = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(strip);
+    if (!v || typeof v !== 'object' || Object.getPrototypeOf(v) !== Object.prototype) return v;
+    return Object.fromEntries(
+      Object.entries(v).filter(([k]) => !COST_FIELDS.has(k)).map(([k, child]) => [k, strip(child)]),
+    );
+  };
+  return strip(value) as T;
+}
 
 export default async function renewalRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/subscriptions', { preHandler: requirePermission('deals', 'read') }, async (request) => {
@@ -96,10 +120,10 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
       prisma.subscription.aggregate({ where, _sum: { termValue: true, termCost: true } }),
     ]);
 
-    return {
+    return withoutCost(request.user, {
       ...paged(maskFields(request.user, 'deals', data), total, params),
       totals: { value: round2(num(sums._sum.termValue)), cost: round2(num(sums._sum.termCost)) },
-    };
+    });
   });
 
   /** The renewals dashboard: what is at risk, when, and worth how much. */
@@ -148,7 +172,7 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
       byMonth.set(key, row);
     }
 
-    return {
+    return withoutCost(request.user, {
       underCover: { count: all._count, value: round2(num(all._sum.termValue)), cost: round2(num(all._sum.termCost)) },
       next30: { count: next30._count, value: round2(num(next30._sum.termValue)) },
       next60: { count: next60._count, value: round2(num(next60._sum.termValue)) },
@@ -165,7 +189,7 @@ export default async function renewalRoutes(app: FastifyInstance): Promise<void>
           closedAt: d.closedAt, account: d.account.name, owner: d.owner?.name ?? null,
         })),
       },
-    };
+    });
   });
 
   app.get('/api/subscriptions/:id', { preHandler: requirePermission('deals', 'read') }, async (request) => {
