@@ -62,6 +62,15 @@ async function allTables(): Promise<string[]> {
   return tableCache;
 }
 
+/**
+ * Why `--test-force-exit` is on the test script.
+ *
+ * Nothing here leaks in the app; the pg pool simply holds its connections open for ten
+ * seconds after the last query, and the runner waits for the process to end on its own.
+ * That is nine idle seconds per file, fifty times over — it was most of an eleven-minute
+ * suite. Forcing the exit once a file's tests and hooks are done takes the suite to
+ * under three minutes, and covers any handle a future test forgets to close.
+ */
 let migrated = false;
 
 /** Applies the migration history to the test database, once per run. */
