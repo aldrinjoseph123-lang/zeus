@@ -142,11 +142,25 @@ export default async function contactRoutes(app: FastifyInstance): Promise<void>
     return maskFields(request.user, 'contacts', contact);
   });
 
+  /**
+   * A deal names its primary contact, and deleting the person left the deal pointing at
+   * somebody who no longer exists — silently, because deletedAt is a column rather than
+   * a delete. Same answer as accounts and deals: re-point the deal first.
+   */
+  async function contactDeleteBlockers(contactId: string): Promise<string | null> {
+    const deals = await prisma.deal.count({ where: { primaryContactId: contactId, deletedAt: null } });
+    return deals > 0 ? `${deals} deal${deals === 1 ? '' : 's'} naming them as the primary contact` : null;
+  }
+
   app.delete('/api/contacts/:id', { preHandler: requirePermission('contacts', 'delete') }, async (request) => {
     const { id } = request.params as { id: string };
     const existing = await prisma.contact.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw notFound('Contact not found.');
     if (!(await ownerAllowed(request.user, 'contacts', 'delete', existing.ownerId))) throw forbidden();
+
+    const blockers = await contactDeleteBlockers(id);
+    if (blockers) throw badRequest(`This contact still has ${blockers}. Re-point those deals first.`);
+
     await prisma.contact.update({ where: { id }, data: { deletedAt: new Date() } });
     const undoId = await audit({ user: request.user, action: 'delete', entity: 'Contact', entityId: id, summary: `${existing.firstName} ${existing.lastName}`,
       undo: undoSoftDelete('contact', 'contacts', id), ip: clientIp(request) });
@@ -182,6 +196,7 @@ export default async function contactRoutes(app: FastifyInstance): Promise<void>
     for (const id of parsed.data.ids) {
       const contact = await prisma.contact.findFirst({ where: { id, deletedAt: null } });
       if (!contact || !(await ownerAllowed(request.user, 'contacts', 'delete', contact.ownerId))) { skipped++; continue; }
+      if (await contactDeleteBlockers(id)) { skipped++; continue; }
       await prisma.contact.update({ where: { id }, data: { deletedAt: new Date() } });
       await audit({ user: request.user, action: 'delete', entity: 'Contact', entityId: id, summary: `${contact.firstName} ${contact.lastName}`, undo: undoSoftDelete('contact', 'contacts', id), ip: clientIp(request) });
       deleted++;

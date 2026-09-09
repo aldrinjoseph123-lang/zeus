@@ -513,11 +513,31 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     return { ...maskFields(request.user, 'deals', updated), undoId };
   });
 
+  /**
+   * Same rule as an account: paperwork must always point at a live party. Deleting a
+   * deal used to leave its quotes and invoices alive and still naming it, which no
+   * foreign key can object to — deletedAt is a column, not a delete.
+   */
+  async function dealDeleteBlockers(dealId: string): Promise<string | null> {
+    const [quotes, invoices, subscriptions] = await Promise.all([
+      prisma.quote.count({ where: { dealId } }),
+      prisma.invoice.count({ where: { dealId } }),
+      prisma.subscription.count({ where: { deletedAt: null, OR: [{ sourceDealId: dealId }, { renewalDealId: dealId }] } }),
+    ]);
+    const parts = ([[quotes, 'quote'], [invoices, 'invoice'], [subscriptions, 'subscription']] as Array<[number, string]>)
+      .filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}${n === 1 ? '' : 's'}`);
+    return parts.length ? parts.join(', ') : null;
+  }
+
   app.delete('/api/deals/:id', { preHandler: requirePermission('deals', 'delete') }, async (request) => {
     const { id } = request.params as { id: string };
     const existing = await prisma.deal.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw notFound('Deal not found.');
     if (!(await ownerAllowed(request.user, 'deals', 'delete', existing.ownerId))) throw forbidden();
+
+    const blockers = await dealDeleteBlockers(id);
+    if (blockers) throw badRequest(`This deal still has ${blockers}. Move or remove them first — paperwork must always point at a live deal.`);
+
     await prisma.deal.update({ where: { id }, data: { deletedAt: new Date() } });
     const undoId = await audit({ user: request.user, action: 'delete', entity: 'Deal', entityId: id, summary: existing.reference,
       undo: undoSoftDelete('deal', 'deals', id), ip: clientIp(request) });
@@ -553,6 +573,7 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     for (const id of parsed.data.ids) {
       const deal = await prisma.deal.findFirst({ where: { id, deletedAt: null } });
       if (!deal || !(await ownerAllowed(request.user, 'deals', 'delete', deal.ownerId))) { skipped++; continue; }
+      if (await dealDeleteBlockers(id)) { skipped++; continue; }
       await prisma.deal.update({ where: { id }, data: { deletedAt: new Date() } });
       await audit({ user: request.user, action: 'delete', entity: 'Deal', entityId: id, summary: deal.reference, undo: undoSoftDelete('deal', 'deals', id), ip: clientIp(request) });
       deleted++;
