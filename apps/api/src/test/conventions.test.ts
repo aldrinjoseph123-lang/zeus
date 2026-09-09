@@ -49,11 +49,12 @@ describe('conventions the whole codebase keeps', () => {
       'routes/auth.ts': 'sign-in itself — there is no session yet to check a permission against',
       'routes/accessRequests.ts': 'the portal request form is deliberately unauthenticated',
       'routes/portal.ts': 'guarded by the portal gate and its own cookie, not by staff RBAC',
-      'routes/me.ts': 'everything here is scoped to the caller themselves',
-      'routes/notifications.ts': 'a user reads and clears their own notifications',
+      'routes/undo.ts': 'authorises in services/undo.ts::refuseReason — can() on the module being undone',
     };
+    // can() on the parent record's module counts: attachments and undo authorise
+    // against the thing being touched, which is stricter than a flat route check.
     const ungated = sourceFiles('routes')
-      .filter((f) => !/requirePermission|requireElevated/.test(read(f)))
+      .filter((f) => !/requirePermission|requireElevated|\bcan\(/.test(read(f)))
       .filter((f) => !(f in EXEMPT));
     assert.deepEqual(ungated, [], 'add requirePermission, or list the file in EXEMPT with a reason');
 
@@ -69,11 +70,14 @@ describe('conventions the whole codebase keeps', () => {
   it('every route that returns a cost goes through the masking helpers', () => {
     const EXEMPT = new Set([
       'routes/imports.ts', // writes cost, never returns a record
+      // Margin reaches only roles with deals:approve — everyone else gets an empty
+      // list rather than a masked one, which is the stricter answer.
+      'routes/approvals.ts',
     ]);
     const leaky = sourceFiles('routes')
       .filter((f) => !EXEMPT.has(f))
       .filter((f) => /\bcost\b/.test(read(f)))
-      .filter((f) => !/maskFields|stripUnwritableFields|maskRecord/.test(read(f)));
+      .filter((f) => !/maskFields|stripUnwritableFields|maskRecord|permissionFor/.test(read(f)));
     assert.deepEqual(leaky, [], 'a route touching cost must mask it for roles that may not see it');
   });
 });

@@ -2,6 +2,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { FastifyInstance } from 'fastify';
 import { migrateTestDatabase, request, resetDatabase, seedFixtures } from './harness.js';
+import { invalidateSettings, setSetting } from '../lib/settings.js';
 import type { Fixtures } from './harness.js';
 
 /**
@@ -46,6 +47,11 @@ describe('sweep: every route in the table', () => {
   it('refuses an unauthenticated caller, except the few that are public by design', async () => {
     // The gate's own list, not a copy of it — a copy would drift the moment someone
     // added a public route and forgot this file.
+    // Switch the portal on first: while it is off every portal route answers 503, which
+    // is safe but would let a genuinely unguarded route hide behind the same status.
+    await setSetting('portal.enabled', true, 'portal');
+    invalidateSettings();
+
     const publicPaths = app.publicPaths;
     const routes = apiRoutes().filter((r) => !publicPaths.has(r.url))
       // The portal has its own cookie and its own gate; its sign-in routes are public

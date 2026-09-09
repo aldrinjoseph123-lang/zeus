@@ -2,6 +2,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { FastifyInstance } from 'fastify';
 import { migrateTestDatabase, prisma, request, resetDatabase, seedFixtures, type Fixtures } from './harness.js';
+import { invalidateSettings, setSetting } from '../lib/settings.js';
 
 /**
  * Coaching dashboard data: quota progress, pipeline by stage, escalation flags, and
@@ -54,6 +55,38 @@ describe('coaching dashboard', () => {
     assert.ok(hv!.reasons.some((r) => /Close date passed/.test(r)));
     assert.ok(hv!.reasons.some((r) => /High value/.test(r)));
     assert.ok(!body.escalations.some((e) => e.reference === 'C-OK'), 'healthy deal not escalated');
+  });
+
+  /**
+   * A rep whose role masks margin must not read it here either. The escalation reason
+   * "Margin 12.3% below 20%" sits beside an amount they can see, so printing it hands
+   * them the buy price by subtraction — the same leak the price book report had once,
+   * wearing a sentence instead of a column.
+   */
+  it('never tells a rep the margin their role is not allowed to see', async () => {
+    await setSetting('approvals.dealMinMarginPct', 30, 'approvals');
+    invalidateSettings();
+
+    const now = new Date();
+    // 100k selling, 90k cost — a 10% margin, well under the 30% floor.
+    await prisma.deal.create({
+      data: { ...base('C-THIN', 100_000), cost: 90_000, status: 'OPEN' as never, closeDate: new Date(now.getTime() + 30 * 86_400_000) },
+    });
+
+    const reasonsFor = async (as: Fixtures['admin']) => {
+      const res = await request(app, as).get(`/api/coaching/${fx.rep.id}`);
+      assert.equal(res.status, 200);
+      const body = res.body as { escalations: Array<{ reference: string; reasons: string[] }> };
+      return body.escalations.find((e) => e.reference === 'C-THIN')?.reasons ?? [];
+    };
+
+    // The manager is the audience this line was written for.
+    assert.ok((await reasonsFor(fx.admin)).some((r) => /Margin/.test(r)), 'an admin sees the margin warning');
+
+    // The rep owns the deal and may read it — but their role masks cost and margin.
+    const repSees = await reasonsFor(fx.rep);
+    assert.ok(!repSees.some((r) => /Margin/.test(r)), `margin leaked to a rep: ${JSON.stringify(repSees)}`);
+    assert.ok(!repSees.some((r) => /90|10\.0|%/.test(r)), 'and no figure it could be derived from');
   });
 
   it('lets a rep see their own, blocks a peer, allows an admin', async () => {

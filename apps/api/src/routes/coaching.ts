@@ -58,6 +58,12 @@ export default async function coachingRoutes(app: FastifyInstance): Promise<void
     const pipeline = [...stageMap.values()].sort((a, b) => a.stage.order - b.stage.order);
 
     // Escalation list.
+    //
+    // A rep whose role masks margin must not read it here either: "Margin 12.3% below
+    // 20%" beside an amount they can see is the buy price with one subtraction. The
+    // price book leaked cost through a report once already; this is the same shape.
+    const dealFields = permissionFor(request.user, 'deals').fields ?? {};
+    const maySeeMargin = dealFields.margin !== 'hidden' && dealFields.cost !== 'hidden';
     const now = Date.now();
     const hv = Number(highValue), mm = Number(minMargin);
     const escalations = openDeals.flatMap((d) => {
@@ -66,7 +72,7 @@ export default async function coachingRoutes(app: FastifyInstance): Promise<void
       const stuck = d.stage.rotDays > 0 && stuckDays > d.stage.rotDays;
       const closePast = d.closeDate.getTime() < now;
       const marginPct = d.cost !== null && amount > 0 ? ((amount - num(d.cost)) / amount) * 100 : null;
-      const belowMargin = mm > 0 && marginPct !== null && marginPct < mm;
+      const belowMargin = maySeeMargin && mm > 0 && marginPct !== null && marginPct < mm;
       const reasons: string[] = [];
       if (stuck) reasons.push(`Stuck ${stuckDays}d in ${d.stage.name}`);
       if (closePast) reasons.push('Close date passed');
