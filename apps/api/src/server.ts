@@ -14,7 +14,7 @@ const app = await buildApp();
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} received — shutting down`);
-  stopScheduler();
+  await stopScheduler();
   await app.close();
   await prisma.$disconnect();
   process.exit(0);

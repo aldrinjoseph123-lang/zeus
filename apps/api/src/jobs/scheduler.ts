@@ -449,7 +449,9 @@ async function safely(name: string, fn: () => Promise<void>): Promise<void> {
 let backupTasks: ScheduledTask[] = [];
 
 export async function applyBackupSchedule(): Promise<void> {
-  for (const task of backupTasks) task.stop();
+  // Await the stops: node-cron's stop() may be async, and the new set is registered
+  // straight after — a task still running here would mean two schedules, not one.
+  for (const task of backupTasks) await task.stop();
   backupTasks = [];
 
   try {
@@ -501,8 +503,8 @@ export function backupScheduleCount(): number {
 }
 
 /** Stop the backup jobs without rebuilding them. For tests, and for a clean shutdown. */
-export function stopBackupSchedule(): void {
-  for (const task of backupTasks) task.stop();
+export async function stopBackupSchedule(): Promise<void> {
+  for (const task of backupTasks) await task.stop();
   backupTasks = [];
 }
 
@@ -638,8 +640,8 @@ export function startScheduler(): void {
   console.log(`[scheduler] started — ${tasks.length} job(s), timezone ${TZ}`);
 }
 
-export function stopScheduler(): void {
-  for (const task of tasks) task.stop();
+export async function stopScheduler(): Promise<void> {
+  for (const task of tasks) await task.stop();
   tasks.length = 0;
 }
 

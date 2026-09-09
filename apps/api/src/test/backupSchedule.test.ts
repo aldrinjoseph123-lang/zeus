@@ -107,7 +107,7 @@ describe('the heartbeat covers every integration', () => {
 
     // Exactly what production did: the setting says yes, the scheduler holds nothing.
     const { stopBackupSchedule } = await import('../jobs/scheduler.js');
-    stopBackupSchedule();
+    await stopBackupSchedule();
     const jobs = (await componentStatuses()).find((c) => c.key === 'jobs');
     assert.equal(jobs?.ok, false);
     assert.match(String(jobs?.detail), /no backup job is registered/);

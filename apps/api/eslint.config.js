@@ -39,4 +39,21 @@ export default tseslint.config(
       }],
     },
   },
+  /**
+   * One rule that needs type information, and earns the cost of turning it on.
+   *
+   * An un-awaited promise is the bug class that has bitten this project twice: a
+   * notify() dispatch landing inside the *next* test's reset, and the alert chain in
+   * createSession doing the same. Both presented as a mystery failure in an unrelated
+   * file. The type checker can see them; nothing else can.
+   */
+  {
+    files: ['src/**/*.ts'],
+    // node:test's describe()/it() return promises nobody is meant to await.
+    ignores: ['src/test/**'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+    },
+  },
 );
