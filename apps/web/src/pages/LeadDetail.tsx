@@ -64,7 +64,7 @@ export default function LeadDetail() {
   });
 
   if (isLoading) return <Loading />;
-  if (error || !lead) return <EmptyState title="Lead not found" message={(error as Error)?.message} action={<Link to="/leads"><Button>Back to leads</Button></Link>} />;
+  if (error || !lead) return <EmptyState title="Lead not found" message={(error as Error)?.message} action={<Button to="/leads">Back to leads</Button>} />;
 
   const converted = lead.status === 'CONVERTED';
 

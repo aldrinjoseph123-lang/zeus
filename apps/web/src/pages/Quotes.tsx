@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Plus } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
@@ -58,7 +58,7 @@ export default function Quotes() {
               </Button>
             ) : null}
             {can('quotes', 'create') ? (
-              <Link to="/quotes/new"><Button variant="accent" icon={<Plus size={14} />}>New quote</Button></Link>
+              <Button to="/quotes/new" variant="accent" icon={<Plus size={14} />}>New quote</Button>
             ) : null}
           </>
         }

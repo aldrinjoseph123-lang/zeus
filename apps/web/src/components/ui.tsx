@@ -3,6 +3,7 @@ import {
   type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from 'react';
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Info, Loader2, Search, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 /**
  * Class joiner with last-wins resolution for sizing utilities.
@@ -48,28 +49,34 @@ export function Button({
   icon,
   className,
   children,
+  to,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: 'sm' | 'md';
   loading?: boolean;
   icon?: ReactNode;
+  /**
+   * Navigate instead of acting. Renders a real anchor, because the alternative that
+   * grew up here — wrapping a Button in a Link — puts a <button> inside an <a>: two
+   * tab stops for one control, and a screen reader announcing a button inside a link.
+   */
+  to?: string;
 }) {
+  const classes = cx(
+    'inline-flex items-center justify-center gap-2 rounded-sharp font-semibold uppercase tracking-[0.08em] transition-colors',
+    'disabled:cursor-not-allowed disabled:opacity-45',
+    size === 'sm' ? 'px-2.5 py-1.5 text-[10px]' : 'px-4 py-2.5 text-[11px]',
+    BUTTON_STYLES[variant],
+    className,
+  );
+  const style = { transitionDuration: 'var(--dur-fast)', transitionTimingFunction: 'var(--ease-mechanical)' };
+  const inner = <>{loading ? <Loader2 size={13} className="animate-spin" /> : icon}{children}</>;
+
+  if (to) return <Link to={to} className={classes} style={style}>{inner}</Link>;
   return (
-    <button
-      {...props}
-      disabled={props.disabled || loading}
-      className={cx(
-        'inline-flex items-center justify-center gap-2 rounded-sharp font-semibold uppercase tracking-[0.08em] transition-colors',
-        'disabled:cursor-not-allowed disabled:opacity-45',
-        size === 'sm' ? 'px-2.5 py-1.5 text-[10px]' : 'px-4 py-2.5 text-[11px]',
-        BUTTON_STYLES[variant],
-        className,
-      )}
-      style={{ transitionDuration: 'var(--dur-fast)', transitionTimingFunction: 'var(--ease-mechanical)' }}
-    >
-      {loading ? <Loader2 size={13} className="animate-spin" /> : icon}
-      {children}
+    <button {...props} disabled={props.disabled || loading} className={classes} style={style}>
+      {inner}
     </button>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Plus } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
@@ -61,11 +61,9 @@ export default function PurchaseOrders() {
         }
         actions={
           can('invoices', 'create') ? (
-            <Link to={`/purchase-orders/new?direction=${direction}`}>
-              <Button variant="accent" icon={<Plus size={14} />}>
+            <Button to={`/purchase-orders/new?direction=${direction}`} variant="accent" icon={<Plus size={14} />}>
                 {isSupplier ? 'New supplier PO' : 'Record customer PO'}
               </Button>
-            </Link>
           ) : undefined
         }
       />

@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { ArrowRight, Check, Ban } from 'lucide-react';
 import { Badge, Button, cx } from './ui';
 import type { Hint, Track } from '../lib/lifecycle';
@@ -27,7 +26,7 @@ export function NextStep({ hint }: { hint: Hint }) {
       {hint.cta ? (
         <span className="ml-auto">
           {hint.cta.to ? (
-            <Link to={hint.cta.to}><Button size="sm" variant="outline">{hint.cta.label}</Button></Link>
+            <Button to={hint.cta.to} size="sm" variant="outline">{hint.cta.label}</Button>
           ) : (
             <Button size="sm" variant="outline" loading={hint.cta.loading} onClick={hint.cta.onClick}>{hint.cta.label}</Button>
           )}

@@ -218,7 +218,7 @@ export default function Dashboard() {
               <EmptyState
                 title="No target set"
                 message={`Set a ${quarter.label} target to track attainment on this dashboard.`}
-                action={can('settings', 'update') ? <Link to="/settings/targets"><Button variant="accent" size="sm">Set targets</Button></Link> : undefined}
+                action={can('settings', 'update') ? <Button to="/settings/targets" variant="accent" size="sm">Set targets</Button> : undefined}
               />
             )}
           </div>
@@ -237,7 +237,7 @@ export default function Dashboard() {
         <CardHeader
           title="Pipeline over time"
           subtitle="Photographed every evening — the only place that remembers what last month looked like"
-          actions={<Link to="/reports/pipeline-history"><Button size="sm" variant="ghost">Open report</Button></Link>}
+          actions={<Button to="/reports/pipeline-history" size="sm" variant="ghost">Open report</Button>}
         />
         <div className="px-4 py-3">
           <ChartSlot height={220}><PipelineHistoryChart data={history?.rows ?? []} /></ChartSlot>
@@ -250,7 +250,7 @@ export default function Dashboard() {
           <CardHeader
             title="Pipeline funnel"
             subtitle="Open deals by stage, with default win probability"
-            actions={<Link to="/deals"><Button size="sm" variant="ghost">Open board</Button></Link>}
+            actions={<Button to="/deals" size="sm" variant="ghost">Open board</Button>}
           />
           <ChartSlot height={260}><FunnelChart data={data.funnel} /></ChartSlot>
         </Card>
@@ -305,7 +305,7 @@ export default function Dashboard() {
       {/* ── leaderboard ──────────────────────────────────────────────────── */}
       {can('reports', 'read') && data.leaderboard.length > 0 ? (
         <Card className="mt-3">
-          <CardHeader title="Team performance" subtitle={`${quarter.label} closed revenue and attainment`} actions={<Link to="/reports"><Button size="sm" variant="ghost">All reports</Button></Link>} />
+          <CardHeader title="Team performance" subtitle={`${quarter.label} closed revenue and attainment`} actions={<Button to="/reports" size="sm" variant="ghost">All reports</Button>} />
           <DataTable
             rows={data.leaderboard}
             rowKey={(row) => row.id}

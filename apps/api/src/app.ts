@@ -52,6 +52,15 @@ import { registerPortalGate } from './portal/gate.js';
  * middleware and error handling through `app.inject()` — no port, no scheduler, no
  * mocks standing in for the parts most likely to break.
  */
+export interface RouteEntry { method: string; url: string }
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    routeTable: RouteEntry[];
+    publicPaths: Set<string>;
+  }
+}
+
 export async function buildApp() {
   const app = Fastify({
     // Tests drive hundreds of requests; their per-request log lines drown the results.
@@ -65,6 +74,23 @@ export async function buildApp() {
   });
 
   /** Endpoints reachable without a session. Everything else needs one. */
+  /**
+   * Every route this app registers, collected as it registers them.
+   *
+   * A test can then assert a rule against the whole table instead of against the
+   * handful of paths somebody remembered — the difference between a sample and a
+   * sweep. Zeus's most expensive bugs have all been one rule applied to most routes
+   * (Zod 4 partial() on PATCH, cost masking, team scoping): a list that cannot fall
+   * behind the code is the only thing that catches the route nobody thought about.
+   */
+  const routeTable: RouteEntry[] = [];
+  app.decorate('routeTable', routeTable);
+  app.addHook('onRoute', (route) => {
+    for (const method of Array.isArray(route.method) ? route.method : [route.method]) {
+      routeTable.push({ method, url: route.url });
+    }
+  });
+
   const PUBLIC_PATHS = new Set([
     '/api/health',
     '/api/auth/config',
@@ -98,6 +124,8 @@ export async function buildApp() {
   const ELEVATED_ROLES = new Set(['Administrator', 'Sales Manager']);
   /** Reachable without 2FA even when it is required, so a nagged user can still fix it. */
   const TWO_FA_SETUP_PATHS = new Set(['/api/auth/2fa/enrol', '/api/auth/2fa/confirm', '/api/auth/logout', '/api/auth/change-password']);
+
+  app.decorate('publicPaths', PUBLIC_PATHS);
 
   // One gate for the whole API: resolve the session, then reject anonymous traffic.
   app.addHook('onRequest', async (request, reply) => {

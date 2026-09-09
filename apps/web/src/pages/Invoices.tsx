@@ -49,7 +49,7 @@ export default function Invoices() {
         actions={
           <>
           {can('invoices', 'create') ? (
-            <Link to="/invoices/new"><Button variant="accent" icon={<Plus size={14} />}>New invoice</Button></Link>
+            <Button to="/invoices/new" variant="accent" icon={<Plus size={14} />}>New invoice</Button>
           ) : null}
           {can('invoices', 'export') ? (
             <Button

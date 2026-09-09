@@ -87,7 +87,7 @@ export default function PriceBook() {
         description="What each vendor charges us, by quantity and validity. Quote and PO lines take their cost from here."
         actions={
           <>
-            <Link to="/imports"><Button icon={<Upload size={14} />}>Import a price list</Button></Link>
+            <Button to="/imports" icon={<Upload size={14} />}>Import a price list</Button>
             {can('products', 'create') ? (
               <Button variant="accent" icon={<Plus size={14} />} onClick={() => setAdding(true)}>Add price</Button>
             ) : null}
@@ -128,7 +128,7 @@ export default function PriceBook() {
                   title="No vendor prices yet"
                   message="Import a vendor price list, or add one by hand. Until then, quote lines fall back to the catalogue cost."
                   icon={<Tags size={22} />}
-                  action={<Link to="/imports"><Button variant="accent">Import a price list</Button></Link>}
+                  action={<Button to="/imports" variant="accent">Import a price list</Button>}
                 />
               }
               columns={[

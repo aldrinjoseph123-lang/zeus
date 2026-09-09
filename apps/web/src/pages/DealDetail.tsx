@@ -117,7 +117,7 @@ export default function DealDetail() {
   });
 
   if (isLoading) return <Loading />;
-  if (error || !deal) return <EmptyState title="Deal not found" message={(error as Error)?.message} action={<Link to="/deals"><Button>Back to deals</Button></Link>} />;
+  if (error || !deal) return <EmptyState title="Deal not found" message={(error as Error)?.message} action={<Button to="/deals">Back to deals</Button>} />;
 
   const stages = pipelines?.find((p) => p.id === deal.pipeline.id)?.stages ?? [];
   const currentIndex = stages.findIndex((s) => s.id === deal.stage.id);
@@ -150,9 +150,7 @@ export default function DealDetail() {
         actions={
           <>
             {can('quotes', 'create') ? (
-              <Link to={`/quotes/new?dealId=${deal.id}&accountId=${deal.account.id}`}>
-                <Button icon={<FileText size={14} />}>New quote</Button>
-              </Link>
+              <Button to={`/quotes/new?dealId=${deal.id}&accountId=${deal.account.id}`} icon={<FileText size={14} />}>New quote</Button>
             ) : null}
             {can('deals', 'update') ? <Button icon={<Pencil size={14} />} onClick={() => setEditing(true)}>Edit</Button> : null}
             {can('deals', 'create') ? <Button icon={<Copy size={14} />} loading={clone.isPending} onClick={() => clone.mutate()}>Clone</Button> : null}

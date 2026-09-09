@@ -64,7 +64,7 @@ export default function AccountDetail() {
   });
 
   if (isLoading) return <Loading />;
-  if (error || !account) return <EmptyState title="Account not found" message={(error as Error)?.message} action={<Link to="/accounts"><Button>Back to accounts</Button></Link>} />;
+  if (error || !account) return <EmptyState title="Account not found" message={(error as Error)?.message} action={<Button to="/accounts">Back to accounts</Button>} />;
 
   const openDeals = account.deals.filter((d) => d.status === 'OPEN');
   const wonDeals = account.deals.filter((d) => d.status === 'WON');
