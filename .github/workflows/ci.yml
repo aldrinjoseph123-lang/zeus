@@ -200,6 +200,30 @@ jobs:
 
           exit $fail
 
+      # Nothing else in this workflow opens a page. 427 API tests cover the routes and
+      # five of the twenty-three defects this project has fixed were in the UI in front
+      # of them — a switch drawn twice, a label that wrapped, a lookup menu that would
+      # not close. These drive the real image already running above, so what is tested
+      # is the artefact that ships rather than a dev server that differs from it.
+      - name: Browser journeys against the running image
+        run: |
+          npx playwright install --with-deps chromium
+          E2E_URL=http://localhost:4000 \
+          E2E_EMAIL=admin@protect24x7.ae \
+          E2E_PASSWORD='CiBootCheck#2026' \
+            npx playwright test -c e2e/playwright.config.ts
+
+      - name: Keep the browser evidence when a journey fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failures
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
       # A release is a git tag (v1.2.3). Only then — and only after the image above
       # built, booted, migrated, seeded, served traffic and set its headers — is that
       # exact image published, so production pulls something CI has already run.
