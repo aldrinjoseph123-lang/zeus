@@ -239,6 +239,20 @@ every five minutes, with uptime over the day and week beside it.
 
 An integration nobody has set up reads as healthy, not down: nothing depends on it yet.
 
+**Two failed checks, not one.** A component is only called down after two consecutive
+failures, roughly ten minutes apart. A single bad probe is usually a blip — a five-second
+timeout, one refused request — and an alarm that fires on those is one people learn to
+ignore. Recovery alerts immediately and by email: an alarm with no all-clear is worse
+than no alarm.
+
+**Who hears about it.** Infrastructure events — a component down or recovered, a backup
+failed, missed or unverified, a data-integrity finding — go to the *Administrators only*
+audience. Commercial events keep the wider *Administrators and Sales Managers* one: a
+sales manager wants to know a deal was won and can do nothing about a failed backup.
+Both are editable per event in *Settings → Notifications*, and existing installs keep
+whatever is already set there — the code fills in missing rules, it never overwrites
+your choices.
+
 That last row exists because of how backups failed once. An install that booted with
 backups switched off registered no backup jobs, and switching them on afterwards
 changed nothing until a restart — the setting said yes and the scheduler held nothing.
@@ -394,6 +408,7 @@ without a way back.
 ```bash
 npm test                 # unit self-checks, no database
 npm run test:api         # integration suite against a real database
+npm run test:e2e         # browser journeys against a running Zeus
 ```
 
 The self-checks cover VAT and margin arithmetic, domain and company-name normalisation,
@@ -404,6 +419,32 @@ asserts what the HTTP layer actually does: that a rep cannot read another rep's 
 that an issued invoice refuses to change its figures, that approval gates hold when the
 endpoint is called directly, and that a renewal chain rolls forward correctly. It uses
 its own database (`zeus_test` by default) and never touches your development data.
+
+Three layers sit above the per-route tests, because the defects that have actually cost
+this project time were never one broken route — they were one rule applied to most of
+them. `.partial()` keeping Zod 4 defaults corrupted data through every PATCH; a report
+handed reps buy prices the screen refused; team scoping reached lists but not aggregates.
+
+- **Conventions** (`conventions.test.ts`, and `conventions.check.ts` for the front end)
+  read the source. No route may build a patch body with `.partial()`, every route file
+  gates on a permission or says in writing why not, every route touching cost goes
+  through the masking helpers, and no `<Button>` is nested inside a `<Link>`. Exemptions
+  are listed with reasons, so a new offender fails until somebody decides.
+- **Sweeps** (`sweeps.test.ts`, `sweepCost.test.ts`, `sweepDelete.test.ts`,
+  `sweepScope.test.ts`) assert against the real route table, which the app collects as it
+  registers. Every route refuses an anonymous caller; none answers 500 to a malformed
+  body; no read hands a cost-masked rep the numbers their role hides; no delete orphans
+  its children; nothing outside a rep's scope appears in any list or total. A route added
+  next year is covered the day it is written, because none of them names a route.
+- **Browser journeys** (`e2e/`) open real pages: signing in, creating a deal through the
+  account lookup, filtering the list, walking every screen for console errors, and
+  checking that no setting is drawn twice or labelled with its own key. They run against
+  the built container in CI, so they exercise the image that ships.
+
+Run the browser tests locally against a dev server with
+`E2E_URL=http://localhost:5174 npm run test:e2e`. They sign in once and reuse the
+session — the login route is rate limited, and a suite that logs in per test locks
+itself out.
 
 ```
 apps/
@@ -508,6 +549,26 @@ restored. Escrow it somewhere separate from the server — a password manager, n
 same disk.
 
 ---
+
+### Deleting something that other records point at
+
+Accounts, deals and contacts refuse to be deleted while live records still name them —
+an account with contacts or paperwork, a deal with quotes or invoices, a contact who is
+the primary contact on an open deal. The message says what is in the way; move or
+re-point those first.
+
+The reason is that `deletedAt` is a column rather than a delete, so no foreign key can
+object: a quote would go on pointing at a deal that no longer exists, and nothing would
+say so. Quote and invoice numbers are sequential and audited, so cascading was the wrong
+answer — a numbered document that may already have gone to a customer should not vanish
+as a side effect of tidying up a deal.
+
+Products are the exception, deliberately: one that appears on any quote, invoice,
+purchase order or subscription is **deactivated** rather than deleted, so historical
+paperwork still resolves.
+
+The nightly data-integrity sweep checks the same rule from the other side, reporting any
+live record whose parent has been deleted.
 
 ## Partner & customer portal
 
