@@ -205,6 +205,18 @@ jobs:
       # of them — a switch drawn twice, a label that wrapped, a lookup menu that would
       # not close. These drive the real image already running above, so what is tested
       # is the artefact that ships rather than a dev server that differs from it.
+      # The browser tests import @playwright/test, so this job needs the repo's own
+      # dependencies — it builds an image and otherwise never installs anything. Without
+      # this, npx fetches a standalone Playwright that cannot resolve the config's own
+      # imports, which fails as MODULE_NOT_FOUND a long way from the cause.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Install the browser-test dependencies
+        run: npm ci --ignore-scripts
+
       - name: Browser journeys against the running image
         run: |
           npx playwright install --with-deps chromium
