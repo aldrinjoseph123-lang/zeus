@@ -224,7 +224,7 @@ async function workflowStatesPossible(): Promise<Finding> {
  * exactly the kind of record that renders as a blank name in the UI.
  */
 async function softDeleteDrift(): Promise<Finding> {
-  const [deals, contacts, quotes, invoices] = await Promise.all([
+  const [deals, contacts, quotes, invoices, quotesOnDeadDeals, dealsOnDeadContacts] = await Promise.all([
     prisma.deal.findMany({
       where: { deletedAt: null, account: { deletedAt: { not: null } } },
       select: { reference: true },
@@ -241,6 +241,22 @@ async function softDeleteDrift(): Promise<Finding> {
       where: { account: { deletedAt: { not: null } } },
       select: { number: true },
     }),
+    // The account is not the only parent that can be deleted out from under a record.
+    // Deleting a deal leaves its quotes alive and still pointing at it; deleting a
+    // contact leaves the deals that name it as their primary contact the same way.
+    // Checking only the account meant this whole shape went unseen.
+    //
+    // Products are deliberately absent: they are deactivated rather than deleted, which
+    // is the whole point of that rule — a live subscription on an inactive product is
+    // correct, not drift.
+    prisma.quote.findMany({
+      where: { deal: { is: { deletedAt: { not: null } } } },
+      select: { number: true },
+    }),
+    prisma.deal.findMany({
+      where: { deletedAt: null, primaryContact: { is: { deletedAt: { not: null } } } },
+      select: { reference: true },
+    }),
   ]);
 
   const problems = [
@@ -248,6 +264,8 @@ async function softDeleteDrift(): Promise<Finding> {
     ...contacts.map((c) => `contact ${c.firstName} ${c.lastName}`),
     ...quotes.map((q) => `quote ${q.number}`),
     ...invoices.map((i) => `invoice ${i.number}`),
+    ...quotesOnDeadDeals.map((q) => `quote ${q.number} (deleted deal)`),
+    ...dealsOnDeadContacts.map((d) => `deal ${d.reference} (deleted primary contact)`),
   ];
 
   return {
@@ -256,8 +274,8 @@ async function softDeleteDrift(): Promise<Finding> {
     count: problems.length,
     examples: sample(problems),
     detail: problems.length
-      ? `${problems.length} live record(s) whose account has been deleted.`
-      : 'No live record points at a deleted account.',
+      ? `${problems.length} live record(s) whose parent has been deleted.`
+      : 'No live record points at a deleted parent.',
   };
 }
 

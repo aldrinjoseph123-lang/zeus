@@ -175,6 +175,57 @@ describe('soft-delete drift', () => {
     assert.ok(f, 'no FK in Postgres can catch a soft-deleted parent');
     assert.ok(f?.examples.some((e) => e.includes(deal.reference)));
   });
+
+  /**
+   * The account was the only parent this check knew about, so two ways of orphaning a
+   * record went unseen: deleting a deal leaves its quotes alive and still pointing at
+   * it, and deleting a contact leaves the deals that name it as primary contact the
+   * same way. Both are what the API does today — neither delete refuses.
+   */
+  it('catches a live deal whose primary contact has been deleted', async () => {
+    const contact = await prisma.contact.create({
+      data: { firstName: 'Gone', lastName: 'Person', accountId: fx.customer.id },
+    });
+    const deal = await prisma.deal.create({
+      data: {
+        reference: `T-${Math.random().toString(36).slice(2, 8)}`, name: 'Names a contact',
+        accountId: fx.customer.id, primaryContactId: contact.id, pipelineId: fx.pipeline.id,
+        stageId: fx.pipeline.stages[0].id, amount: 1, cost: 0, vatRate: 5, vatAmount: 0,
+        totalAmount: 1, probability: 10, closeDate: new Date(), ownerId: fx.rep.id,
+      },
+    });
+    assert.equal(await finding('soft_delete_drift'), undefined);
+
+    await prisma.contact.update({ where: { id: contact.id }, data: { deletedAt: new Date() } });
+
+    const f = await finding('soft_delete_drift');
+    assert.ok(f, 'a deal naming a deleted contact is drift too');
+    assert.ok(f?.examples.some((e) => e.includes(deal.reference)), JSON.stringify(f?.examples));
+  });
+
+  it('catches a quote whose deal has been deleted', async () => {
+    const deal = await prisma.deal.create({
+      data: {
+        reference: `T-${Math.random().toString(36).slice(2, 8)}`, name: 'Quoted then deleted',
+        accountId: fx.customer.id, pipelineId: fx.pipeline.id, stageId: fx.pipeline.stages[0].id,
+        amount: 1, cost: 0, vatRate: 5, vatAmount: 0, totalAmount: 1,
+        probability: 10, closeDate: new Date(), ownerId: fx.rep.id,
+      },
+    });
+    const quote = await prisma.quote.create({
+      data: {
+        number: `Q-${Math.random().toString(36).slice(2, 8)}`, accountId: fx.customer.id, dealId: deal.id,
+        subtotal: 1, vatAmount: 0, total: 1, validUntil: new Date(Date.now() + 30 * 86_400_000),
+      },
+    });
+    assert.equal(await finding('soft_delete_drift'), undefined);
+
+    await prisma.deal.update({ where: { id: deal.id }, data: { deletedAt: new Date() } });
+
+    const f = await finding('soft_delete_drift');
+    assert.ok(f, 'a quote outliving its deal is drift');
+    assert.ok(f?.examples.some((e) => e.includes(quote.number)), JSON.stringify(f?.examples));
+  });
 });
 
 describe('files match rows', () => {
