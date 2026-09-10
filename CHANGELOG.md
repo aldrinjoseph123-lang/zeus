@@ -12,6 +12,28 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ---
 
+## Unreleased
+
+### Added — a boot splash
+
+- **The blank screen before the app appears now says something.** Between the HTML
+  arriving and React mounting there was nothing at all — a white rectangle for however
+  long the bundle took. Both the staff app and the partner portal now show the Zeus mark
+  and a progress bar in that gap.
+- It is **invisible for the first 250ms**, so a warm cache or the office LAN never shows
+  it. Only a genuinely slow load fades it up. It costs no JavaScript and no extra
+  request: the markup sits inside `#root` in `index.html`, and React clears the container
+  when it mounts, which is the whole teardown.
+
+### Fixed
+
+- **Dark mode flashed white on every cold load.** The theme was applied in `main.tsx`,
+  which runs only once the bundle has downloaded — so a dark-mode user got the light
+  palette for the length of the download and then a flip. It is now set in the document
+  head, before the first paint. The in-app toggle is unchanged.
+
+---
+
 ## v1.3.0 — 10 September 2026
 
 The release that went looking for one class of bug and found three of them.

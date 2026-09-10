@@ -10,9 +10,70 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0a'/%3E%3Cpath d='M8 8h16l-9 8h9L8 24l9-8H8z' fill='%23e11d2e'/%3E%3C/svg%3E" />
+    <style>
+      /*
+       * Boot splash. Same shape as the staff app's, minus the theme switch — the
+       * portal has one palette. This is the surface an outsider loads cold on
+       * whatever connection they have, so it matters more here than it does there.
+       *
+       * It lives inside #root, so React removes it when it mounts. It stays
+       * invisible for the first 250ms, so a fast load never flickers it.
+       */
+      body { margin: 0; background: #0a0a0a; }
+
+      #zeus-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #0a0a0a;
+        font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+        animation: zeus-splash-in 200ms ease 250ms both;
+      }
+      #zeus-splash-word {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0.42em;
+        text-indent: 0.42em; /* letter-spacing trails a gap; nudge back to centre */
+        color: #ededed;
+      }
+      #zeus-splash-bar {
+        width: 132px;
+        height: 2px;
+        background: #2a2a2a;
+        overflow: hidden;
+      }
+      #zeus-splash-bar i {
+        display: block;
+        width: 40%;
+        height: 100%;
+        background: #e11d2e;
+        animation: zeus-splash-sweep 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes zeus-splash-in { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes zeus-splash-sweep {
+        from { transform: translateX(-100%) }
+        to { transform: translateX(330%) }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #zeus-splash { animation-duration: 1ms }
+        #zeus-splash-bar i { animation: none; width: 100% }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="zeus-splash" role="status" aria-label="Loading the Protect24x7 portal">
+        <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M8 8h16l-9 8h9L8 24l9-8H8z" fill="#e11d2e" />
+        </svg>
+        <div id="zeus-splash-word">ZEUS</div>
+        <div id="zeus-splash-bar"><i></i></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

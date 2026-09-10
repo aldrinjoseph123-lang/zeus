@@ -74,6 +74,20 @@ test.describe('the paths that must never break', () => {
     await expect(page.getByText(/no deals match/i).first()).toBeVisible({ timeout: 15_000 });
   });
 
+  /**
+   * The splash is markup sitting inside #root, and React clears #root when it mounts.
+   * That is the whole teardown — there is no effect, no timer and no class toggle.
+   * It is also the entire risk: the thing is position:fixed over the viewport, so if
+   * React ever stopped clearing the container the app would still be running perfectly
+   * underneath a screen nobody can click through, and every other test here would keep
+   * passing because they query the DOM rather than look at it.
+   */
+  test('the boot splash is gone once the app has mounted', async ({ page }) => {
+    await page.goto('/dashboard');
+    await expect(page.locator('main')).toBeVisible();
+    await expect(page.locator('#zeus-splash')).toHaveCount(0);
+  });
+
   test('every main screen loads without a console error', async ({ page }) => {
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(`${page.url()} → ${m.text()}`); });

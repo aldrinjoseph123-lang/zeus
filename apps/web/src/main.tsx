@@ -7,10 +7,7 @@ import { AuthProvider } from './lib/auth';
 import { ToastProvider } from './components/ui';
 import './theme.css';
 
-// Set the theme before first paint so the app never flashes the wrong palette.
-const storedTheme = localStorage.getItem('zeus.theme');
-const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-document.documentElement.setAttribute('data-theme', (storedTheme ?? (prefersDark ? 'dark' : 'light')));
+// The theme is set in index.html, before the bundle downloads — see the comment there.
 
 const queryClient = new QueryClient({
   defaultOptions: {
