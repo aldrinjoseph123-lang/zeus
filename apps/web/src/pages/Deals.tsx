@@ -154,7 +154,7 @@ function DealBoard() {
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 shrink-0" style={{ background: column.stage.color }} />
                 <span className="truncate text-[12px] font-bold uppercase tracking-[0.08em]">{column.stage.name}</span>
-                <span className="ml-auto text-[11px] text-n400">{column.count}</span>
+                <span className="ml-auto text-[11px] text-muted">{column.count}</span>
               </div>
               <div className="tabular mt-1 flex items-baseline justify-between text-[11px]">
                 <span className="font-semibold">{moneyShort(column.netTotal)}</span>
@@ -166,7 +166,7 @@ function DealBoard() {
 
             <div className="flex max-h-[calc(100vh-320px)] flex-1 flex-col gap-2 overflow-y-auto p-2">
               {column.deals.length === 0 ? (
-                <p className="px-2 py-6 text-center text-[11px] text-n400">Nothing here yet.</p>
+                <p className="px-2 py-6 text-center text-[11px] text-muted">Nothing here yet.</p>
               ) : (
                 column.deals.map((deal) => {
                   const stuck = (daysBetween(deal.stageChangedAt) ?? 0) > column.stage.rotDays && deal.status === 'OPEN';
@@ -185,7 +185,7 @@ function DealBoard() {
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="text-[10px] uppercase tracking-[0.08em] text-n400">{deal.reference}</span>
+                        <span className="text-[10px] uppercase tracking-[0.08em] text-muted">{deal.reference}</span>
                         {deal.partnerAccount ? <Badge tone="info">Partner</Badge> : null}
                       </div>
                       <h4 className="mt-1 line-clamp-2 text-[13px] font-semibold leading-snug">{deal.name}</h4>
@@ -193,11 +193,11 @@ function DealBoard() {
 
                       <div className="tabular mt-2 flex items-baseline justify-between">
                         <span className="text-[14px] font-bold">{moneyShort(deal.amount)}</span>
-                        <span className="text-[10px] text-n400">{deal.probability}%</span>
+                        <span className="text-[10px] text-muted">{deal.probability}%</span>
                       </div>
 
                       <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-1.5">
-                        <span className={cx('text-[10px] uppercase tracking-[0.06em]', overdue ? 'font-semibold text-accent' : 'text-n400')}>
+                        <span className={cx('text-[10px] uppercase tracking-[0.06em]', overdue ? 'font-semibold text-accent' : 'text-muted')}>
                           {overdue ? 'overdue' : date(deal.closeDate)}
                         </span>
                         {deal.owner ? (

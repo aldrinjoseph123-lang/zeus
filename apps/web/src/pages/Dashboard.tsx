@@ -355,7 +355,7 @@ export default function Dashboard() {
           {attention?.systemErrors ? (
             <Link
               to="/settings/logs"
-              className="flex items-center gap-2 border-b border-line bg-[var(--surface-danger)] px-4 py-2 text-[12px] text-[var(--text-danger)] transition-colors hover:bg-[var(--surface-danger-hover)]"
+              className="flex items-center gap-2 border-b border-line bg-[var(--surface-danger)] px-4 py-2 text-[12px] text-[var(--text-on-accent-soft)] transition-colors hover:bg-[var(--surface-danger-hover)]"
             >
               <AlertTriangle size={14} className="shrink-0" />
               <span className="font-semibold">

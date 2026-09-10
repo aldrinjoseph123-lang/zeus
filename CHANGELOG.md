@@ -62,9 +62,12 @@ Two screens that were wrong in the dark, and the checks that would have said so.
   the page the browser actually drew rather than the stylesheet. It found both problems
   above on its first run, and it is the reason they were found at all — the two contrast
   failures fixed this release were caught by hand, and hand-checking does not scale.
-- Sixty-eight remaining contrast problems are recorded rather than fixed: components still
-  drawing text from the raw palette instead of the named colours. The count is pinned, so
-  it can shrink but not grow, and the note fails if it ever stops applying.
+- **Every screen now passes**, in both themes. The check first reported sixty-eight
+  further contrast problems, and they turned out to be one bug seen sixty-eight times:
+  the sidebar and top bar are dark in *both* themes, but their text was drawn from a
+  palette that only lightens at night — so in daylight the section headings sat at 1.9
+  against their own background. Nav text now has its own colours, fixed light-on-dark,
+  because the surface behind them never changes.
 - **A coverage floor**, measured before it was set: 82% of lines, 72% of branches. It
   exists to catch coverage sliding when a route arrives without a test.
 - A check that fails the build when any colour names a value the theme never defines —

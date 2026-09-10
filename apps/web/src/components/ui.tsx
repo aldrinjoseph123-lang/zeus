@@ -250,7 +250,7 @@ type BadgeTone = 'neutral' | 'accent' | 'watch' | 'secure' | 'info' | 'dark';
 
 const BADGE_TONES: Record<BadgeTone, string> = {
   neutral: 'bg-n100 text-n600 border-n200',
-  accent: 'bg-accent-soft text-[var(--red-700)] border-[var(--red-300)]',
+  accent: 'bg-accent-soft text-[var(--text-on-accent-soft)] border-[var(--red-300)]',
   watch: 'bg-[#fdf1e4] text-[#8a4a10] border-[#f0cfa8]',
   secure: 'bg-[#e8f5ed] text-[#14653a] border-[#b8dfc8]',
   info: 'bg-[#e9f0f8] text-[#1b4a80] border-[#bcd2e8]',

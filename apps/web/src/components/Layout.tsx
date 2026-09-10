@@ -85,7 +85,7 @@ function UndoMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-label={`Undo recent changes${entries.length ? `, ${entries.length} available` : ''}`}
         title="Recent changes you can undo"
-        className="relative flex h-9 w-9 items-center justify-center text-n400 transition-colors hover:text-white"
+        className="relative flex h-9 w-9 items-center justify-center text-nav-muted transition-colors hover:text-white"
       >
         <Undo2 size={17} />
         {entries.length > 0 ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /> : null}
@@ -104,7 +104,7 @@ function UndoMenu() {
                 <div key={entry.id} className="flex items-center gap-2 border-b border-line px-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-semibold leading-snug">{entry.label}</p>
-                    <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">{relative(entry.at)}</p>
+                    <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-nav-muted">{relative(entry.at)}</p>
                   </div>
                   <button
                     disabled={undo.isPending}
@@ -135,7 +135,7 @@ function ThemeToggle() {
       onClick={() => set(!dark)}
       aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
       title={dark ? 'Light theme' : 'Dark theme'}
-      className="flex h-9 w-9 items-center justify-center text-n400 transition-colors hover:text-white"
+      className="flex h-9 w-9 items-center justify-center text-nav-muted transition-colors hover:text-white"
     >
       {dark ? <Sun size={17} /> : <Moon size={17} />}
     </button>
@@ -191,7 +191,7 @@ function NotificationBell() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
-        className="relative flex h-9 w-9 items-center justify-center text-n400 transition-colors hover:text-white"
+        className="relative flex h-9 w-9 items-center justify-center text-nav-muted transition-colors hover:text-white"
       >
         <Bell size={17} />
         {unread > 0 ? (
@@ -247,7 +247,7 @@ function NotificationBell() {
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold leading-snug">{n.title}</p>
                       {n.body ? <p className="mt-0.5 line-clamp-2 text-xs text-muted">{n.body}</p> : null}
-                      <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-n400">{relative(n.createdAt)}</p>
+                      <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-nav-muted">{relative(n.createdAt)}</p>
                     </div>
                   </div>
                 </Link>
@@ -305,7 +305,7 @@ export default function Layout() {
       <div className="flex items-center gap-2 border-b border-n800 px-4 py-4">
         <span className="text-[19px] font-bold tracking-[0.22em]">ZEUS</span>
         <span className="text-[19px] font-bold leading-none text-accent">.</span>
-        <span className="ml-auto text-[9px] uppercase tracking-[0.12em] text-n500">Protect24x7</span>
+        <span className="ml-auto text-[9px] uppercase tracking-[0.12em] text-nav-dim">Protect24x7</span>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-3">
@@ -314,7 +314,7 @@ export default function Layout() {
           if (items.length === 0) return null;
           return (
             <div key={group.section} className="mb-4">
-              <p className="px-4 pb-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-n600">{group.section}</p>
+              <p className="px-4 pb-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-nav-dim">{group.section}</p>
               {items.map((item) => (
                 <NavLink
                   key={item.to}
@@ -324,7 +324,7 @@ export default function Layout() {
                   className={({ isActive }) =>
                     cx(
                       'relative flex items-center gap-2.5 px-4 py-2 text-[13px] transition-colors',
-                      isActive ? 'bg-n900 font-semibold text-white' : 'text-n400 hover:bg-n900 hover:text-white',
+                      isActive ? 'bg-n900 font-semibold text-white' : 'text-nav-muted hover:bg-n900 hover:text-white',
                     )
                   }
                 >
@@ -348,7 +348,7 @@ export default function Layout() {
           onClick={() => setMobileOpen(false)}
           className={({ isActive }) =>
             cx('flex items-center gap-2.5 border-t border-n800 px-4 py-2.5 text-[13px] transition-colors',
-              isActive ? 'bg-n900 font-semibold text-white' : 'text-n400 hover:bg-n900 hover:text-white')
+              isActive ? 'bg-n900 font-semibold text-white' : 'text-nav-muted hover:bg-n900 hover:text-white')
           }
         >
           <SettingsIcon size={15} />
@@ -361,9 +361,9 @@ export default function Layout() {
           <Avatar name={user?.name ?? '?'} color={user?.avatarColor} size={30} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[12px] font-semibold">{user?.name}</p>
-            <p className="truncate text-[10px] uppercase tracking-[0.08em] text-n500">{user?.role.name}</p>
+            <p className="truncate text-[10px] uppercase tracking-[0.08em] text-nav-muted">{user?.role.name}</p>
           </div>
-          <button onClick={signOut} aria-label="Sign out" title="Sign out" className="text-n500 transition-colors hover:text-accent">
+          <button onClick={signOut} aria-label="Sign out" title="Sign out" className="text-nav-muted transition-colors hover:text-accent">
             <LogOut size={15} />
           </button>
         </div>
@@ -384,7 +384,7 @@ export default function Layout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-n800 bg-n950 px-3 sm:px-4">
-          <button onClick={() => setMobileOpen(true)} aria-label="Open menu" className="text-n400 hover:text-white lg:hidden">
+          <button onClick={() => setMobileOpen(true)} aria-label="Open menu" className="text-nav-muted hover:text-white lg:hidden">
             <Menu size={19} />
           </button>
 
@@ -500,7 +500,7 @@ function GlobalSearch() {
         }}
         onFocus={() => setOpen(true)}
         placeholder="Search or jump to…  ⌘K"
-        className="w-full rounded-sharp border border-n800 bg-n900 px-3 py-1.5 text-[13px] text-white placeholder:text-n500 focus:border-accent"
+        className="w-full rounded-sharp border border-n800 bg-n900 px-3 py-1.5 text-[13px] text-white placeholder:text-nav-dim focus:border-accent"
       />
       {isFetching ? <span className="absolute right-2.5 top-1/2 -translate-y-1/2"><Spinner size={13} /></span> : null}
 

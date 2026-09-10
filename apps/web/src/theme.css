@@ -50,9 +50,21 @@
    * component reaching for --red-700 directly got dark red text on the dark red
    * wash --red-50 becomes in dark mode. 2.1:1, on the most urgent thing on the page.
    */
+  /*
+   * The sidebar and header are bg-n950 in both themes — those are primitives, and
+   * primitives deliberately do not flip. So their text cannot come from the neutral
+   * ramp either: the ramp lifts its mid greys only in dark mode, which left the nav's
+   * section headings at #4a4a4a on #0a0a0a in daylight. 1.9 against a floor of 4.5,
+   * on every page, in the theme most people use. Fixed light-on-dark values, the same
+   * in both themes because the ground is.
+   */
+  --nav-text: #ededed;   /* 15.9:1 on #0a0a0a */
+  --nav-muted: #a3a3a3;  /*  9.3:1 */
+  --nav-dim: #8a8a8a;    /*  5.7:1 — subordinate, still legible */
+
   --surface-danger: var(--red-50);
   --surface-danger-hover: #f9d8da;
-  --text-danger: var(--red-700);
+  --text-on-accent-soft: var(--red-700);
   --action-accent-hover: var(--red-600);
   --action-accent-press: var(--red-700);
 
@@ -114,7 +126,7 @@
   /* Danger text has to lift on a dark wash; --red-700 is a light-mode value. 5.9:1. */
   --surface-danger: #2a1416;
   --surface-danger-hover: #3a1b1e;
-  --text-danger: var(--red-300);
+  --text-on-accent-soft: var(--red-300);
 
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.6);
@@ -130,6 +142,9 @@
 
   --color-ink: var(--text-primary);
   --color-muted: var(--text-secondary);
+  --color-nav-text: var(--nav-text);
+  --color-nav-muted: var(--nav-muted);
+  --color-nav-dim: var(--nav-dim);
 
   --color-line: var(--border-default);
   --color-line-strong: var(--border-strong);

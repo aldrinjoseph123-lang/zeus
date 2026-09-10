@@ -30,23 +30,13 @@ const IMPACTS = ['serious', 'critical'];
  * NO_CHILDREN list: an entry needs a reason, and an entry that stops occurring fails
  * too, so the list cannot quietly outlive the problem.
  *
- * The number was measured twice, and the first measurement was wrong: it read 60 while
- * the instance under test was rate-limiting some page loads into error responses, so
- * those pages contributed nothing to count. A ceiling taken off a throttled run is a
- * ceiling that fails the moment the throttling stops.
- *
- * These are components still painting text from the raw neutral ramp (text-n400/n500/
- * n600) instead of the semantic tokens. theme.css already carries a note about it: the
- * primitives deliberately do not flip per theme, so a mid-grey chosen against a white
- * card is unreadable on the dark nav. Fixing it is a refactor across the tree, not a
- * line; what this number does is stop it growing while that waits.
+ * It is empty, and it emptied itself. It held one entry — sixty-eight contrast failures
+ * from components drawing text out of the raw neutral ramp — and the run that fixed them
+ * failed on the stale-entry check rather than passing quietly with an exemption that no
+ * longer applied. That is the only reason this mechanism is still here: the next piece of
+ * debt that gets pinned should be as hard to forget.
  */
-const KNOWN: Record<string, { max: number; why: string }> = {
-  'color-contrast': {
-    max: 68,
-    why: 'components still using raw text-n400/n500/n600 rather than the semantic tokens',
-  },
-};
+const KNOWN: Record<string, { max: number; why: string }> = {};
 
 interface Hit { rule: string; impact: string; page: string; html: string }
 
@@ -82,7 +72,7 @@ test.describe('accessibility', () => {
     hits = [...(await sweep(browser, 'light')), ...(await sweep(browser, 'dark'))];
   });
 
-  test('no serious or critical violation outside the pinned debt', async () => {
+  test('no serious or critical violation on any screen, in either theme', async () => {
     const unknown = hits.filter((h) => !KNOWN[h.rule]);
     const report = [...new Set(unknown.map((h) => `${h.rule} [${h.impact}] ${h.page}\n      ${h.html}`))];
     expect(unknown.map((h) => h.rule), `new accessibility violations:\n    ${report.join('\n    ')}`).toEqual([]);
