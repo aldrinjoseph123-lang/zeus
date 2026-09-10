@@ -56,7 +56,7 @@ export default async function globalSetup() {
     if (!login.ok()) {
       throw new Error(
         login.status() === 429
-          ? `e2e sign-in was rate limited (429) against ${base}. The limiter is in memory — restart the API to clear it.`
+          ? `e2e sign-in was rate limited (429) against ${base}. The limiter is in memory, so restarting the API clears it — but a whole browser run legitimately exceeds the default 300/min from one address, so boot the instance under test with RATE_LIMIT_MAX set high (CI uses 5000).`
           : `e2e sign-in failed (${login.status()}) against ${base}. Check E2E_EMAIL / E2E_PASSWORD.`,
       );
     }

@@ -117,8 +117,17 @@ export async function buildApp() {
    * Applied globally now, with those two routes keeping their own tighter override.
    * Off under the test runner: a full suite legitimately fires far more than 300
    * requests a minute from the same address, and none of that is testing this library.
+   *
+   * The browser tests have the same problem and cannot use that escape hatch — they
+   * drive a real built image, where NODE_ENV is production and turning it off would
+   * change what is being tested. So the ceiling is configurable instead, and CI boots
+   * that instance with a high one. The default is the number that actually ships.
    */
-  await app.register(rateLimit, { global: process.env.NODE_ENV !== 'test', max: 300, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    global: process.env.NODE_ENV !== 'test',
+    max: env.RATE_LIMIT_MAX,
+    timeWindow: '1 minute',
+  });
 
   /** Roles trusted with money and the roster — 2FA is required for them, not optional. */
   const ELEVATED_ROLES = new Set(['Administrator', 'Sales Manager']);

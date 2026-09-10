@@ -5,6 +5,12 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   APP_SECRET: z.string().min(32, 'APP_SECRET must be at least 32 chars — run: openssl rand -hex 32'),
   PORT: z.coerce.number().default(4000),
+  /**
+   * Requests per minute per address, before the global limiter answers 429. The default
+   * is the real ceiling; it is raised only when booting an instance for the browser
+   * tests, which drive one address far harder than any person does.
+   */
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   APP_URL: z.string().url().default('http://localhost:5174'),
   CORS_ORIGINS: z.string().default('http://localhost:5174'),

@@ -30,6 +30,11 @@ const IMPACTS = ['serious', 'critical'];
  * NO_CHILDREN list: an entry needs a reason, and an entry that stops occurring fails
  * too, so the list cannot quietly outlive the problem.
  *
+ * The number was measured twice, and the first measurement was wrong: it read 60 while
+ * the instance under test was rate-limiting some page loads into error responses, so
+ * those pages contributed nothing to count. A ceiling taken off a throttled run is a
+ * ceiling that fails the moment the throttling stops.
+ *
  * These are components still painting text from the raw neutral ramp (text-n400/n500/
  * n600) instead of the semantic tokens. theme.css already carries a note about it: the
  * primitives deliberately do not flip per theme, so a mid-grey chosen against a white
@@ -38,7 +43,7 @@ const IMPACTS = ['serious', 'critical'];
  */
 const KNOWN: Record<string, { max: number; why: string }> = {
   'color-contrast': {
-    max: 60,
+    max: 68,
     why: 'components still using raw text-n400/n500/n600 rather than the semantic tokens',
   },
 };
