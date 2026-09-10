@@ -12,7 +12,9 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ---
 
-## Unreleased
+## v1.4.0 — 11 September 2026
+
+Two screens that were wrong in the dark, and the checks that would have said so.
 
 ### Added — a boot splash
 
@@ -31,12 +33,54 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   The markup sits in `#root`, and React clears the container when it mounts, which is the
   whole teardown.
 
-### Fixed
+### Fixed — things that were wrong in the dark
 
 - **Dark mode flashed white on every cold load.** The theme was applied in `main.tsx`,
   which runs only once the bundle has downloaded — so a dark-mode user got the light
   palette for the length of the download and then a flip. It is now set in the document
   head, before the first paint. The in-app toggle is unchanged.
+- **The dashboard's server-error banner was close to unreadable in dark mode.** The strip
+  that says *"N server errors in the last 24 hours"* — the most urgent thing on the page —
+  drew dark red text on the dark red wash the accent surface becomes at night: a contrast
+  ratio of 2.1 against a floor of 4.5. It painted itself from raw palette values, and the
+  palette deliberately does not flip per theme. It now uses named danger colours defined
+  for both, measured at 7.3 in daylight and 5.9 at night.
+- Hovering that same banner in dark mode flashed it pale pink, because the hover colour
+  named a value that was never defined and quietly fell back to a light-mode literal.
+
+### Changed — easier to use without a mouse
+
+- **The filter dropdowns now say what they are.** Twelve of them — on leads, accounts,
+  quotes and invoices — showed their name only as the first option in the list, which a
+  screen reader does not read as a name. Anyone using one heard an unlabelled control.
+- **The deal board can be scrolled from the keyboard.** It runs off the side of the
+  screen and, until now, only a mouse or trackpad could move it.
+
+### Testing
+
+- **Accessibility is checked on every build**, across nine screens in both themes, against
+  the page the browser actually drew rather than the stylesheet. It found both problems
+  above on its first run, and it is the reason they were found at all — the two contrast
+  failures fixed this release were caught by hand, and hand-checking does not scale.
+- Sixty-eight remaining contrast problems are recorded rather than fixed: components still
+  drawing text from the raw palette instead of the named colours. The count is pinned, so
+  it can shrink but not grow, and the note fails if it ever stops applying.
+- **A coverage floor**, measured before it was set: 82% of lines, 72% of branches. It
+  exists to catch coverage sliding when a route arrives without a test.
+- A check that fails the build when any colour names a value the theme never defines —
+  the exact shape of the banner's hover bug, which cannot fail loudly on its own.
+
+### For anyone running their own instance
+
+- The request ceiling is now configurable through `RATE_LIMIT_MAX`. **The default is
+  unchanged at 300 a minute per address** and there is nothing to do; it exists so the
+  browser test suite, which drives one address far harder than a person does, can be given
+  headroom without weakening what ships.
+
+### After deploying
+
+Nothing. The two notification settings named under v1.3.0 are still worth doing if they
+have not been done.
 
 ---
 
