@@ -43,6 +43,32 @@ function noButtonInsideLink() {
 }
 
 /**
+ * `var(--token, #literal)` silently falls back when --token does not exist, so the
+ * literal becomes the real value — in every theme at once. That is how the dashboard's
+ * server-error banner came to flash light pink on hover in dark mode: --red-100 was
+ * never defined, and #fee2e2 is a light-mode colour. The fallback is what makes it
+ * invisible; nothing errors, nothing logs, it just quietly renders the wrong theme.
+ *
+ * A colour is only theme-aware if theme.css actually defines it, so that is the check.
+ */
+function noFallbackToUndefinedToken() {
+  const theme = read('theme.css');
+  const defined = new Set([...theme.matchAll(/^\s*(--[a-z0-9-]+):/gm)].map((m) => m[1]));
+  const offenders: string[] = [];
+  for (const f of [...files(''), ...files('', '.ts'), ...files('', '.css')]) {
+    // theme.css declares the tokens; this file names one in its own comment.
+    if (f.endsWith('theme.css') || f.endsWith('conventions.check.ts')) continue;
+    const src = read(f);
+    for (const m of src.matchAll(/var\((--[a-z0-9-]+)\s*,/g)) {
+      if (!defined.has(m[1])) {
+        offenders.push(`${f}:${src.slice(0, m.index).split('\n').length} ${m[1]}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], 'these fall back to a hard-coded colour because theme.css never defines the token');
+}
+
+/**
  * Deliberately not here: "every settings key is rendered exactly once", the rule the
  * duplicated bot-check switch broke. It cannot be decided by reading the source — a
  * SettingsGroup renders a whole prefix, and the keys it is told to skip arrive as a
@@ -51,4 +77,5 @@ function noButtonInsideLink() {
  */
 
 noButtonInsideLink();
+noFallbackToUndefinedToken();
 console.log('✔ front-end conventions');
