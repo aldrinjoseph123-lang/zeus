@@ -73,6 +73,16 @@ jobs:
       - run: npm run build --if-present
       - run: npm test
 
+      # A separate step from `npm test` because it is genuinely slower: coverage cannot
+      # use --test-force-exit (that kills the process before the report prints), so the
+      # run pays the database pool's idle wait the normal suite skips. The thresholds
+      # are a ratchet set just under the measured figures — they exist to stop coverage
+      # sliding, so raise them when it rises rather than leaving the slack.
+      - name: Coverage must not slide
+        working-directory: apps/api
+        # DATABASE_URL and TEST_DATABASE_URL come from the job-level env above.
+        run: npm run test:coverage
+
   # The Dockerfile is what actually gets deployed, so CI has to prove it still builds
   # *and* still boots. Its own job rather than a step above: a deploy break should read
   # as a deploy break instead of a test failure, and it runs in parallel with the tests.

@@ -17,6 +17,7 @@
     "test": "npm run test:unit && npm run test:api",
     "test:unit": "tsx src/selfcheck.ts",
     "test:api": "tsx --test --test-force-exit --test-concurrency=1 src/test/*.test.ts",
+    "test:coverage": "tsx --test --test-concurrency=1 --experimental-test-coverage --test-coverage-lines=82 --test-coverage-branches=71 --test-reporter=dot src/test/*.test.ts",
     "db:simulate": "tsx src/simulate.ts",
     "lint": "eslint .",
     "uat": "tsx scripts/uat.ts",
