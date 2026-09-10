@@ -142,7 +142,13 @@ the HTTP API, goes through the approval sign-off with a second user, checks the
 dashboard, reports, integrity sweep and a real backup, and removes everything it
 created. It writes, so it is for staging only — never point it at production.
 
-**Cut a release** once the branch is green:
+**Write the changelog entry first.** `CHANGELOG.md` is part of the release, not a
+tidy-up afterwards: every version says what changed, names anything that changes
+behaviour people rely on, and lists anything needing a hand after the deploy. Those two
+are what a release note is actually for — an administrator deciding whether to deploy
+tonight, and whoever asks in six months why a delete started refusing.
+
+**Cut a release** once the branch is green and the entry is written:
 
 ```bash
 git tag v1.2.3 && git push --tags

@@ -1,0 +1,168 @@
+# Changelog
+
+What changed in each release, and why. Written for whoever has to operate this — the
+administrator deciding whether to deploy tonight, and the person six months from now
+asking why a delete started refusing.
+
+Every entry names anything that **changes behaviour people rely on** and anything that
+**needs a hand after the deploy**, because those are the two things a release note is
+actually for. Dates are the tag date.
+
+Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous tag.
+
+---
+
+## v1.3.0 — 10 September 2026
+
+The release that went looking for one class of bug and found three of them.
+
+### Fixed — money a role was not allowed to see
+
+- **Subscriptions handed a cost-masked rep the whole book's buy price.**
+  `/api/subscriptions` and `/api/subscriptions/summary` are gated on the *deals*
+  permission, and the Sales Executive role sets `cost: hidden` there — but both returned
+  `unitCost` and `termCost` on every row plus the summed cost in the totals. A rep saw
+  byte for byte what an administrator saw. The masking helper was already being called
+  and stripped nothing, because the role hides the key `cost` and these columns are
+  named differently.
+- **Coaching printed the margin in prose.** The escalation list rendered
+  "Margin 12.3% below 20%" beside an amount the rep could already see, which is the buy
+  price after one subtraction. Same role, same masked field, a third spelling.
+- Both are the same rule as the price-book report leak fixed earlier — a rule that must
+  hold everywhere, implemented in most places.
+
+### Changed — behaviour you may notice
+
+- **Deleting a deal or a contact now refuses** while live records point at them: a deal
+  with quotes, invoices or subscriptions; a contact who is the primary contact on an open
+  deal. Accounts already worked this way. The message names what is in the way.
+  *If you are used to clearing out quoted deals, this is new.* Products are unaffected —
+  one in use is still deactivated rather than deleted.
+- **A component is called down only after two consecutive failed checks**, roughly ten
+  minutes. One bad probe is usually a blip, and an alarm that fires on those is one people
+  learn to ignore.
+- **Recovery now sends email.** An alarm with no all-clear is worse than no alarm.
+- **New "Administrators only" notification audience.** Infrastructure events default to
+  it for new installs; "Administrators and Sales Managers" stays for commercial ones.
+- The bot-check probe records *why* Cloudflare was unreachable — a refused response reads
+  differently from a timeout, and only one of them is Cloudflare's fault.
+
+### Fixed — quieter, but real
+
+- The scheduler did not wait for cron tasks to stop before registering their
+  replacements, so a backup schedule could briefly exist twice.
+- The nightly integrity sweep only checked whether a record's *account* had been deleted.
+  It now also catches a quote outliving its deal and a deal naming a deleted contact.
+- Nine settings on the Company and Finance pages were labelled with their own storage
+  keys — `poPaymentTermsDays`, `reverseChargeStatement`, `placeOfSupply` and six more.
+
+### Faster
+
+- The command palette queried on every keystroke, four requests a round — up to 44 for
+  one search, against a rate limit an office shares by IP. It now waits for the typing to
+  settle.
+- The three heaviest detail screens load on demand, which let the bundler lift the chart
+  library and the portal panel out of the first download too. **The login page waits for
+  415 KB instead of about 1 MB.**
+
+### Testing
+
+- Route sweeps that assert against the real route table rather than the paths someone
+  remembered: every route refuses an anonymous caller, none answers 500 to a malformed
+  body, no read leaks masked money, no delete orphans its children, nothing outside a
+  rep's scope appears in any total.
+- Convention checks that read the source — no `.partial()` in a route schema, every route
+  file gates on a permission or says why not, no `<button>` inside an `<a>`.
+- Browser tests, where there were none: signing in, creating a deal, filtering, walking
+  every screen for console errors, and checking no setting is drawn twice.
+- The suite went from **11m23s to under 3 minutes** — it was idling on an open database
+  handle, not working.
+
+### After deploying
+
+Two settings the code deliberately does not change for you, because channels and
+audiences are yours: in **Settings → Notifications**, switch the six infrastructure events
+to *Administrators only*, and tick **email** on *A system component recovered*.
+
+---
+
+## v1.2.1 — 8 September 2026
+
+- Fixed: "Require the bot check to sign in to Zeus" was drawn twice on Settings →
+  Integrations — once by the Sign-in card, which renders every `auth.*` setting, and again
+  by the Turnstile panel that owns it. Two controls, one stored value.
+
+---
+
+## v1.2.0 — 8 September 2026
+
+### Added
+
+- **Sessions.** Every sign-in is now a row, so signing out means something and an
+  administrator can end anyone's session from Settings → Active sessions. Device, city and
+  country come from Cloudflare's visitor headers.
+- **Login alerts.** A sign-in from a new device or a new country tells the person and the
+  administrators, once per sign-in, silent on a first sign-in or an unknown location.
+- **Email log.** Every message Zeus sends, with status and a preview, and a resend for
+  failures — Settings → Email log.
+- **Bot protection on the staff sign-in**, off until switched on. A Cloudflare outage lets
+  people in and says so in the log rather than locking the team out.
+- **Heartbeat on every integration** — nine components, each answering for itself, with
+  uptime beside it.
+- **Portal: roles and filters.** A partner's primary contact sees every deal at that
+  account; everyone else sees only deals under their own name. Search, status, vendor,
+  stage, expiry window and sort, all in the URL so a view is a link.
+- **Portal: per-account control panel** — logo, which fields that partner sees, and the
+  people with access, all in one place.
+
+### Fixed
+
+- **Switching backups on scheduled nothing until the next restart.** The setting said yes
+  and the scheduler held nothing. This is the reason "Scheduled jobs" appears on the System
+  status page: it reports what is actually registered.
+- The lookup menu would not close inside a modal.
+- The discount label wrapped and pushed its field out of line.
+
+---
+
+## v1.1.0 — 6 September 2026
+
+- **The partner and customer portal**, on its own hostname: partners see their registered
+  deals and both sides of each vendor registration; customers see live services and renewal
+  dates. Access is granted per contact, never implied.
+- Request access — the portal's one public write, quarantined to its own table so a
+  stranger's typing can never become an account.
+- Three layers of control over what a partner sees, with per-account overrides.
+- **Fixed: PATCH routes overwrote fields they were not sent.** Zod 4 keeps `.default()`
+  values under `.partial()`, so a body of `{ name }` silently arrived carrying every
+  default. This was live data corruption from 6 September until it was caught.
+
+---
+
+## v1.0.4 — 6 September 2026
+
+- Two defects found by a staging walkthrough before the first production release.
+
+## v1.0.3 — 6 September 2026
+
+- Accept Power Automate (`*.powerplatform.com`) Teams webhook URLs, and check the host
+  properly rather than by substring.
+
+## v1.0.2 — 6 September 2026
+
+- Caddy: `trusted_proxies` as a global option, and mount the `docker/` directory rather
+  than the single file.
+
+## v1.0.1 — 6 September 2026
+
+- Caddy trusts `X-Forwarded-*` from the Docker bridge, so a visitor arriving through the
+  Cloudflare tunnel keeps their own IP address instead of the proxy's.
+- `deploy.sh` reloads Caddy after bringing the stack up.
+
+## v1.0.0 — 6 September 2026
+
+First production release. Accounts, contacts, leads and deals; quotes, invoices and
+purchase orders with UAE tax-document rules; a vendor price book with USD-to-AED
+conversion; the renewals engine with entitlements and automatic renewal deals; role-based
+access with field-level masking; Microsoft 365 sign-in, email and OneDrive backups; Teams
+and WhatsApp alerts; encrypted backups with restore and verification.
