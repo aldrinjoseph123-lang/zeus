@@ -196,8 +196,16 @@ export const Textarea = ({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 export function Select({
   options, placeholder, className, ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { options: Array<{ value: string; label: string }>; placeholder?: string }) {
+  /*
+   * A filter select's name is its placeholder — "All types", "All industries" — which
+   * renders as the first option. A sighted user reads it off the closed control; a
+   * screen reader gets nothing, because an option is not a label. axe called this
+   * critical on twelve controls across four pages. Defaulting the label here rather
+   * than at each call site means the next filter is named without anyone remembering.
+   */
+  const named = props['aria-label'] ?? props['aria-labelledby'] ? props : { ...props, 'aria-label': placeholder };
   return (
-    <select {...props} className={cx(CONTROL, 'appearance-none bg-[url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27><path d=%27M2 4l4 4 4-4%27 fill=%27none%27 stroke=%27%236b6b6b%27 stroke-width=%271.5%27/></svg>")] bg-[length:12px] bg-[right_10px_center] bg-no-repeat pr-8', className)}>
+    <select {...named} className={cx(CONTROL, 'appearance-none bg-[url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27><path d=%27M2 4l4 4 4-4%27 fill=%27none%27 stroke=%27%236b6b6b%27 stroke-width=%271.5%27/></svg>")] bg-[length:12px] bg-[right_10px_center] bg-no-repeat pr-8', className)}>
       {placeholder !== undefined ? <option value="">{placeholder}</option> : null}
       {options.map((option) => (
         <option key={option.value} value={option.value}>

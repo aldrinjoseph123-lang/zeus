@@ -2,7 +2,7 @@
   "name": "zeus-crm",
   "version": "1.0.0",
   "private": true,
-  "description": "Zeus \u2014 CRM for cybersecurity distribution and managed services (UAE)",
+  "description": "Zeus — CRM for cybersecurity distribution and managed services (UAE)",
   "workspaces": [
     "apps/api",
     "apps/web",
@@ -38,6 +38,7 @@
     "esbuild": true
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0"
   }
 }

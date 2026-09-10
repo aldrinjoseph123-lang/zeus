@@ -133,7 +133,12 @@ function DealBoard() {
         </Toolbar>
       </Card>
 
-      <div className="flex gap-3 overflow-x-auto pb-3">
+      {/*
+        * The board scrolls sideways past the fold, and a region you can only reach with
+        * a mouse wheel is a region a keyboard user cannot read. tabIndex makes it a stop;
+        * the role and label say what they have landed on rather than "group".
+        */}
+      <div className="flex gap-3 overflow-x-auto pb-3" tabIndex={0} role="region" aria-label="Deal stages">
         {data.columns.map((column) => (
           <div
             key={column.stage.id}
