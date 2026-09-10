@@ -27,17 +27,39 @@
     </script>
     <style>
       /*
-       * Boot splash. It lives inside #root, so React removes it the moment it
-       * mounts — there is no teardown code and no way to leave it stuck on screen.
+       * Boot splash — "cold start".
        *
-       * It is invisible for the first 250ms. A warm cache or the office LAN mounts
-       * inside that, so staff signing in twenty times a day never see it at all;
-       * only a genuinely slow boot fades it up. Its own colours are inlined rather
-       * than taken from theme.css, because theme.css ships in the bundle this is
-       * covering for.
+       * It lives inside #root, so React removes it the moment it mounts: there is
+       * no teardown code and no way to leave it stuck over a working app. It stays
+       * invisible for the first 250ms, so a warm cache or the office LAN never
+       * flickers it; only a genuinely slow boot fades it up.
+       *
+       * Drawn in Zeus's own marks rather than a stock spinner — the hatch from
+       * EmptyState, the square plate, the hairline, the uppercase micro-type, and
+       * the app's own --ease-mechanical curve. A hard-edged band wipes across the
+       * plate and lights the mark as it passes: one motion, one meaning, a machine
+       * reading itself. Nothing here is faked — no invented progress percentage
+       * and no checklist of things that were never checked.
+       *
+       * Its colours are inlined rather than taken from theme.css, because
+       * theme.css ships in the bundle this is covering for.
        */
-      :root { --splash-bg: #ffffff; --splash-fg: #0a0a0a; --splash-dim: #d8d8d4; }
-      :root[data-theme='dark'] { --splash-bg: #0a0a0a; --splash-fg: #ededed; --splash-dim: #2a2a2a; }
+      :root {
+        --splash-bg: #ffffff;
+        --splash-line: #d8d8d4;
+        --splash-dim: #b8b8b4;
+        --splash-fg: #0a0a0a;
+        --splash-mute: #6b6b6b;
+        --splash-hatch: rgba(10, 10, 10, 0.05);
+      }
+      :root[data-theme='dark'] {
+        --splash-bg: #0a0a0a;
+        --splash-line: #2a2a2a;
+        --splash-dim: #3d3d3d;
+        --splash-fg: #ededed;
+        --splash-mute: #a3a3a3;
+        --splash-hatch: rgba(237, 237, 237, 0.05);
+      }
       body { margin: 0; background: var(--splash-bg); }
 
       #zeus-splash {
@@ -47,51 +69,106 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 18px;
         background: var(--splash-bg);
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        animation: zeus-splash-in 200ms ease 250ms both;
+        animation: zeus-in 200ms ease 250ms both;
       }
-      #zeus-splash-word {
+
+      /* The plate: square, hairline, hatched — the same 45° rule EmptyState uses. */
+      #zeus-plate {
+        position: relative;
+        width: 96px;
+        height: 96px;
+        border: 1px solid var(--splash-line);
+        background-image: repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 7px,
+          var(--splash-hatch) 7px,
+          var(--splash-hatch) 8px
+        );
+        overflow: hidden;
+      }
+      .zeus-layer {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* The unlit mark. Always on screen, so the plate is never empty. */
+      .zeus-dim path { fill: var(--splash-dim); }
+      /* The lit mark, revealed left to right by the band. */
+      #zeus-lit path { fill: #e11d2e; }
+      #zeus-lit {
+        clip-path: inset(0 100% 0 0);
+        animation: zeus-scan 2200ms cubic-bezier(0.2, 0, 0, 1) 250ms infinite;
+      }
+      /* The read head, travelling with the band's leading edge. */
+      #zeus-head {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 100%;
+        background: #e11d2e;
+        animation: zeus-head 2200ms cubic-bezier(0.2, 0, 0, 1) 250ms infinite;
+      }
+
+      #zeus-word {
+        margin-top: 20px;
         font-size: 20px;
         font-weight: 700;
         letter-spacing: 0.42em;
         text-indent: 0.42em; /* letter-spacing trails a gap; nudge back to centre */
         color: var(--splash-fg);
       }
-      #zeus-splash-bar {
-        width: 132px;
-        height: 2px;
-        background: var(--splash-dim);
-        overflow: hidden;
+      #zeus-status {
+        margin-top: 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+        letter-spacing: 0.3em;
+        text-indent: 0.3em;
+        color: var(--splash-mute);
       }
-      #zeus-splash-bar i {
-        display: block;
-        width: 40%;
-        height: 100%;
-        background: #e11d2e;
-        animation: zeus-splash-sweep 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+
+      @keyframes zeus-in { from { opacity: 0 } to { opacity: 1 } }
+      /* Wipe on, hold, fade. One direction, so the pass reads as deliberate. */
+      @keyframes zeus-scan {
+        0%   { clip-path: inset(0 100% 0 0); opacity: 1 }
+        50%  { clip-path: inset(0 0 0 0);    opacity: 1 }
+        78%  { clip-path: inset(0 0 0 0);    opacity: 1 }
+        100% { clip-path: inset(0 0 0 0);    opacity: 0 }
       }
-      @keyframes zeus-splash-in { from { opacity: 0 } to { opacity: 1 } }
-      @keyframes zeus-splash-sweep {
-        from { transform: translateX(-100%) }
-        to { transform: translateX(330%) }
+      @keyframes zeus-head {
+        0%   { transform: translateX(0);    opacity: 0 }
+        6%   { opacity: 1 }
+        50%  { transform: translateX(96px); opacity: 1 }
+        62%  { transform: translateX(96px); opacity: 0 }
+        100% { transform: translateX(96px); opacity: 0 }
       }
       @media (prefers-reduced-motion: reduce) {
-        /* Still delayed, still fades in — just without the step. */
+        /* Nothing moves: the mark simply sits lit. Still delayed, still fades in. */
         #zeus-splash { animation-duration: 1ms }
-        #zeus-splash-bar i { animation: none; width: 100% }
+        #zeus-lit { animation: none; clip-path: none }
+        #zeus-head { display: none }
       }
     </style>
   </head>
   <body>
     <div id="root">
       <div id="zeus-splash" role="status" aria-label="Loading Zeus">
-        <svg width="72" height="72" viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M8 8h16l-9 8h9L8 24l9-8H8z" fill="#e11d2e" />
-        </svg>
-        <div id="zeus-splash-word">ZEUS</div>
-        <div id="zeus-splash-bar"><i></i></div>
+        <div id="zeus-plate">
+          <span class="zeus-layer zeus-dim">
+            <svg width="48" height="48" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 8h16l-9 8h9L8 24l9-8H8z" /></svg>
+          </span>
+          <span class="zeus-layer" id="zeus-lit">
+            <svg width="48" height="48" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 8h16l-9 8h9L8 24l9-8H8z" /></svg>
+          </span>
+          <span id="zeus-head"></span>
+        </div>
+        <div id="zeus-word">ZEUS</div>
+        <div id="zeus-status">STARTING</div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

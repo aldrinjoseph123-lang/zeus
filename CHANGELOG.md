@@ -18,12 +18,18 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 - **The blank screen before the app appears now says something.** Between the HTML
   arriving and React mounting there was nothing at all — a white rectangle for however
-  long the bundle took. Both the staff app and the partner portal now show the Zeus mark
-  and a progress bar in that gap.
+  long the bundle took. Both the staff app and the partner portal now fill that gap.
+- Drawn in Zeus's own marks rather than a stock spinner: the hatched plate from the empty
+  states, the square hairline, the uppercase micro-type, and the app's own mechanical
+  easing curve. A hard-edged band wipes across the plate and lights the lightning mark as
+  it passes — a machine reading itself. Nothing on it is invented: no fake progress
+  percentage, no checklist of things that were never checked.
 - It is **invisible for the first 250ms**, so a warm cache or the office LAN never shows
-  it. Only a genuinely slow load fades it up. It costs no JavaScript and no extra
-  request: the markup sits inside `#root` in `index.html`, and React clears the container
-  when it mounts, which is the whole teardown.
+  it. Only a genuinely slow load fades it up. Under *reduce motion* nothing moves at all —
+  the mark simply sits lit.
+- It costs **no JavaScript and no extra request** — 2.7 KB gzipped inside `index.html`.
+  The markup sits in `#root`, and React clears the container when it mounts, which is the
+  whole teardown.
 
 ### Fixed
 
