@@ -367,27 +367,51 @@ export const REPORTS: ReportDef[] = [
   {
     key: 'partner-performance',
     name: 'Partner performance',
-    description: 'Deals introduced by each partner and how much of it closed.',
+    description: 'Deals each partner brought us, how much of it closed, and how fast we answered.',
     module: 'reports',
     columns: [
-      { key: 'partner', label: 'Partner', width: 160 },
+      { key: 'partner', label: 'Partner', width: 150 },
       { key: 'deals', label: 'Deals', width: 60, align: 'right' },
       { key: 'net', label: 'Value (AED)', width: 100, align: 'right', format: 'money' },
       { key: 'openNet', label: 'Open (AED)', width: 100, align: 'right', format: 'money' },
       { key: 'wonCount', label: 'Won', width: 60, align: 'right' },
       { key: 'won', label: 'Won (AED)', width: 100, align: 'right', format: 'money' },
       { key: 'winRate', label: 'Win rate', width: 70, align: 'right', format: 'percent' },
+      { key: 'registered', label: 'Registered', width: 78, align: 'right' },
+      { key: 'regToWon', label: 'Reg → won', width: 80, align: 'right', format: 'percent' },
+      { key: 'answerDays', label: 'Answer (days)', width: 90, align: 'right' },
     ],
     run: async (ctx) => {
-      const rows = await prisma.$queryRaw<Array<{ partner: string; deals: bigint; net: number; open_net: number; won_count: bigint; won: number }>>`
+      /**
+       * Credit the partner that *brought* the deal, not merely the one on it.
+       *
+       * This joined on `partnerAccountId` — the partner involved — so a reseller we handed
+       * a deal to fulfil scored identically to one that found it, and the report rewarded
+       * the wrong thing. `sourcePartnerId` is the field that records who introduced it;
+       * deals set it on create and converting a lead carries it across.
+       *
+       * The two new figures answer the questions a volume count cannot: how many of the
+       * deals a partner registers actually close, and how long their request sat before
+       * anyone registered it — which decides whether protection reached the right partner.
+       */
+      const rows = await prisma.$queryRaw<Array<{
+        partner: string; deals: bigint; net: number; open_net: number; won_count: bigint; won: number;
+        registered: bigint; reg_won: bigint; answer_days: number | null;
+      }>>`
         SELECT a.name AS partner,
                COUNT(*)::bigint AS deals,
                COALESCE(SUM(d.amount), 0)::float8 AS net,
                COALESCE(SUM(CASE WHEN d.status = 'OPEN' THEN d.amount ELSE 0 END), 0)::float8 AS open_net,
                COUNT(*) FILTER (WHERE d.status = 'WON')::bigint AS won_count,
-               COALESCE(SUM(CASE WHEN d.status = 'WON' THEN d.amount ELSE 0 END), 0)::float8 AS won
+               COALESCE(SUM(CASE WHEN d.status = 'WON' THEN d.amount ELSE 0 END), 0)::float8 AS won,
+               COUNT(r.id)::bigint AS registered,
+               COUNT(r.id) FILTER (WHERE d.status = 'WON')::bigint AS reg_won,
+               AVG(EXTRACT(EPOCH FROM (r."submittedAt" - r."requestedAt")) / 86400)
+                 FILTER (WHERE r."requestedAt" IS NOT NULL) AS answer_days
         FROM "Deal" d
-        JOIN "Account" a ON a.id = d."partnerAccountId"
+        JOIN "Account" a ON a.id = d."sourcePartnerId"
+        LEFT JOIN "DealRegistration" r
+               ON r."dealId" = d.id AND r.side = 'PARTNER' AND r."partnerId" = d."sourcePartnerId"
         WHERE d."deletedAt" IS NULL AND d."createdAt" BETWEEN ${ctx.from} AND ${ctx.to}
           ${ctx.ownerSql}
         GROUP BY 1 ORDER BY net DESC
@@ -401,6 +425,13 @@ export const REPORTS: ReportDef[] = [
           wonCount: Number(r.won_count),
           won: Number(r.won),
           winRate: Number(r.deals) ? (Number(r.won_count) / Number(r.deals)) * 100 : 0,
+          registered: Number(r.registered),
+          // Of the deals this partner registered, how many closed. A partner that
+          // registers everything and closes nothing is spending our protection.
+          regToWon: Number(r.registered) ? (Number(r.reg_won) / Number(r.registered)) * 100 : 0,
+          // Null until registrations start carrying a requested date — inventing one for
+          // the existing rows would have written a fictional same-day response into this.
+          answerDays: r.answer_days === null ? null : Math.round(Number(r.answer_days) * 10) / 10,
         })),
       };
     },

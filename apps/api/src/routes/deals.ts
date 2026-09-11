@@ -5,6 +5,7 @@ import { sanitizeCustomFields } from '../lib/customFields.js';
 import { audit, auditRead, diff, undoHardDelete, undoSoftDelete, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
+import { liveProtectionOn, mayOverrideProtection, protectionMessage } from '../services/protection.js';
 import { checkDuplicates } from '../services/dedupe.js';
 import { nextReference } from '../lib/counters.js';
 import { applyVat, formatAed } from '../lib/money.js';
@@ -374,7 +375,22 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
         diff(existing as unknown as Record<string, unknown>, deal as unknown as Record<string, unknown>)),
       ip: clientIp(request),
     });
-    return maskFields(request.user, 'deals', deal);
+
+    /**
+     * Informs, never blocks.
+     *
+     * Attaching a partner to a deal is not the moment protection is claimed — registering
+     * is — so refusing here would stop a rep recording an opportunity they are genuinely
+     * working. But if the habit is "deal first, register later", this is the moment the
+     * conflict is knowable, and hearing it now beats hearing it from the other partner.
+     */
+    const warning = body.partnerAccountId && body.partnerAccountId !== existing.partnerAccountId
+      ? await liveProtectionOn(deal.accountId, { exceptPartnerId: body.partnerAccountId as string, exceptDealId: id })
+      : null;
+    return {
+      ...maskFields(request.user, 'deals', deal),
+      ...(warning ? { protectionWarning: { ...warning, message: protectionMessage(warning) } } : {}),
+    };
   });
 
   /**
@@ -595,6 +611,13 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     expiresAt: z.string().optional().nullable(),
     approvedDiscount: z.number().min(0).max(100).optional().nullable(),
     notes: z.string().optional().nullable(),
+    /** When the partner first asked, as opposed to when we got round to registering it. */
+    requestedAt: z.string().optional().nullable(),
+    /**
+     * Proceed past another partner's live protection. Never a default — the caller has to
+     * have seen who holds the customer and decided anyway, and only two roles may.
+     */
+    overrideProtection: z.boolean().optional(),
   });
 
   const toDate = (v?: string | null) => (v ? new Date(v) : null);
@@ -649,6 +672,30 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     if (!deal) throw notFound('Deal not found.');
     if (!(await ownerAllowed(request.user, 'deals', 'update', deal.ownerId))) throw forbidden();
 
+    /**
+     * Does another partner already hold this end customer?
+     *
+     * Only a live protection blocks — approved and still in date — and never the partner
+     * already holding it, since a second opportunity at a customer you own is not a
+     * conflict. The message names who and until when, because a date settles an argument
+     * that a rule on its own does not.
+     */
+    if (body.side === 'PARTNER') {
+      const held = await liveProtectionOn(deal.accountId, { exceptPartnerId: body.partnerId, exceptDealId: id });
+      if (held) {
+        if (!body.overrideProtection) {
+          throw conflict(protectionMessage(held), { protection: held, mayOverride: mayOverrideProtection(request.user) });
+        }
+        if (!mayOverrideProtection(request.user)) {
+          throw forbidden('Only an administrator or sales manager can register past another partner\'s protection.');
+        }
+        await audit({
+          user: request.user, action: 'update', entity: 'DealRegistration', entityId: held.registrationId,
+          summary: `Overrode ${held.partnerName}'s protection on ${deal.reference}`, ip: clientIp(request),
+        });
+      }
+    }
+
     // Both sides run 90 days by default — the clock starts the day it was submitted.
     const validDays = Number(await getSetting<number>('pipeline.registrationValidDays', 90));
     const submitted = toDate(body.submittedAt) ?? new Date();
@@ -663,6 +710,7 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
         partnerContactId: body.side === 'PARTNER' ? body.partnerContactId ?? null : null,
         regNumber: body.regNumber ?? null,
         status: body.status ?? 'DRAFT',
+        requestedAt: toDate(body.requestedAt),
         submittedAt: submitted,
         approvedAt: toDate(body.approvedAt),
         expiresAt: expires,
@@ -690,10 +738,34 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     if (!existing) throw notFound('Registration not found.');
     if (!(await ownerAllowed(request.user, 'deals', 'update', existing.deal.ownerId))) throw forbidden();
 
+    /**
+     * Approving is the moment protection is actually claimed, so it is checked again here
+     * and not only on create: a draft written before another partner got protection would
+     * otherwise be promoted straight past it.
+     */
+    const claiming = parsed.data.status === 'APPROVED' && existing.status !== 'APPROVED';
+    if (existing.side === 'PARTNER' && claiming) {
+      const partnerId = parsed.data.partnerId ?? existing.partnerId;
+      const held = await liveProtectionOn(existing.deal.accountId, { exceptPartnerId: partnerId, exceptDealId: existing.dealId });
+      if (held) {
+        if (!parsed.data.overrideProtection) {
+          throw conflict(protectionMessage(held), { protection: held, mayOverride: mayOverrideProtection(request.user) });
+        }
+        if (!mayOverrideProtection(request.user)) {
+          throw forbidden('Only an administrator or sales manager can approve past another partner\'s protection.');
+        }
+        await audit({
+          user: request.user, action: 'update', entity: 'DealRegistration', entityId: held.registrationId,
+          summary: `Overrode ${held.partnerName}'s protection on ${existing.deal.reference}`, ip: clientIp(request),
+        });
+      }
+    }
+
     const registration = await prisma.dealRegistration.update({
       where: { id: regId },
       data: {
         ...parsed.data,
+        requestedAt: parsed.data.requestedAt !== undefined ? toDate(parsed.data.requestedAt) : undefined,
         submittedAt: parsed.data.submittedAt !== undefined ? toDate(parsed.data.submittedAt) : undefined,
         approvedAt: parsed.data.approvedAt !== undefined ? toDate(parsed.data.approvedAt) : undefined,
         expiresAt: parsed.data.expiresAt !== undefined ? toDate(parsed.data.expiresAt) : undefined,

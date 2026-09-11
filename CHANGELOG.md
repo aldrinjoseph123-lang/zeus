@@ -37,6 +37,34 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 - An **Engagement tab** on a partner's page: everything logged against them, what is still
   waiting on us, and the rhythm they are held to.
 
+### Added — partner protection
+
+- **A partner that registers an end customer now holds it.** Registering a second partner
+  at the same customer is refused, and the refusal names who holds it, on which deal, and
+  until when — so the awkward conversation is settled by a date rather than by whoever
+  remembers the arrangement.
+- **An administrator or sales manager can register anyway**, from the same dialog, and the
+  override is recorded against their name. Nobody else can.
+- **Protection has to be live to hold anything.** Approved, and not yet expired. A draft, a
+  rejection or a lapsed registration releases the customer — without that, every customer
+  ever registered would stay locked to its first partner forever.
+- **Attaching a partner to a deal warns rather than refuses.** Registering is where
+  protection is claimed, so a rep can still record an opportunity they are genuinely
+  working — they just hear about the conflict from Zeus instead of from the other partner.
+- **Registrations record when the partner asked**, as distinct from when we got round to
+  it. Protection goes to whoever registers first, so a request left sitting for two days
+  protects the wrong partner; that gap is now a number.
+
+### Changed — partner performance
+
+- The report credited any partner **on** a deal. It now credits the partner that **brought**
+  it, which is what its name always implied — a reseller handed a deal to fulfil was
+  scoring identically to one that found it.
+- Two columns added: how many of the deals a partner registered actually closed, and how
+  long their requests waited before someone registered them. The second is blank until
+  registrations recorded after this release accumulate — inventing a date for the existing
+  ones would have written a fictional same-day response into the number.
+
 ### Fixed
 
 - Small grey badges were close to unreadable in dark mode — they paired a background that

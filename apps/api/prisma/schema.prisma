@@ -492,6 +492,10 @@ model DealRegistration {
   partnerNotifiedAt DateTime?
   regNumber         String?
   status            RegistrationStatus @default(DRAFT)
+  /// When the partner first asked us to register it — which is not when we got round to
+  /// it. Protection goes to whoever registers first, so a request left sitting for two
+  /// days protects the wrong partner; the gap between this and submittedAt is that number.
+  requestedAt       DateTime?
   submittedAt       DateTime?
   approvedAt        DateTime?
   expiresAt         DateTime?

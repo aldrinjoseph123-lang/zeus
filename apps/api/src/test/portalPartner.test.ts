@@ -67,6 +67,17 @@ async function colleague(accountId: string, name: string, email: string) {
 type Page = { data: Row[]; total: number; page: number; pageSize: number; facets: { vendors: string[]; stages: string[]; statuses: string[] }; scope: 'all' | 'mine' };
 const list = async (cookie: string, qs = '') => (await request(app, asPortal(cookie)).get(`/api/portal/registrations${qs}`)).body as Page;
 
+/**
+ * A second end customer, so two partners in one test are not fighting over one account.
+ * Partner protection refuses that now, and rightly — it is the conflict the rule exists
+ * for. These tests are about what the portal shows, not about who holds whom.
+ */
+async function otherCustomer(name: string) {
+  const res = await request(app, fx.admin).post('/api/accounts', { name, type: 'CUSTOMER', ignoreDuplicates: true });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  return id(res);
+}
+
 async function deal(name: string, amount = 25000, accountId = fx.customer.id) {
   const res = await request(app, fx.admin).post('/api/deals', { name, accountId, amount, ignoreDuplicates: true });
   assert.equal(res.status, 201, JSON.stringify(res.body));
@@ -90,7 +101,7 @@ describe('portal: the partner screen', () => {
     const d1 = await deal('Protected for A');
     await register(d1, { side: 'PARTNER', partnerId: a.accountId, status: 'APPROVED', approvedDiscount: 12.5, regNumber: 'PRT-1', expiresAt: at(40) });
     await register(d1, { side: 'VENDOR', vendorId: id(vendor), status: 'APPROVED', approvedDiscount: 30, regNumber: 'VND-1', expiresAt: at(60) });
-    const d2 = await deal('Protected for B');
+    const d2 = await deal('Protected for B', 25000, await otherCustomer('B\'s End Customer'));
     await register(d2, { side: 'PARTNER', partnerId: b.accountId, status: 'SUBMITTED', expiresAt: at(20) });
 
     const seenByA = await request(app, asPortal(a.cookie)).get('/api/portal/registrations');
@@ -193,7 +204,7 @@ describe('portal: the three layers of control', () => {
     const a = await partner('Partner A', 'a@partner.example');
     const b = await partner('Partner B', 'b@partner.example');
     await register(await deal('A deal', 40000), { side: 'PARTNER', partnerId: a.accountId, status: 'APPROVED', regNumber: 'PRT-A', expiresAt: at(10) });
-    await register(await deal('B deal', 50000), { side: 'PARTNER', partnerId: b.accountId, status: 'APPROVED', regNumber: 'PRT-B', expiresAt: at(10) });
+    await register(await deal('B deal', 50000, await otherCustomer('B\'s Other Customer')), { side: 'PARTNER', partnerId: b.accountId, status: 'APPROVED', regNumber: 'PRT-B', expiresAt: at(10) });
 
     // Global: number on, value off. Override A: number off, value on.
     const patched = await request(app, fx.admin).patch(`/api/portal-admin/accounts/${a.accountId}`, { overrides: { showRegNumber: false, showDealValue: true, notASwitch: true } });

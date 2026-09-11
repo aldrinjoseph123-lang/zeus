@@ -657,6 +657,45 @@ function EditDealModal({ deal, onClose, onSaved }: { deal: DealFull; onClose: ()
   );
 }
 
+/**
+ * Another partner holds this end customer.
+ *
+ * Not a generic error: an error tells you the save failed, this tells you who holds the
+ * customer and until when — which is the thing that settles the conversation with the
+ * partner who is about to ask why. The override is offered only to the roles that have
+ * it, because a button that always refuses teaches people to stop reading.
+ */
+interface Protection {
+  partnerName: string;
+  dealReference: string;
+  registeredAt: string | null;
+  expiresAt: string | null;
+}
+type ProtectionBlock = Protection & { mayOverride: boolean };
+
+function ProtectionBlocked({ block, onOverride, saving }: {
+  block: ProtectionBlock; onOverride: () => void; saving: boolean;
+}) {
+  return (
+    <div className="border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[12px] text-[var(--text-on-accent-soft)]">
+      <p className="font-semibold uppercase tracking-[0.08em]">This customer is already protected</p>
+      <p className="mt-1">
+        <strong>{block.partnerName}</strong> holds it
+        {block.registeredAt ? <> since {date(block.registeredAt)}</> : null}, on {block.dealReference},
+        until {block.expiresAt ? date(block.expiresAt) : 'an unrecorded date'}.
+      </p>
+      {block.mayOverride ? (
+        <div className="mt-2 flex items-center gap-2">
+          <Button size="sm" variant="accent" loading={saving} onClick={onOverride}>Register anyway</Button>
+          <span className="text-[11px]">Recorded against your name.</span>
+        </div>
+      ) : (
+        <p className="mt-2 text-[11px]">An administrator or sales manager can register past this.</p>
+      )}
+    </div>
+  );
+}
+
 function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
   dealId: string;
   /** The deal's partner, pre-selected so a channel deal is one click to protect. */
@@ -673,6 +712,12 @@ function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
     expiresAt: '', approvedDiscount: '', notes: '',
   });
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Another partner holds this end customer. The save was refused; this is what it said.
+   * Kept in state rather than read off the error so the override button can appear beside
+   * it, and so the next attempt carries the flag the server insists on.
+   */
+  const [blocked, setBlocked] = useState<ProtectionBlock | null>(null);
 
   // Both programmes run 90 days here, so the expiry is filled in from the submission
   // date and only touched if this one is different.
@@ -686,9 +731,10 @@ function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
     ? dateInput(new Date(new Date(form.submittedAt).getTime() + validDays * 86_400_000))
     : '';
 
-  const save = useMutation({
-    mutationFn: () =>
+  const save = useMutation<unknown, Error, boolean>({
+    mutationFn: (override: boolean) =>
       api.post(`/deals/${dealId}/registrations`, {
+        overrideProtection: override || undefined,
         side,
         vendorId: side === 'VENDOR' ? form.vendorId : null,
         partnerId: side === 'PARTNER' ? form.partnerId : null,
@@ -701,7 +747,20 @@ function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
         notes: form.notes || null,
       }),
     onSuccess: () => { toast.push('Registration recorded.'); onSaved(); onClose(); },
-    onError: (err) => setError(err instanceof Error ? err.message : 'Could not save.'),
+    onError: (err) => {
+      // 409 is the protection rule, and it comes with who holds the customer. Anything
+      // else is an ordinary failure and reads as one.
+      const conflictDetails = err instanceof ApiError && err.status === 409
+        ? (err.details as { protection?: Protection; mayOverride?: boolean } | undefined)
+        : undefined;
+      if (conflictDetails?.protection) {
+        setBlocked({ ...conflictDetails.protection, mayOverride: Boolean(conflictDetails.mayOverride) });
+        setError(null);
+        return;
+      }
+      setBlocked(null);
+      setError(err instanceof Error ? err.message : 'Could not save.');
+    },
   });
 
   const counterpartySet = side === 'VENDOR' ? Boolean(form.vendorId) : Boolean(form.partnerId);
@@ -716,12 +775,13 @@ function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="accent" disabled={!counterpartySet} loading={save.isPending} onClick={() => save.mutate()}>Save</Button>
+          <Button variant="accent" disabled={!counterpartySet} loading={save.isPending} onClick={() => save.mutate(false)}>Save</Button>
         </>
       }
     >
       <div className="space-y-3">
         {error ? <ErrorNote error={error} /> : null}
+        {blocked ? <ProtectionBlocked block={blocked} onOverride={() => save.mutate(true)} saving={save.isPending} /> : null}
 
         <Field label="Which way does this registration point?">
           <div className="grid grid-cols-2 gap-1">
