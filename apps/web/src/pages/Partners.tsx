@@ -189,9 +189,12 @@ function LogDialog({ partner, onClose, onLogged }: {
   const [bookNext, setBookNext] = useState(true);
   const [followUpOwnerId, setFollowUpOwnerId] = useState(partner.channelManager?.id ?? '');
 
-  // A month out by default — or this partner's own rhythm, which is the point of having one.
-  const suggested = new Date(Date.now() + partner.cadenceDays * 86_400_000).toISOString().slice(0, 10);
-  const [followUpAt, setFollowUpAt] = useState(suggested);
+  // A month out by default — or this partner's own rhythm, which is the point of having
+  // one. Computed once when the dialog opens rather than on every render: reading the
+  // clock during render makes the value drift under React, and this is a form default.
+  const [followUpAt, setFollowUpAt] = useState(
+    () => new Date(Date.now() + partner.cadenceDays * 86_400_000).toISOString().slice(0, 10),
+  );
 
   const save = useMutation({
     mutationFn: () => api.post(`/partners/${partner.id}/log`, {

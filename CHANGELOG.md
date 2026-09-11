@@ -112,6 +112,14 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   against a floor of 4.5. Same cause as the sidebar and the error banner: a colour taken
   from the raw palette where a named one belongs.
 
+### Fixed — settings nobody could reach
+
+- **Eight thresholds had labels and stored defaults and appeared on no settings page**, so
+  changing when an account counts as stale, how long a registration runs, or how often a
+  partner should be contacted meant an API call. They are now on **Settings → Pipelines**
+  under *Thresholds and reminders*. Six of the eight have been unreachable since they were
+  added; the partner rhythm would have shipped the same way.
+
 ### For anyone running their own instance
 
 - **A new permission, "Partners"**, so channel work can be granted without granting the

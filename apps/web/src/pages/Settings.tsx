@@ -151,6 +151,7 @@ const LABELS: Record<string, string> = {
   'finance.exchangeRatesUpdatedAt': 'Rates last fetched (set by the job, not by hand)',
   'pipeline.staleAccountDays': 'Account is stale after (days)', 'pipeline.staleDealDays': 'Deal is stuck after (days)',
   'pipeline.registrationExpiryWarnDays': 'Warn before registration expiry (days)',
+  'partners.contactCadenceDays': 'Contact every partner at least every (days)',
   'pipeline.registrationValidDays': 'Registration runs for (days)',
   'pipeline.notifyPartnerOnExpiry': 'Email the partner before their registration lapses',
   'pipeline.partnerReminderDays': 'Partner reminder lead time (days)',
@@ -803,6 +804,20 @@ function PipelinesSection() {
 
   return (
     <>
+      {/*
+        * These thresholds have carried labels and stored defaults since they were added,
+        * and were rendered by no group at all — so changing one meant an API call. The
+        * partner rhythm joins them rather than taking a page of its own: the design is a
+        * single house value with per-partner overrides, and a default nobody can set is
+        * not a default.
+        */}
+      <SettingsGroup
+        prefix="pipeline."
+        extraPrefixes={['partners.']}
+        title="Thresholds and reminders"
+        description="When Zeus calls something stale, stuck or overdue — and how long before it says so."
+      />
+
       <Card>
         <CardHeader title="Pipelines" subtitle="Rename stages, change win probabilities, add steps that match how you actually sell." />
         {(data ?? []).map((pipeline) => (

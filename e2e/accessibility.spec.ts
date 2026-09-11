@@ -88,7 +88,16 @@ test.describe('accessibility', () => {
     for (const [rule, { max, why }] of Object.entries(KNOWN)) {
       const n = hits.filter((h) => h.rule === rule).length;
       expect(n, `${rule} grew past its pinned ceiling — ${why}`).toBeLessThanOrEqual(max);
-      expect(n, `${rule} no longer occurs: delete it from KNOWN so a new one fails`).toBeGreaterThan(0);
+      /*
+       * Deliberately not asserting this still occurs.
+       *
+       * When the pinned debt was sixty-eight nav elements it was structural — present on
+       * every page, on every install, so a count of zero meant somebody had fixed it and
+       * the exemption was stale. What is left is on data-driven rows, so an instance with
+       * no partners and no quotes legitimately reports zero. CI boots exactly that
+       * instance. A staleness check that cannot tell "fixed" from "nothing to render" is
+       * a check that fails on an empty database, which is the one place it should not.
+       */
     }
   });
 });

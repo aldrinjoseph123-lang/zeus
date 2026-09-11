@@ -154,8 +154,9 @@ function AddEnablement({ accountId, onClose, onSaved }: {
   const [expiresAt, setExpiresAt] = useState('');
   const [note, setNote] = useState('');
 
-  // A year unless the vendor's programme says otherwise, which is the usual case.
-  const suggested = new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+  // A year unless the vendor's programme says otherwise, which is the usual case. Read
+  // once on open, not on every render — the clock is not a pure value.
+  const [suggested] = useState(() => new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10));
 
   const save = useMutation({
     mutationFn: () => api.put(`/partners/${accountId}/enablement/${vendorId}`, {
