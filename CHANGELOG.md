@@ -12,7 +12,9 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ---
 
-## Unreleased
+## v1.5.0 — 12 September 2026
+
+Partners stop being a list of companies and start being a relationship Zeus keeps track of.
 
 ### Added — the partner register
 
