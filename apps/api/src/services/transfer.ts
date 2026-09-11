@@ -25,11 +25,24 @@ const MODULES: Record<string, { label: string; delegate: () => OwnerDelegate; so
   subscriptions: { label: 'Subscriptions', delegate: () => prisma.subscription as unknown as OwnerDelegate, soft: false },
 };
 
-export const TRANSFERABLE_MODULES = Object.entries(MODULES).map(([key, m]) => ({ key, label: m.label }));
+/**
+ * Partners are held by a channel manager, not an owner, so they do not fit the map above
+ * — every entry there moves `ownerId`. Left out, a leaver's partners would keep pointing
+ * at a deactivated account: the weekly digest would go nowhere and the register would show
+ * a manager who cannot log in.
+ */
+const CHANNEL_MODULE = 'partnerChannel';
+const channelWhere = (userId: string) => ({ type: 'PARTNER' as const, channelManagerId: userId, deletedAt: null });
+
+export const TRANSFERABLE_MODULES = [
+  ...Object.entries(MODULES).map(([key, m]) => ({ key, label: m.label })),
+  { key: CHANNEL_MODULE, label: 'Partners managed' },
+];
 
 function ownedWhere(moduleKey: string, userId: string): object {
   return { ownerId: userId, ...(MODULES[moduleKey].soft ? { deletedAt: null } : {}) };
 }
+
 
 /** How many records the user owns per module — the numbers shown before confirming. */
 export async function previewTransfer(fromUserId: string): Promise<Record<string, number>> {
@@ -37,6 +50,7 @@ export async function previewTransfer(fromUserId: string): Promise<Record<string
   for (const key of Object.keys(MODULES)) {
     out[key] = await MODULES[key].delegate().count({ where: ownedWhere(key, fromUserId) });
   }
+  out[CHANNEL_MODULE] = await prisma.account.count({ where: channelWhere(fromUserId) });
   return out;
 }
 
@@ -54,12 +68,19 @@ export async function transferOwnership(input: {
   if (!to) throw notFound('Recipient user not found.');
   if (!to.isActive) throw badRequest('The recipient is deactivated — pick an active user.');
 
-  const known = modules.filter((m) => m in MODULES);
+  const known = modules.filter((m) => m in MODULES || m === CHANNEL_MODULE);
   if (known.length === 0) throw badRequest('Select at least one module to transfer.');
 
   const counts: Record<string, number> = {};
   const snapshot: Record<string, string[]> = {};
   for (const key of known) {
+    if (key === CHANNEL_MODULE) {
+      const ids = (await prisma.account.findMany({ where: channelWhere(fromUserId), select: { id: true } })).map((r) => r.id);
+      if (ids.length) await prisma.account.updateMany({ where: { id: { in: ids } }, data: { channelManagerId: toUserId } });
+      counts[key] = ids.length;
+      snapshot[key] = ids;
+      continue;
+    }
     const ids = (await MODULES[key].delegate().findMany({ where: ownedWhere(key, fromUserId), select: { id: true } })).map((r) => r.id);
     if (ids.length) await MODULES[key].delegate().updateMany({ where: { id: { in: ids } }, data: { ownerId: toUserId } });
     counts[key] = ids.length;
@@ -89,7 +110,18 @@ export async function reverseTransfer(jobId: string, byUser: SessionUser): Promi
   const snapshot = job.snapshot as Record<string, string[]>;
   let restored = 0;
   for (const [key, ids] of Object.entries(snapshot)) {
-    if (!(key in MODULES) || ids.length === 0) continue;
+    if (ids.length === 0) continue;
+    // Partners moved by channel manager, not owner — the generic path below would skip
+    // them entirely and leave them stranded with the recipient.
+    if (key === CHANNEL_MODULE) {
+      const r = await prisma.account.updateMany({
+        where: { id: { in: ids }, channelManagerId: job.toUserId },
+        data: { channelManagerId: job.fromUserId },
+      });
+      restored += r.count;
+      continue;
+    }
+    if (!(key in MODULES)) continue;
     // Only rows still owned by the recipient — never clobber a later reassignment.
     const r = await MODULES[key].delegate().updateMany({ where: { id: { in: ids }, ownerId: job.toUserId } as object, data: { ownerId: job.fromUserId } });
     restored += r.count;

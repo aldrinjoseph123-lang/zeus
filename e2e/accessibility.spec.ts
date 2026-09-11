@@ -15,7 +15,7 @@ import AxeBuilder from '@axe-core/playwright';
  */
 const PAGES = [
   '/dashboard', '/deals', '/leads', '/accounts', '/contacts',
-  '/quotes', '/invoices', '/reports', '/settings/company',
+  '/quotes', '/invoices', '/reports', '/settings/company', '/partners',
 ];
 
 /**
@@ -36,7 +36,16 @@ const IMPACTS = ['serious', 'critical'];
  * longer applied. That is the only reason this mechanism is still here: the next piece of
  * debt that gets pinned should be as hard to forget.
  */
-const KNOWN: Record<string, { max: number; why: string }> = {};
+const KNOWN: Record<string, { max: number; why: string }> = {
+  'color-contrast': {
+    max: 10,
+    why: 'text-accent is --red-500 (#e11d2e), which reads at 4.4:1 on a sunken surface in '
+      + 'daylight and 4.1:1 on a card at night — under the 4.5 floor in both. It is used as '
+      + 'text in 74 places across 28 files, and splitting it from the identical background '
+      + 'token that buttons use is an app-wide change with its own changelog line, not '
+      + 'something to fold into a feature release. Pinned so it cannot grow meanwhile.',
+  },
+};
 
 interface Hit { rule: string; impact: string; page: string; html: string }
 

@@ -30,6 +30,12 @@ export const MODULES = [
   'backups',
   'audit',
   'portal',
+  /**
+   * Partner relationship work — the channel manager, the contact rhythm, engagement.
+   * Its own module rather than riding on `accounts` so channel work can be granted
+   * without granting the right to edit customer records.
+   */
+  'partners',
 ] as const;
 
 export type Module = (typeof MODULES)[number];
@@ -99,6 +105,7 @@ export const SYSTEM_ROLES: Array<{ name: string; description: string; permission
       imports: scoped('all', 'all', true, 'none'),
       users: scoped('all', 'none', false, 'none', false),
       audit: scoped('all', 'none', false, 'none', true),
+      partners: fullAccess(),
     },
   },
   {
@@ -116,6 +123,7 @@ export const SYSTEM_ROLES: Array<{ name: string; description: string; permission
       products: { ...scoped('all', 'none', false, 'none', false), fields: { cost: 'hidden' } },
       activities: scoped('team', 'own', true, 'own'),
       reports: scoped('own', 'none', false, 'none', true),
+      partners: scoped('team', 'own', true, 'none'),
     },
   },
   {
@@ -133,6 +141,7 @@ export const SYSTEM_ROLES: Array<{ name: string; description: string; permission
       products: { ...scoped('all', 'none', false, 'none', true), fields: { cost: 'hidden' } },
       activities: scoped('all', 'none', false, 'none', true),
       reports: scoped('all', 'none', false, 'none', true),
+      partners: scoped('all', 'none', false, 'none', true),
     },
   },
 ];

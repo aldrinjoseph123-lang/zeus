@@ -36,7 +36,8 @@ async function taskReminders(): Promise<void> {
   const due = await prisma.activity.findMany({
     where: {
       status: 'Open',
-      type: { in: ['TASK', 'CALL', 'MEETING'] },
+      // A visit booked for Thursday is worth a reminder on Wednesday, same as a call.
+      type: { in: ['TASK', 'CALL', 'MEETING', 'VISIT'] },
       dueAt: { not: null, lte: horizon },
       remindedAt: null,
       ownerId: { not: null },

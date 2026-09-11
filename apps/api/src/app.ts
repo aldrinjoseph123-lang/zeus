@@ -17,6 +17,7 @@ import { getSetting } from './lib/settings.js';
 
 import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
+import partnerRoutes from './routes/partners.js';
 import contactRoutes from './routes/contacts.js';
 import leadRoutes from './routes/leads.js';
 import dealRoutes from './routes/deals.js';
@@ -194,6 +195,7 @@ export async function buildApp() {
 
   await app.register(authRoutes);
   await app.register(accountRoutes);
+  await app.register(partnerRoutes);
   await app.register(contactRoutes);
   await app.register(leadRoutes);
   await app.register(dealRoutes);

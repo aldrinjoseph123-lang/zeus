@@ -63,6 +63,12 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'numbering.padding': 6,
 
   'pipeline.staleAccountDays': 7,
+  /**
+   * How often a partner should be contacted, in days, unless that partner overrides it.
+   * A month is the starting guess — partners are a slower relationship than customers,
+   * whose staleness threshold above is a week.
+   */
+  'partners.contactCadenceDays': 30,
   'pipeline.staleDealDays': 14,
   'pipeline.registrationExpiryWarnDays': 30,
   /// How long a registration protects the deal, both channel directions. Vendors and

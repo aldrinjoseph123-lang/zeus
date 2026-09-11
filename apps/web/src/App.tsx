@@ -36,6 +36,7 @@ const PurchaseOrderEditor = lazy(() => import('./pages/PurchaseOrderEditor'));
 const Products = lazy(() => import('./pages/Products'));
 const PriceBook = lazy(() => import('./pages/PriceBook'));
 const Renewals = lazy(() => import('./pages/Renewals'));
+const Partners = lazy(() => import('./pages/Partners'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Coaching = lazy(() => import('./pages/Coaching'));
 const Imports = lazy(() => import('./pages/Imports'));
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="leads/:id" element={<Guard module="leads"><LeadDetail /></Guard>} />
 
         <Route path="accounts" element={<Guard module="accounts"><Accounts /></Guard>} />
+        <Route path="partners" element={<Guard module="partners"><Partners /></Guard>} />
         <Route path="accounts/:id" element={<Guard module="accounts"><AccountDetail /></Guard>} />
 
         <Route path="contacts" element={<Guard module="contacts"><Contacts /></Guard>} />

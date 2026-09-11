@@ -12,6 +12,54 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ---
 
+## Unreleased
+
+### Added — the partner register
+
+- **Partners now have a page of their own**, ordered by who has waited longest rather than
+  alphabetically. A partner nobody has ever contacted sits at the top, then the longest
+  overdue. It answers the question Zeus could not answer at all before: *when did we last
+  speak to them.*
+- **A channel manager per partner** — deliberately not the account owner, because the
+  person who looks after a relationship is often not the one on its deals. Existing
+  partners inherit their owner, and "nobody managing" is counted on the page.
+- **A contact rhythm.** One house setting covers every partner from the day it is created
+  — thirty days to start — and any partner can carry its own. Overdue is measured against
+  whichever applies.
+- **A ten-second log**: what it was, who you met, one line, with today already filled in
+  and the next visit offered a rhythm ahead. The follow-up task defaults to the channel
+  manager, so a colleague covering a visit does not silently inherit the relationship.
+- **Two new kinds of activity.** *Visit* — the one piece of partner engagement Zeus had no
+  word for. *Request* — something a partner asked us for, which stays open so its age is a
+  number rather than a feeling.
+- **Dormant partners** keep their history and leave the lists. Their registrations still
+  expire; they simply stop being chased.
+- An **Engagement tab** on a partner's page: everything logged against them, what is still
+  waiting on us, and the rhythm they are held to.
+
+### Fixed
+
+- Small grey badges were close to unreadable in dark mode — they paired a background that
+  stays light with text that lightens at night, which came out at a contrast of 1.3
+  against a floor of 4.5. Same cause as the sidebar and the error banner: a colour taken
+  from the raw palette where a named one belongs.
+
+### For anyone running their own instance
+
+- **A new permission, "Partners"**, so channel work can be granted without granting the
+  right to edit customer records. The four roles that ship are updated in place. **A role
+  you created yourself is not touched** — permissions are never widened silently — so give
+  it access in Settings → Roles if it needs it.
+- Handover now moves partners as well: a leaving user's partners go to whoever receives
+  their records, and come back if the transfer is reversed.
+
+### After deploying
+
+Nothing required. Worth doing once: open **Partners** and check the channel manager on
+each, since they were set to the account owner and that is a guess.
+
+---
+
 ## v1.4.0 — 11 September 2026
 
 Two screens that were wrong in the dark, and the checks that would have said so.

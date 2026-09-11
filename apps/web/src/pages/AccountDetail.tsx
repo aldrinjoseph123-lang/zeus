@@ -13,6 +13,7 @@ import { ActivityPanel, type ActivityRecord } from '../components/timeline';
 import { AttachmentPanel } from '../components/attachments';
 import { CustomFieldInputs, CustomFieldValues, type CustomValues } from '../components/customFields';
 import { PortalAccountPanel } from '../components/portalAccountPanel';
+import { EngagementTab } from '../components/EngagementTab';
 import { LifecycleRail, accountHint, accountJourney } from '../components/lifecycle';
 import { DealForm } from './Deals';
 import { ContactForm } from './Contacts';
@@ -151,6 +152,8 @@ export default function AccountDetail() {
                 { key: 'deals', label: 'Deals', count: account.deals.length },
                 { key: 'contacts', label: 'Contacts', count: account.contacts.length },
                 { key: 'commercial', label: 'Quotes', count: account.quotes.length + account.invoices.length },
+                // Partners only: a customer has no channel relationship to record.
+                ...(account.type === 'PARTNER' ? [{ key: 'engagement', label: 'Engagement' }] : []),
               ]}
               active={tab}
               onChange={setTab}
@@ -240,6 +243,8 @@ export default function AccountDetail() {
                 )}
               </div>
             )}
+
+            {tab === 'engagement' ? <EngagementTab accountId={account.id} /> : null}
           </Card>
 
           {(account.type === 'PARTNER' || account.type === 'CUSTOMER') && can('portal', 'read') ? <PortalCard accountId={account.id} /> : null}

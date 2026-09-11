@@ -5,10 +5,10 @@ import { prisma } from '../db.js';
 import { audit, undoHardDelete } from '../lib/audit.js';
 import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { ownerAllowed, scopeWhere } from '../auth/rbac.js';
-import { touch } from '../lib/touch.js';
+import { touch, touchContact } from '../lib/touch.js';
 
 const activitySchema = z.object({
-  type: z.enum(['TASK', 'CALL', 'MEETING', 'EMAIL', 'NOTE']).default('TASK'),
+  type: z.enum(['TASK', 'CALL', 'MEETING', 'EMAIL', 'NOTE', 'VISIT', 'REQUEST']).default('TASK'),
   subject: z.string().min(1, 'Subject is required.'),
   description: z.string().optional().nullable(),
   status: z.string().optional(),
@@ -93,6 +93,7 @@ export default async function activityRoutes(app: FastifyInstance): Promise<void
     });
 
     await touch({ accountId: activity.accountId, dealId: activity.dealId, leadId: activity.leadId });
+    await touchContact({ accountId: activity.accountId, type: activity.type, status: activity.status, at: activity.completedAt ?? undefined });
     await audit({ user: request.user, action: 'create', entity: 'Activity', entityId: activity.id, summary: activity.subject, ip: clientIp(request) });
     return reply.status(201).send(activity);
   });
@@ -116,6 +117,9 @@ export default async function activityRoutes(app: FastifyInstance): Promise<void
 
     const activity = await prisma.activity.update({ where: { id }, data: data as never });
     await touch({ accountId: activity.accountId, dealId: activity.dealId, leadId: activity.leadId });
+    // A task ticked off is the usual way a visit gets marked done, so the clock has to
+    // move here too, not only on create.
+    await touchContact({ accountId: activity.accountId, type: activity.type, status: activity.status, at: activity.completedAt ?? undefined });
     await audit({ user: request.user, action: 'update', entity: 'Activity', entityId: id, summary: activity.subject, ip: clientIp(request) });
     return activity;
   });
@@ -138,7 +142,7 @@ export default async function activityRoutes(app: FastifyInstance): Promise<void
     const now = new Date();
     const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
     const endOfWeek = new Date(endOfToday.getTime() + 6 * 86_400_000);
-    const base = { ownerId: request.user.id, status: 'Open', type: { in: ['TASK', 'CALL', 'MEETING'] as ActivityType[] } };
+    const base = { ownerId: request.user.id, status: 'Open', type: { in: ['TASK', 'CALL', 'MEETING', 'VISIT', 'REQUEST'] as ActivityType[] } };
 
     const include = {
       account: { select: { id: true, name: true } },

@@ -16,32 +16,33 @@ datasource db {
 // ---------------------------------------------------------------- identity
 
 model User {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  name           String
-  passwordHash   String? // null when the user is Entra-only
-  entraOid       String?   @unique // Entra ID object id, set on first SSO login
-  jobTitle       String?
-  phone          String?
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  passwordHash    String? // null when the user is Entra-only
+  entraOid        String?   @unique // Entra ID object id, set on first SSO login
+  jobTitle        String?
+  phone           String?
   /// E.164 number for WhatsApp alerts, e.g. +971501234567. Blank means no WhatsApp.
-  whatsappNumber String?
-  avatarColor    String    @default("#e11d2e")
-  isActive       Boolean   @default(true)
-  roleId         String
-  role           Role      @relation(fields: [roleId], references: [id])
-  teamId         String?
-  team           Team?     @relation(fields: [teamId], references: [id])
-  managerId      String?
-  manager        User?     @relation("UserManager", fields: [managerId], references: [id])
-  reports        User[]    @relation("UserManager")
-  lastLoginAt    DateTime?
+  whatsappNumber  String?
+  avatarColor     String    @default("#e11d2e")
+  isActive        Boolean   @default(true)
+  roleId          String
+  role            Role      @relation(fields: [roleId], references: [id])
+  teamId          String?
+  team            Team?     @relation(fields: [teamId], references: [id])
+  managerId       String?
+  manager         User?     @relation("UserManager", fields: [managerId], references: [id])
+  reports         User[]    @relation("UserManager")
+  lastLoginAt     DateTime?
   /// Where and on what the user last signed in — shown to admins on the Users tab.
   lastLoginIp     String?
   lastLoginDevice String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   ownedAccounts             Account[]          @relation("AccountOwner")
+  channelManagedAccounts    Account[]          @relation("AccountChannelManager")
   ownedContacts             Contact[]          @relation("ContactOwner")
   ownedLeads                Lead[]             @relation("LeadOwner")
   ownedDeals                Deal[]             @relation("DealOwner")
@@ -71,8 +72,8 @@ model User {
   scheduledReports          ScheduledReport[]
   accessRequests            AccessRequest[]
   emailLogs                 EmailLog[]
-  sessions                  Session[]     @relation("UserSessions")
-  viewedSessions            Session[]     @relation("ViewedSessions")
+  sessions                  Session[]          @relation("UserSessions")
+  viewedSessions            Session[]          @relation("ViewedSessions")
 
   /// TOTP shared secret, AES-256-GCM at rest. Null until the user enrols.
   totpSecret    String?
@@ -117,39 +118,56 @@ enum AccountType {
 }
 
 model Account {
-  id             String      @id @default(cuid())
-  name           String
-  type           AccountType @default(PROSPECT)
+  id              String      @id @default(cuid())
+  name            String
+  type            AccountType @default(PROSPECT)
   /// Primary web domain, lower-cased. Backbone of duplicate detection.
-  domain         String?
-  website        String?
-  industry       String?
-  employeeBand   String?
-  phone          String?
-  email          String?
+  domain          String?
+  website         String?
+  industry        String?
+  employeeBand    String?
+  phone           String?
+  email           String?
   /// UAE tax registration number (15 digits) — printed on quotes/invoices.
-  trn            String?
-  addressLine1   String?
-  addressLine2   String?
-  city           String?
-  emirate        String?
-  country        String      @default("United Arab Emirates")
-  poBox          String?
-  linkedinUrl    String?
-  description    String?
+  trn             String?
+  addressLine1    String?
+  addressLine2    String?
+  city            String?
+  emirate         String?
+  country         String      @default("United Arab Emirates")
+  poBox           String?
+  linkedinUrl     String?
+  description     String?
   /// Partner & customer portal: per-account overrides of the global field switches
   /// ({ showRegNumber?: bool, showDealValue?: bool }) and a logo shown in this account's
   /// portal header. Overrides can only select within the code allowlist, never past it.
-  portalOverrides Json    @default("{}")
+  portalOverrides Json        @default("{}")
   portalLogo      String?
-  ownerId        String?
-  owner          User?       @relation("AccountOwner", fields: [ownerId], references: [id])
+  ownerId         String?
+  owner           User?       @relation("AccountOwner", fields: [ownerId], references: [id])
   /// Rolls forward on any activity, deal change or note. Drives the stale-account alert.
-  lastActivityAt DateTime?
-  customFields   Json        @default("{}")
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  deletedAt      DateTime?
+  lastActivityAt  DateTime?
+
+  /// ── Partner engagement. Only meaningful when type = PARTNER. ──────────────
+  /// Who owns the relationship. Deliberately not `owner`: the person who looks after a
+  /// partner is often not the one on their deals.
+  channelManagerId      String?
+  channelManager        User?     @relation("AccountChannelManager", fields: [channelManagerId], references: [id])
+  /// How often this partner should be contacted. Null means the house rule in
+  /// `partners.contactCadenceDays`, so a new partner is covered without anyone setting it.
+  engagementCadenceDays Int?
+  /// Last *completed* visit, call, meeting or email. Deliberately separate from
+  /// lastActivityAt, which lib/touch.ts rolls forward on any record change under the
+  /// account — a quote, a payment, a task booked for next month. That is the right
+  /// meaning for a stale customer and the wrong one for "when did we last speak".
+  lastContactAt         DateTime?
+  /// Kept for its history, out of the engagement lists. A dormant partner still holds
+  /// its registrations and they still expire; it simply stops being chased.
+  isDormant             Boolean   @default(false)
+  customFields          Json      @default("{}")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
 
   contacts             Contact[]
   deals                Deal[]             @relation("DealCustomer")
@@ -172,6 +190,8 @@ model Account {
   @@index([type])
   @@index([ownerId])
   @@index([lastActivityAt])
+  @@index([channelManagerId])
+  @@index([type, isDormant, lastContactAt])
 }
 
 model Contact {
@@ -561,11 +581,11 @@ model Subscription {
   lastRemindedDays Int?
 
   ownerId      String?
-  owner        User?     @relation("SubscriptionOwner", fields: [ownerId], references: [id])
-  customFields Json      @default("{}")
+  owner        User?         @relation("SubscriptionOwner", fields: [ownerId], references: [id])
+  customFields Json          @default("{}")
   entitlements Entitlement[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   deletedAt    DateTime?
 
   @@index([accountId])
@@ -622,16 +642,16 @@ enum QuoteStatus {
 }
 
 model Quote {
-  id         String      @id @default(cuid())
-  number     String      @unique // ZEU-Q-000123
-  version    Int         @default(1)
-  dealId     String?
-  deal       Deal?       @relation(fields: [dealId], references: [id])
-  accountId  String
-  account    Account     @relation(fields: [accountId], references: [id])
-  contactId  String?
-  contact    Contact?    @relation(fields: [contactId], references: [id])
-  status     QuoteStatus @default(DRAFT)
+  id        String      @id @default(cuid())
+  number    String      @unique // ZEU-Q-000123
+  version   Int         @default(1)
+  dealId    String?
+  deal      Deal?       @relation(fields: [dealId], references: [id])
+  accountId String
+  account   Account     @relation(fields: [accountId], references: [id])
+  contactId String?
+  contact   Contact?    @relation(fields: [contactId], references: [id])
+  status    QuoteStatus @default(DRAFT)
 
   approvalStatus        ApprovalStatus @default(NOT_REQUIRED)
   approvalRequestedAt   DateTime?
@@ -642,9 +662,9 @@ model Quote {
   approvalDecidedBy     User?          @relation("QuoteApprover", fields: [approvalDecidedById], references: [id])
   approvalNote          String?
 
-  issueDate  DateTime    @default(now())
+  issueDate  DateTime  @default(now())
   validUntil DateTime?
-  currency   String      @default("AED")
+  currency   String    @default("AED")
 
   subtotal     Decimal @default(0) @db.Decimal(14, 2)
   discountPct  Decimal @default(0) @db.Decimal(5, 2)
@@ -1044,6 +1064,11 @@ enum ActivityType {
   MEETING
   EMAIL
   NOTE
+  /// Someone went there. The one partner engagement Zeus had no word for.
+  VISIT
+  /// A partner asked us for something — a price, a registration, an answer. Open until
+  /// it is answered, so "how long did their email sit" is a number rather than a feeling.
+  REQUEST
 }
 
 model Activity {
@@ -1187,17 +1212,17 @@ model NotificationRule {
 }
 
 model TeamsWebhook {
-  id        String             @id @default(cuid())
-  name      String             @unique
-  url       String
-  isDefault Boolean            @default(false)
-  isActive  Boolean            @default(true)
-  createdAt DateTime           @default(now())
+  id         String             @id @default(cuid())
+  name       String             @unique
+  url        String
+  isDefault  Boolean            @default(false)
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
   /// How the last post went. Without this a channel that has been deleted in Teams keeps
   /// swallowing alerts and nobody finds out until they notice the quiet.
   lastPostAt DateTime?
   lastError  String?
-  rules     NotificationRule[]
+  rules      NotificationRule[]
 }
 
 /// A report from the registry in routes/reports.ts, run on a schedule and emailed out
@@ -1342,14 +1367,14 @@ model Counter {
 /// One row per open deal per week — the raw material for week-over-week movement
 /// (which deal advanced, slipped, grew, shrank, or closed). Written by a weekly cron.
 model DealSnapshot {
-  id      String   @id @default(cuid())
-  dealId  String
-  weekOf  DateTime @db.Date // the Monday of the week
-  stageId String
-  ownerId String?
-  amount  Decimal  @db.Decimal(14, 2)
-  status  String
-  stageOrder Int   @default(0) // captured so a later stage rename/reorder cannot rewrite history
+  id         String   @id @default(cuid())
+  dealId     String
+  weekOf     DateTime @db.Date // the Monday of the week
+  stageId    String
+  ownerId    String?
+  amount     Decimal  @db.Decimal(14, 2)
+  status     String
+  stageOrder Int      @default(0) // captured so a later stage rename/reorder cannot rewrite history
 
   createdAt DateTime @default(now())
 
@@ -1528,7 +1553,7 @@ model PortalUser {
   linkExpiresAt  DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
-  sessions      Session[]
+  sessions       Session[]
 
   @@index([email])
 }
@@ -1562,7 +1587,7 @@ model Entitlement {
   id             String       @id @default(cuid())
   subscriptionId String
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  label          String       // "VAPT assessment", "Support hours"
+  label          String // "VAPT assessment", "Support hours"
   quantity       Decimal      @default(1) @db.Decimal(12, 2)
   unit           String       @default("unit") // assessment | hour | session | …
   /// The window it can be used in — defaults to the subscription's term.
@@ -1593,7 +1618,7 @@ model Delivery {
   status        DeliveryStatus @default(SCHEDULED)
   scheduledFor  DateTime?
   deliveredAt   DateTime?
-  reference     String?        // report id, ticket, vendor confirmation
+  reference     String? // report id, ticket, vendor confirmation
   notes         String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -1612,26 +1637,26 @@ model Delivery {
 /// well, so the send can be replayed exactly; that payload is dropped once it goes
 /// through, and pruned with the row.
 model EmailLog {
-  id          String   @id @default(cuid())
-  createdAt   DateTime @default(now())
-  to          String[]
-  cc          String[]
-  subject     String
-  preview     String?
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  to           String[]
+  cc           String[]
+  subject      String
+  preview      String?
   /// quote | invoice | purchase_order | portal_link | registration | notification | scheduled_report | test
-  kind        String   @default("other")
+  kind         String   @default("other")
   /// SENT (Graph accepted it) | FAILED
-  status      String
-  error       String?
+  status       String
+  error        String?
   /// The record it belongs to, so the log links back to the quote or deal.
-  entity      String?
-  entityId    String?
+  entity       String?
+  entityId     String?
   /// Who pressed send. Null for the scheduler and other background sends.
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id])
-  attachments String[]
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  attachments  String[]
   /// Only on a failure: the exact message, for a faithful resend. Cleared once resent.
-  payload     Json?
+  payload      Json?
   /// Set on the row created by a resend, pointing at the failure it replaced.
   resentFromId String?
 
@@ -1648,7 +1673,7 @@ model EmailLog {
 /// copy and deactivating someone left their open tabs working. With it, revoking is
 /// real: the next request that presents a revoked session is refused.
 model Session {
-  id           String    @id @default(cuid())
+  id           String      @id @default(cuid())
   /// internal | portal
   kind         String
   userId       String?
@@ -1659,9 +1684,9 @@ model Session {
   viewingAsId  String?
   viewingAs    User?       @relation("ViewedSessions", fields: [viewingAsId], references: [id])
 
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   /// Touched at most every few minutes, not on every request.
-  lastSeenAt DateTime @default(now())
+  lastSeenAt DateTime  @default(now())
   /// Mirrors the token's own expiry, so the row can be judged without decoding it.
   expiresAt  DateTime
   revokedAt  DateTime?

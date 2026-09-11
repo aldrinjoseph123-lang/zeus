@@ -249,7 +249,10 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', classN
 type BadgeTone = 'neutral' | 'accent' | 'watch' | 'secure' | 'info' | 'dark';
 
 const BADGE_TONES: Record<BadgeTone, string> = {
-  neutral: 'bg-n100 text-n600 border-n200',
+  // Semantic, not ramp: bg-n100 is a light background that deliberately stays light in
+  // dark mode, while text-n600 lifts to a light grey — so the pair rendered #c4c4c4 on
+  // #ebebe8, a contrast of 1.3. The same class of bug as the sidebar and the error banner.
+  neutral: 'bg-sunken text-muted border-line',
   accent: 'bg-accent-soft text-[var(--text-on-accent-soft)] border-[var(--red-300)]',
   watch: 'bg-[#fdf1e4] text-[#8a4a10] border-[#f0cfa8]',
   secure: 'bg-[#e8f5ed] text-[#14653a] border-[#b8dfc8]',
