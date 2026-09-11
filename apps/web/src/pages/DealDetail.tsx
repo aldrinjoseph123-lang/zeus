@@ -36,6 +36,8 @@ interface DealFull {
   customFields: CustomValues;
   account: { id: string; name: string; type: string; domain: string | null; industry: string | null };
   partnerAccount: { id: string; name: string } | null;
+  /** Vendors quoted here that this partner is not currently enabled to sell. */
+  notEnabledFor?: string[];
   primaryContact: { id: string; firstName: string; lastName: string; email: string | null; phone: string | null; jobTitle: string | null } | null;
   stage: { id: string; name: string; color: string; probability: number; isWon: boolean; isLost: boolean; rotDays: number };
   pipeline: { id: string; name: string; kind: string };
@@ -255,7 +257,24 @@ export default function DealDetail() {
               <DefinitionList
                 items={[
                   { label: 'End customer', value: <Link to={`/accounts/${deal.account.id}`} className="font-semibold underline decoration-dotted underline-offset-2">{deal.account.name}</Link> },
-                  { label: 'Partner', value: deal.partnerAccount ? <Link to={`/accounts/${deal.partnerAccount.id}`} className="underline decoration-dotted underline-offset-2">{deal.partnerAccount.name}</Link> : <span className="text-muted">Direct deal</span> },
+                  {
+                    label: 'Partner',
+                    value: deal.partnerAccount ? (
+                      <span>
+                        <Link to={`/accounts/${deal.partnerAccount.id}`} className="underline decoration-dotted underline-offset-2">{deal.partnerAccount.name}</Link>
+                        {/*
+                          * Informs, never blocks. Enablement is the newest data here and a
+                          * gate built on a record someone forgot to renew would stop real
+                          * work; saying it plainly is enough to prompt the check.
+                          */}
+                        {deal.notEnabledFor?.length ? (
+                          <span className="mt-1 block text-[11px] text-[var(--text-on-accent-soft)]">
+                            Not enabled on {deal.notEnabledFor.join(', ')}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : <span className="text-muted">Direct deal</span>,
+                  },
                   { label: 'Primary contact', value: deal.primaryContact ? `${deal.primaryContact.firstName} ${deal.primaryContact.lastName}${deal.primaryContact.jobTitle ? ` · ${deal.primaryContact.jobTitle}` : ''}` : '—' },
                   { label: 'Contact email', value: deal.primaryContact?.email ? <a href={`mailto:${deal.primaryContact.email}`} className="underline decoration-dotted underline-offset-2">{deal.primaryContact.email}</a> : '—' },
                   { label: 'Type', value: deal.type === 'SERVICE' ? 'Managed service' : deal.type === 'MIXED' ? 'Mixed' : 'Product reselling' },

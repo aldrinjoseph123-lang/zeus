@@ -21,6 +21,7 @@ const include = {
   account: { select: { id: true, name: true, type: true } },
   product: { select: { id: true, sku: true, name: true } },
   vendor: { select: { id: true, name: true } },
+  partnerAccount: { select: { id: true, name: true } },
   owner: { select: { id: true, name: true } },
   renewalDeal: { select: { id: true, reference: true, name: true, status: true, stage: { select: { name: true } } } },
   sourceInvoice: { select: { id: true, number: true } },
@@ -43,6 +44,14 @@ const subscriptionSchema = z.object({
   vendorRef: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   ownerId: z.string().optional().nullable(),
+  /** Who services the renewal. Inherited from the source deal when not named. */
+  partnerAccountId: z.string().optional().nullable(),
+  /**
+   * The deal this term was sold on. The internal paths — renewing, and creating from an
+   * invoice — always had it; this route did not, so a subscription entered by hand could
+   * never point back at its deal and had nothing to inherit a partner from.
+   */
+  sourceDealId: z.string().optional().nullable(),
 });
 
 /**

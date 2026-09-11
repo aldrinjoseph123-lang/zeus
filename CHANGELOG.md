@@ -65,8 +65,27 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   registrations recorded after this release accumulate — inventing a date for the existing
   ones would have written a fictional same-day response into the number.
 
+### Added — what a partner can sell, and who renews what
+
+- **Vendor enablement per partner**, recorded on their Engagement tab. Per vendor rather
+  than per product, so a new item under a vendor they already carry needs no new record.
+  **Everything expires**, a year by default, warned on the same window registrations use —
+  a list nobody re-checks is a list of what was true once.
+- **A deal says when its partner is not enabled** on a vendor being quoted there. It says
+  so and saves: Zeus refuses in exactly one place, partner protection, and a second gate
+  built on a record someone forgot to renew would stop real work.
+- **Subscriptions now know which partner services them**, so "what is this partner's
+  renewal book" is finally answerable. New terms inherit it from the deal that sold them.
+- **A "Renewals by partner" report** — the live book each partner services and what is
+  expiring in the window, with unassigned rows grouped rather than dropped, because
+  "nobody is on these" is the most useful line on it.
+
 ### Fixed
 
+- The step indicator on list rows — the little bars showing how far a quote or invoice has
+  got — carried its meaning in an `aria-label` on a plain element, which screen readers are
+  required to ignore. Anyone not seeing the bars was told nothing at all. It is now marked
+  as a graphic, so the label it always carried actually reaches them.
 - Small grey badges were close to unreadable in dark mode — they paired a background that
   stays light with text that lightens at night, which came out at a contrast of 1.3
   against a floor of 4.5. Same cause as the sidebar and the error banner: a colour taken

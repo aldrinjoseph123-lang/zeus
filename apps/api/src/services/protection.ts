@@ -84,3 +84,43 @@ export function protectionMessage(p: Protection): string {
 }
 
 export const mayOverrideProtection = (user: SessionUser): boolean => MAY_OVERRIDE.has(user.roleName);
+
+/**
+ * Vendors a partner is quoting but is not enabled to sell.
+ *
+ * Informs, never blocks. Enablement is the newest and least trustworthy data here, and a
+ * gate built on a record someone forgot to renew stops real business to protect a
+ * spreadsheet. Zeus already refuses in one place — protection — and doing it twice would
+ * make it a gate rather than a record.
+ *
+ * A deal's vendors come from what has actually been quoted on it: the products on its
+ * quote lines. A vendor-side registration counts too, since registering a deal with a
+ * vendor is as firm a statement of what is being sold as a quote line.
+ */
+export async function unenabledVendorsOn(dealId: string, partnerAccountId: string | null): Promise<string[]> {
+  if (!partnerAccountId) return [];
+
+  const [lines, registrations] = await Promise.all([
+    prisma.quoteLine.findMany({
+      where: { quote: { dealId }, product: { vendorId: { not: null } } },
+      select: { product: { select: { vendorId: true, vendor: { select: { name: true } } } } },
+    }),
+    prisma.dealRegistration.findMany({
+      where: { dealId, side: 'VENDOR', vendorId: { not: null } },
+      select: { vendorId: true, vendor: { select: { name: true } } },
+    }),
+  ]);
+
+  const vendors = new Map<string, string>();
+  for (const l of lines) if (l.product?.vendorId) vendors.set(l.product.vendorId, l.product.vendor?.name ?? 'a vendor');
+  for (const r of registrations) if (r.vendorId) vendors.set(r.vendorId, r.vendor?.name ?? 'a vendor');
+  if (vendors.size === 0) return [];
+
+  // Expired enablement does not count as enabled — that is the whole point of the expiry.
+  const live = await prisma.partnerEnablement.findMany({
+    where: { partnerId: partnerAccountId, vendorId: { in: [...vendors.keys()] }, expiresAt: { gt: new Date() } },
+    select: { vendorId: true },
+  });
+  for (const e of live) vendors.delete(e.vendorId);
+  return [...vendors.values()];
+}

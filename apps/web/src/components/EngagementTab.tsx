@@ -1,7 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Plus, X } from 'lucide-react';
+import { api, ApiError } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { date, relative } from '../lib/format';
-import { Badge, DataTable, EmptyState, Loading } from './ui';
+import { Badge, Button, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal, Textarea, useToast } from './ui';
+import { AccountPicker } from './pickers';
 
 /**
  * What we have done with this partner, and what they are still waiting on.
@@ -47,6 +51,149 @@ function toneFor(a: EngagementActivity) {
   return 'neutral' as const;
 }
 
+interface Enablement {
+  id: string;
+  vendor: { id: string; name: string };
+  enabledAt: string;
+  expiresAt: string;
+  note: string | null;
+  recordedBy: { id: string; name: string } | null;
+  /** live | expiring | expired — expiring and expired want different reactions. */
+  state: 'live' | 'expiring' | 'expired';
+}
+
+const ENABLEMENT_TONE = { live: 'secure', expiring: 'watch', expired: 'accent' } as const;
+
+/**
+ * What this partner can sell.
+ *
+ * Per vendor, not per SKU, and everything expires — a list nobody re-checks is a list of
+ * what was true once. It answers the question asked the moment a lead lands and needs
+ * somewhere to go: who can actually handle this.
+ */
+function EnablementPanel({ accountId }: { accountId: string }) {
+  const { can } = useAuth();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ['partner-enablement', accountId],
+    queryFn: () => api.get<{ rows: Enablement[]; warnDays: number }>(`/partners/${accountId}/enablement`),
+  });
+
+  const remove = useMutation({
+    mutationFn: (vendorId: string) => api.del(`/partners/${accountId}/enablement/${vendorId}`),
+    onSuccess: () => {
+      toast.push('Enablement removed.', 'success');
+      void queryClient.invalidateQueries({ queryKey: ['partner-enablement', accountId] });
+    },
+  });
+
+  const mayEdit = can('partners', 'update');
+  const rows = data?.rows ?? [];
+
+  return (
+    <div className="border-b border-line px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="eyebrow">Enabled to sell</span>
+        {mayEdit ? (
+          <Button size="sm" icon={<Plus size={12} />} onClick={() => setAdding(true)}>Add vendor</Button>
+        ) : null}
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="mt-2 text-[12px] text-muted">
+          No vendors recorded. Until one is, Zeus cannot answer which partners can sell what.
+        </p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {rows.map((r) => (
+            <span key={r.id} className="inline-flex items-center gap-1.5">
+              <Badge tone={ENABLEMENT_TONE[r.state]}>
+                {r.vendor.name}
+                <span className="font-normal normal-case tracking-normal">
+                  {r.state === 'expired' ? ' · lapsed' : ` · to ${date(r.expiresAt)}`}
+                </span>
+              </Badge>
+              {mayEdit ? (
+                <button
+                  type="button"
+                  aria-label={`Remove ${r.vendor.name}`}
+                  className="text-muted transition-colors hover:text-accent"
+                  onClick={() => remove.mutate(r.vendor.id)}
+                >
+                  <X size={12} />
+                </button>
+              ) : null}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {adding ? (
+        <AddEnablement
+          accountId={accountId}
+          onClose={() => setAdding(false)}
+          onSaved={() => {
+            setAdding(false);
+            toast.push('Enablement recorded.', 'success');
+            void queryClient.invalidateQueries({ queryKey: ['partner-enablement', accountId] });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AddEnablement({ accountId, onClose, onSaved }: {
+  accountId: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [vendorId, setVendorId] = useState<string | null>(null);
+  const [vendorLabel, setVendorLabel] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState('');
+  const [note, setNote] = useState('');
+
+  // A year unless the vendor's programme says otherwise, which is the usual case.
+  const suggested = new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+
+  const save = useMutation({
+    mutationFn: () => api.put(`/partners/${accountId}/enablement/${vendorId}`, {
+      expiresAt: new Date(`${expiresAt || suggested}T09:00:00`).toISOString(),
+      note: note || null,
+    }),
+    onSuccess: onSaved,
+  });
+
+  return (
+    <Modal open title="Enable this partner on a vendor" onClose={onClose} width="sm">
+      <div className="grid gap-3">
+        <Field label="Vendor" hint="Per vendor, not per product — a new SKU under one they already carry needs nothing.">
+          <AccountPicker
+            value={vendorId}
+            type="VENDOR"
+            selectedLabel={vendorLabel}
+            onChange={(id, row) => { setVendorId(id); setVendorLabel(row?.name ?? null); }}
+          />
+        </Field>
+        <Field label="Re-check by" hint="A year from today unless the vendor sets a different term.">
+          <Input type="date" value={expiresAt || suggested} onChange={(e) => setExpiresAt(e.target.value)} />
+        </Field>
+        <Field label="Note" hint="Optional — certification number, who was trained.">
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+        </Field>
+        {save.error ? <ErrorNote error={save.error as ApiError} /> : null}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="accent" disabled={!vendorId} loading={save.isPending} onClick={() => save.mutate()}>
+            Record it
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function EngagementTab({ accountId }: { accountId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['partner-engagement', accountId],
@@ -83,6 +230,8 @@ export function EngagementTab({ accountId }: { accountId: string }) {
           </span>
         ) : null}
       </div>
+
+      <EnablementPanel accountId={accountId} />
 
       {activities.length === 0 ? (
         <EmptyState

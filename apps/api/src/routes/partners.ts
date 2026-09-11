@@ -29,6 +29,13 @@ const patchSchema = z.object({
   isDormant: z.boolean().optional(),
 });
 
+const enablementSchema = z.object({
+  enabledAt: z.string().datetime().optional(),
+  /** Defaults to a year from the enablement date; set it when the vendor says otherwise. */
+  expiresAt: z.string().datetime().optional(),
+  note: z.string().optional().nullable(),
+});
+
 const logSchema = z.object({
   type: z.enum(LOGGABLE),
   subject: z.string().min(1, 'Say what it was.'),
@@ -195,6 +202,93 @@ export default async function partnerRoutes(app: FastifyInstance): Promise<void>
       summary: `${body.type.toLowerCase()} · ${partner.name}`, ip: clientIp(request),
     });
     return reply.status(201).send({ logged, followUp });
+  });
+
+  /**
+   * What this partner can sell, and until when.
+   *
+   * Per vendor rather than per SKU: a partner is enabled on a programme, and a new product
+   * under a vendor they already carry should not need a fresh record. Everything expires,
+   * because a list nobody re-checks is a list of what was true once.
+   */
+  app.get('/api/partners/:id/enablement', { preHandler: requirePermission('partners', 'read') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const [rows, warnDays] = await Promise.all([
+      prisma.partnerEnablement.findMany({
+        where: { partnerId: id },
+        orderBy: { expiresAt: 'asc' },
+        include: {
+          vendor: { select: { id: true, name: true } },
+          recordedBy: { select: { id: true, name: true } },
+        },
+      }),
+      getSetting<number>('pipeline.registrationExpiryWarnDays', 30),
+    ]);
+
+    const now = Date.now();
+    const soon = now + Number(warnDays) * 86_400_000;
+    return {
+      rows: rows.map((r) => ({
+        ...r,
+        // Three states, because "expiring" and "expired" want different reactions.
+        state: r.expiresAt.getTime() < now ? 'expired' : r.expiresAt.getTime() < soon ? 'expiring' : 'live',
+      })),
+      warnDays: Number(warnDays),
+    };
+  });
+
+  app.put('/api/partners/:id/enablement/:vendorId', { preHandler: requirePermission('partners', 'update') }, async (request) => {
+    const { id, vendorId } = request.params as { id: string; vendorId: string };
+    const parsed = enablementSchema.safeParse(request.body ?? {});
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
+
+    const [partner, vendor] = await Promise.all([
+      prisma.account.findFirst({ where: { id, type: 'PARTNER', deletedAt: null } }),
+      prisma.account.findFirst({ where: { id: vendorId, type: 'VENDOR', deletedAt: null } }),
+    ]);
+    if (!partner) throw notFound('Partner not found.');
+    if (!vendor) throw notFound('Vendor not found.');
+    if (!(await ownerAllowed(request.user, 'partners', 'update', partner.channelManagerId))) {
+      throw badRequest('You can only change partners you manage.');
+    }
+
+    const enabledAt = parsed.data.enabledAt ? new Date(parsed.data.enabledAt) : new Date();
+    // A year unless told otherwise — the interval the re-check actually runs on.
+    const expiresAt = parsed.data.expiresAt
+      ? new Date(parsed.data.expiresAt)
+      : new Date(enabledAt.getTime() + 365 * 86_400_000);
+
+    const data = { enabledAt, expiresAt, note: parsed.data.note ?? null, recordedById: request.user.id };
+    // One row per pair: re-enabling renews the record rather than stacking a history of
+    // every training session, which is what the engagement log is for.
+    const saved = await prisma.partnerEnablement.upsert({
+      where: { partnerId_vendorId: { partnerId: id, vendorId } },
+      create: { partnerId: id, vendorId, ...data },
+      update: data,
+      include: { vendor: { select: { id: true, name: true } } },
+    });
+
+    await audit({
+      user: request.user, action: 'update', entity: 'Account', entityId: id,
+      summary: `${partner.name} enabled on ${vendor.name} until ${expiresAt.toLocaleDateString('en-GB')}`,
+      ip: clientIp(request),
+    });
+    return saved;
+  });
+
+  app.delete('/api/partners/:id/enablement/:vendorId', { preHandler: requirePermission('partners', 'update') }, async (request) => {
+    const { id, vendorId } = request.params as { id: string; vendorId: string };
+    const partner = await prisma.account.findFirst({ where: { id, type: 'PARTNER', deletedAt: null } });
+    if (!partner) throw notFound('Partner not found.');
+    if (!(await ownerAllowed(request.user, 'partners', 'update', partner.channelManagerId))) {
+      throw badRequest('You can only change partners you manage.');
+    }
+    await prisma.partnerEnablement.deleteMany({ where: { partnerId: id, vendorId } });
+    await audit({
+      user: request.user, action: 'delete', entity: 'Account', entityId: id,
+      summary: `${partner.name} no longer enabled on a vendor`, ip: clientIp(request),
+    });
+    return { ok: true };
   });
 
   /** Everything logged against this partner, newest first — the Engagement tab. */

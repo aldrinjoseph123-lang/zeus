@@ -119,7 +119,10 @@ export function LifecycleMini({ track }: { track: Track }) {
     ? stopped
     : `${steps[current]?.label ?? ''} — step ${current + 1} of ${steps.length}${note ? ` · ${note}` : ''}`;
   return (
-    <span className="flex items-center gap-[3px]" title={caption} aria-label={caption}>
+    // role="img" because the bars *are* the information: aria-label on a bare span is
+    // prohibited and screen readers drop it, so "step 1 of 3" was reaching nobody who
+    // could not see the pips. Marking it an image gives the label something to name.
+    <span className="flex items-center gap-[3px]" role="img" title={caption} aria-label={caption}>
       {steps.map((step, index) => (
         <span
           key={step.key}

@@ -41,39 +41,40 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  ownedAccounts             Account[]          @relation("AccountOwner")
-  channelManagedAccounts    Account[]          @relation("AccountChannelManager")
-  ownedContacts             Contact[]          @relation("ContactOwner")
-  ownedLeads                Lead[]             @relation("LeadOwner")
-  ownedDeals                Deal[]             @relation("DealOwner")
-  ownedSubscriptions        Subscription[]     @relation("SubscriptionOwner")
-  activities                Activity[]         @relation("ActivityOwner")
-  createdActivities         Activity[]         @relation("ActivityCreator")
+  ownedAccounts             Account[]           @relation("AccountOwner")
+  channelManagedAccounts    Account[]           @relation("AccountChannelManager")
+  enablementsRecorded       PartnerEnablement[] @relation("EnablementRecordedBy")
+  ownedContacts             Contact[]           @relation("ContactOwner")
+  ownedLeads                Lead[]              @relation("LeadOwner")
+  ownedDeals                Deal[]              @relation("DealOwner")
+  ownedSubscriptions        Subscription[]      @relation("SubscriptionOwner")
+  activities                Activity[]          @relation("ActivityOwner")
+  createdActivities         Activity[]          @relation("ActivityCreator")
   auditLogs                 AuditLog[]
-  undoneAuditLogs           AuditLog[]         @relation("AuditUndoer")
+  undoneAuditLogs           AuditLog[]          @relation("AuditUndoer")
   notifications             Notification[]
   targets                   Target[]
   quotes                    Quote[]
   invoices                  Invoice[]
-  ownedPurchaseOrders       PurchaseOrder[]    @relation("PoOwner")
-  createdPurchaseOrders     PurchaseOrder[]    @relation("PoCreator")
-  dealApprovalsRequested    Deal[]             @relation("DealApprovalRequester")
-  dealApprovals             Deal[]             @relation("DealApprover")
-  quoteApprovalsRequested   Quote[]            @relation("QuoteApprovalRequester")
-  quoteApprovals            Quote[]            @relation("QuoteApprover")
-  poApprovalsRequested      PurchaseOrder[]    @relation("PoApprovalRequester")
-  poApprovals               PurchaseOrder[]    @relation("PoApprover")
-  invoiceApprovalsRequested Invoice[]          @relation("InvoiceApprovalRequester")
-  invoiceApprovals          Invoice[]          @relation("InvoiceApprover")
+  ownedPurchaseOrders       PurchaseOrder[]     @relation("PoOwner")
+  createdPurchaseOrders     PurchaseOrder[]     @relation("PoCreator")
+  dealApprovalsRequested    Deal[]              @relation("DealApprovalRequester")
+  dealApprovals             Deal[]              @relation("DealApprover")
+  quoteApprovalsRequested   Quote[]             @relation("QuoteApprovalRequester")
+  quoteApprovals            Quote[]             @relation("QuoteApprover")
+  poApprovalsRequested      PurchaseOrder[]     @relation("PoApprovalRequester")
+  poApprovals               PurchaseOrder[]     @relation("PoApprover")
+  invoiceApprovalsRequested Invoice[]           @relation("InvoiceApprovalRequester")
+  invoiceApprovals          Invoice[]           @relation("InvoiceApprover")
   payments                  Payment[]
   attachments               Attachment[]
   importJobs                ImportJob[]
-  pipelineSnapshots         PipelineSnapshot[] @relation("SnapshotOwner")
+  pipelineSnapshots         PipelineSnapshot[]  @relation("SnapshotOwner")
   scheduledReports          ScheduledReport[]
   accessRequests            AccessRequest[]
   emailLogs                 EmailLog[]
-  sessions                  Session[]          @relation("UserSessions")
-  viewedSessions            Session[]          @relation("ViewedSessions")
+  sessions                  Session[]           @relation("UserSessions")
+  viewedSessions            Session[]           @relation("ViewedSessions")
 
   /// TOTP shared secret, AES-256-GCM at rest. Null until the user enrols.
   totpSecret    String?
@@ -170,11 +171,14 @@ model Account {
   deletedAt             DateTime?
 
   contacts             Contact[]
-  deals                Deal[]             @relation("DealCustomer")
-  partnerDeals         Deal[]             @relation("DealPartner")
-  products             Product[]          @relation("ProductVendor")
-  registrations        DealRegistration[] @relation("RegistrationVendor")
-  partnerRegistrations DealRegistration[] @relation("RegistrationPartner")
+  deals                Deal[]              @relation("DealCustomer")
+  partnerDeals         Deal[]              @relation("DealPartner")
+  products             Product[]           @relation("ProductVendor")
+  registrations        DealRegistration[]  @relation("RegistrationVendor")
+  partnerRegistrations DealRegistration[]  @relation("RegistrationPartner")
+  partnerSubscriptions Subscription[]      @relation("SubscriptionPartner")
+  enablements          PartnerEnablement[] @relation("EnablementPartner")
+  enabledPartners      PartnerEnablement[] @relation("EnablementVendor")
   quotes               Quote[]
   invoices             Invoice[]
   purchaseOrders       PurchaseOrder[]
@@ -183,8 +187,8 @@ model Account {
   attachments          Attachment[]
   convertedFromLeads   Lead[]
   subscriptions        Subscription[]
-  vendorSubscriptions  Subscription[]     @relation("SubscriptionVendor")
-  priceEntries         PriceEntry[]       @relation("PriceEntryVendor")
+  vendorSubscriptions  Subscription[]      @relation("SubscriptionVendor")
+  priceEntries         PriceEntry[]        @relation("PriceEntryVendor")
 
   @@index([domain])
   @@index([type])
@@ -533,18 +537,23 @@ enum SubscriptionStatus {
 /// is still running, what it is worth, and when it has to be sold again. Without it an
 /// expiry is invisible until the customer has already gone elsewhere.
 model Subscription {
-  id          String   @id @default(cuid())
+  id               String   @id @default(cuid())
   /// Human reference, e.g. ZEU-SUB-000042.
-  reference   String   @unique
-  accountId   String
-  account     Account  @relation(fields: [accountId], references: [id])
-  productId   String?
-  product     Product? @relation(fields: [productId], references: [id])
+  reference        String   @unique
+  accountId        String
+  account          Account  @relation(fields: [accountId], references: [id])
+  /// Which partner services this renewal. Inherited from the deal that sold it and
+  /// changeable afterwards, because customers do move between resellers. Without it a
+  /// subscription knows its customer and its product and nothing about who renews it.
+  partnerAccountId String?
+  partnerAccount   Account? @relation("SubscriptionPartner", fields: [partnerAccountId], references: [id])
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id])
   /// Kept even when a product is linked: the line as sold, which may differ from the
   /// catalogue name a year later.
-  description String
-  vendorId    String?
-  vendor      Account? @relation("SubscriptionVendor", fields: [vendorId], references: [id])
+  description      String
+  vendorId         String?
+  vendor           Account? @relation("SubscriptionVendor", fields: [vendorId], references: [id])
 
   quantity  Decimal @default(1) @db.Decimal(12, 2)
   unit      String  @default("licence")
@@ -1112,6 +1121,34 @@ model Activity {
   @@index([dealId])
   @@index([accountId])
   @@index([leadId])
+}
+
+/// What a partner is actually able to sell.
+///
+/// Per vendor, not per SKU: a partner is enabled on a vendor's programme, and a new
+/// product under a vendor they already carry should not need a fresh record. Everything
+/// expires — a year by default — because an enablement list nobody re-checks becomes a
+/// list of what was true once.
+model PartnerEnablement {
+  id           String   @id @default(cuid())
+  partnerId    String
+  partner      Account  @relation("EnablementPartner", fields: [partnerId], references: [id], onDelete: Cascade)
+  vendorId     String
+  vendor       Account  @relation("EnablementVendor", fields: [vendorId], references: [id], onDelete: Cascade)
+  enabledAt    DateTime @default(now())
+  /// When it needs re-checking. Warned on the same window registrations use.
+  expiresAt    DateTime
+  note         String?
+  recordedById String?
+  recordedBy   User?    @relation("EnablementRecordedBy", fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  /// One row per pair — re-enabling a partner renews the record rather than stacking up
+  /// a history of every training session, which is what the activity log is for.
+  @@unique([partnerId, vendorId])
+  @@index([expiresAt])
+  @@index([vendorId])
 }
 
 model Attachment {

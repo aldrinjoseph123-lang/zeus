@@ -365,6 +365,49 @@ export const REPORTS: ReportDef[] = [
     },
   },
   {
+    key: 'partner-renewals',
+    name: 'Renewals by partner',
+    description: 'The renewal book each partner services, and what is due in the window.',
+    module: 'reports',
+    columns: [
+      { key: 'partner', label: 'Partner', width: 170 },
+      { key: 'subscriptions', label: 'Live', width: 60, align: 'right' },
+      { key: 'annual', label: 'Term value (AED)', width: 130, align: 'right', format: 'money' },
+      { key: 'dueInWindow', label: 'Expiring', width: 80, align: 'right' },
+      { key: 'dueValue', label: 'Expiring (AED)', width: 120, align: 'right', format: 'money' },
+    ],
+    run: async (ctx) => {
+      /**
+       * Answerable at all only since subscriptions started carrying the partner that
+       * services them — before that a subscription knew its customer and its product and
+       * nothing about who renews it. Unassigned rows are grouped rather than dropped,
+       * because "nobody is on these" is the most useful line on the report.
+       */
+      const rows = await prisma.$queryRaw<Array<{
+        partner: string; subscriptions: bigint; annual: number; due_count: bigint; due_value: number;
+      }>>`
+        SELECT COALESCE(a.name, 'Unassigned') AS partner,
+               COUNT(*)::bigint AS subscriptions,
+               COALESCE(SUM(s."termValue"), 0)::float8 AS annual,
+               COUNT(*) FILTER (WHERE s."endDate" BETWEEN ${ctx.from} AND ${ctx.to})::bigint AS due_count,
+               COALESCE(SUM(s."termValue") FILTER (WHERE s."endDate" BETWEEN ${ctx.from} AND ${ctx.to}), 0)::float8 AS due_value
+        FROM "Subscription" s
+        LEFT JOIN "Account" a ON a.id = s."partnerAccountId"
+        WHERE s."deletedAt" IS NULL AND s.status NOT IN ('CANCELLED')
+        GROUP BY 1 ORDER BY annual DESC
+      `;
+      return {
+        rows: rows.map((r) => ({
+          partner: r.partner,
+          subscriptions: Number(r.subscriptions),
+          annual: Number(r.annual),
+          dueInWindow: Number(r.due_count),
+          dueValue: Number(r.due_value),
+        })),
+      };
+    },
+  },
+  {
     key: 'partner-performance',
     name: 'Partner performance',
     description: 'Deals each partner brought us, how much of it closed, and how fast we answered.',

@@ -64,12 +64,22 @@ export interface SubscriptionInput {
   notes?: string | null;
   ownerId?: string | null;
   sourceInvoiceId?: string | null;
+  /**
+   * Who services the renewal. Left unset, it is taken from the source deal — which every
+   * creation path already carries — so the renewal book fills itself rather than waiting
+   * for someone to remember.
+   */
+  partnerAccountId?: string | null;
   sourceDealId?: string | null;
   renewedFromId?: string | null;
 }
 
 export async function createSubscription(input: SubscriptionInput) {
   const quantity = input.quantity || 1;
+  // Inherit the servicing partner from the deal that sold it, unless the caller named one.
+  const sourcePartner = input.partnerAccountId === undefined && input.sourceDealId
+    ? (await prisma.deal.findUnique({ where: { id: input.sourceDealId }, select: { partnerAccountId: true } }))?.partnerAccountId ?? null
+    : null;
   const unitPrice = input.unitPrice || 0;
   const unitCost = input.unitCost ?? 0;
 
@@ -77,6 +87,7 @@ export async function createSubscription(input: SubscriptionInput) {
     data: {
       reference: await nextReference('subscription'),
       accountId: input.accountId,
+      partnerAccountId: input.partnerAccountId ?? sourcePartner,
       productId: input.productId ?? null,
       vendorId: input.vendorId ?? null,
       description: input.description,

@@ -5,7 +5,7 @@ import { sanitizeCustomFields } from '../lib/customFields.js';
 import { audit, auditRead, diff, undoHardDelete, undoSoftDelete, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
 import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
-import { liveProtectionOn, mayOverrideProtection, protectionMessage } from '../services/protection.js';
+import { liveProtectionOn, mayOverrideProtection, protectionMessage, unenabledVendorsOn } from '../services/protection.js';
 import { checkDuplicates } from '../services/dedupe.js';
 import { nextReference } from '../lib/counters.js';
 import { applyVat, formatAed } from '../lib/money.js';
@@ -197,7 +197,14 @@ export default async function dealRoutes(app: FastifyInstance): Promise<void> {
     if (!deal) throw notFound('Deal not found.');
     if (!(await ownerAllowed(request.user, 'deals', 'read', deal.ownerId))) throw forbidden();
     auditRead(request.user, 'Deal', deal.id, deal.reference, clientIp(request));
-    return maskFields(request.user, 'deals', deal);
+
+    /**
+     * Vendors this partner is quoting but is not enabled to sell. Shown on the page rather
+     * than only raised on save, because the useful moment is while someone is deciding
+     * whether this is the right partner for the work — not after they have committed to it.
+     */
+    const notEnabledFor = await unenabledVendorsOn(deal.id, deal.partnerAccountId);
+    return { ...maskFields(request.user, 'deals', deal), ...(notEnabledFor.length ? { notEnabledFor } : {}) };
   });
 
   app.post('/api/deals', { preHandler: requirePermission('deals', 'create') }, async (request, reply) => {

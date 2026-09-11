@@ -70,6 +70,7 @@ const RECIPES: Record<string, () => Promise<string>> = {
 /** DELETE routes with nothing that can be orphaned, each for a stated reason. */
 const NO_CHILDREN: Record<string, string> = {
   '/api/activities/:id': 'a leaf — nothing points at an activity',
+  '/api/partners/:id/enablement/:vendorId': 'a leaf: removing an enablement records that a partner can no longer sell a vendor. Deals already quoted keep their history, and the deal page simply starts saying the partner is not enabled — which is the truth it is there to tell',
   '/api/attachments/:id': 'a leaf; the file is removed with the row',
   '/api/custom-fields/:id': 'values live on the records as JSON, and are left alone deliberately',
   '/api/deliveries/:id': 'a leaf under an entitlement',
