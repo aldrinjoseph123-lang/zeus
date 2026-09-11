@@ -233,7 +233,7 @@ export default function InvoiceEditor() {
       {invoice?.complianceGaps?.length ? (
         <Card className="mb-3 border-[var(--red-300)] bg-accent-soft">
           <div className="flex items-start gap-2 px-4 py-3">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-accent" />
+            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-accent-ink" />
             <div>
               <p className="text-[13px] font-semibold text-[var(--red-700)]">Before you send this</p>
               <ul className="mt-1 space-y-0.5 text-[12px] text-[var(--red-700)]">
@@ -272,13 +272,13 @@ export default function InvoiceEditor() {
                 <StatusPill status={invoice.status} />
                 {!isCredit && outstanding > 0 && posted ? (
                   <span className="text-[12px] text-muted">
-                    Outstanding <strong className="tabular text-[13px] text-accent">{money(outstanding)}</strong>
+                    Outstanding <strong className="tabular text-[13px] text-accent-ink">{money(outstanding)}</strong>
                   </span>
                 ) : null}
                 {can('invoices', 'update') && invoice.status !== 'CANCELLED' && !posted ? (
                   <button
                     onClick={() => setStatus.mutate('CANCELLED')}
-                    className="text-[11px] font-semibold uppercase tracking-[0.06em] text-n400 underline decoration-dotted underline-offset-2 transition-colors hover:text-accent"
+                    className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted underline decoration-dotted underline-offset-2 transition-colors hover:text-accent-ink"
                   >
                     Cancel
                   </button>
@@ -444,7 +444,7 @@ export default function InvoiceEditor() {
                   <Row label="Cost" value={money(totals.totalCost, true)} />
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-muted">Margin</span>
-                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
+                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
                       {money(totals.marginAmount, true)} · {percent(totals.marginPct, 1)}
                     </span>
                   </div>

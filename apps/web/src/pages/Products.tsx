@@ -80,7 +80,7 @@ export default function Products() {
                         render: (row: Product) => {
                           const sell = Number(row.listPrice);
                           const marginPct = sell > 0 ? ((sell - Number(row.cost ?? 0)) / sell) * 100 : 0;
-                          return <span className={marginPct < 10 ? 'tabular text-accent' : 'tabular'}>{percent(marginPct, 1)}</span>;
+                          return <span className={marginPct < 10 ? 'tabular text-accent-ink' : 'tabular'}>{percent(marginPct, 1)}</span>;
                         },
                       },
                     ]
@@ -204,7 +204,7 @@ function ProductModal({ product, onClose }: { product: Product | null; onClose: 
           {showCost ? (
             <Field label="Margin">
               <div className="rounded-sharp border border-line bg-sunken px-3 py-2 text-[13px]">
-                <span className={marginPct < 10 ? 'tabular font-semibold text-accent' : 'tabular font-semibold'}>{percent(marginPct, 1)}</span>
+                <span className={marginPct < 10 ? 'tabular font-semibold text-accent-ink' : 'tabular font-semibold'}>{percent(marginPct, 1)}</span>
                 <span className="ml-2 text-muted">{money(sell - Number(form.cost || 0), true)}</span>
               </div>
             </Field>

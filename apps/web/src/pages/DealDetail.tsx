@@ -178,7 +178,7 @@ export default function DealDetail() {
           </div>
           <div>
             <span className="eyebrow">Expected close</span>
-            <p className={cx('tabular mt-1 text-[26px] font-bold leading-none', new Date(deal.closeDate) < new Date() && deal.status === 'OPEN' && 'text-accent')}>
+            <p className={cx('tabular mt-1 text-[26px] font-bold leading-none', new Date(deal.closeDate) < new Date() && deal.status === 'OPEN' && 'text-accent-ink')}>
               {date(deal.closeDate)}
             </p>
             <p className="mt-1 text-[11px] text-muted">
@@ -227,7 +227,7 @@ export default function DealDetail() {
                   style={active ? { background: stage.color } : undefined}
                 >
                   <span className="block text-[11px] font-bold uppercase tracking-[0.06em]">{stage.name}</span>
-                  <span className={cx('block text-[10px]', active ? 'text-white/75' : 'text-n400')}>{stage.probability}%</span>
+                  <span className={cx('block text-[10px]', active ? 'text-white/75' : 'text-muted')}>{stage.probability}%</span>
                 </button>
               );
             })}
@@ -318,7 +318,7 @@ export default function DealDetail() {
                     render: (row) => (
                       <span>
                         <span className="block font-semibold">{row.vendor?.name ?? row.partner?.name ?? '—'}</span>
-                        <span className="block text-[10px] uppercase tracking-[0.08em] text-n400">
+                        <span className="block text-[10px] uppercase tracking-[0.08em] text-muted">
                           {row.side === 'PARTNER' ? 'For partner' : 'With vendor'}
                           {row.regNumber ? ` · ${row.regNumber}` : ''}
                         </span>
@@ -330,14 +330,14 @@ export default function DealDetail() {
                   {
                     key: 'expiresAt', header: 'Expires', align: 'right', width: '116px',
                     render: (row) => {
-                      if (!row.expiresAt) return <span className="text-n400">—</span>;
+                      if (!row.expiresAt) return <span className="text-muted">—</span>;
                       const left = daysBetween(row.expiresAt);
                       const daysLeft = left === null ? null : -left;
                       return (
-                        <span className={cx('tabular text-[12px]', daysLeft !== null && daysLeft < 30 && 'font-semibold text-accent')}>
+                        <span className={cx('tabular text-[12px]', daysLeft !== null && daysLeft < 30 && 'font-semibold text-accent-ink')}>
                           <span className="block">{date(row.expiresAt)}</span>
                           {daysLeft !== null ? (
-                            <span className="block text-[10px] text-n400">
+                            <span className="block text-[10px] text-muted">
                               {daysLeft < 0 ? `lapsed ${-daysLeft}d ago` : `${daysLeft}d left`}
                             </span>
                           ) : null}
@@ -404,7 +404,7 @@ export default function DealDetail() {
                         return (
                           <span className="tabular">
                             <span className="block font-semibold">{money(row.cost)}</span>
-                            {off !== null ? <span className="block text-[10px] text-n400">{percent(off, 0)} off list</span> : null}
+                            {off !== null ? <span className="block text-[10px] text-muted">{percent(off, 0)} off list</span> : null}
                           </span>
                         );
                       },
@@ -467,7 +467,7 @@ export default function DealDetail() {
                       <span className="h-2.5 w-2.5 shrink-0" style={{ background: stage?.color ?? 'var(--neutral-400)' }} />
                       <span className="flex-1 text-[13px]">{stage?.name ?? entry.toStatus}</span>
                       <span className="text-[11px] text-muted">{date(entry.changedAt)}</span>
-                      {entry.daysInStage > 0 ? <span className="tabular w-16 text-right text-[11px] text-n400">{entry.daysInStage}d before</span> : null}
+                      {entry.daysInStage > 0 ? <span className="tabular w-16 text-right text-[11px] text-muted">{entry.daysInStage}d before</span> : null}
                     </li>
                   );
                 })}
@@ -817,7 +817,7 @@ function RegistrationModal({ dealId, defaultPartner, onClose, onSaved }: {
                 )}
               >
                 <span className="block text-[11px] font-bold uppercase tracking-[0.06em]">{option.label}</span>
-                <span className={cx('mt-0.5 block text-[10px]', side === option.key ? 'text-white/70' : 'text-n400')}>{option.hint}</span>
+                <span className={cx('mt-0.5 block text-[10px]', side === option.key ? 'text-white/70' : 'text-muted')}>{option.hint}</span>
               </button>
             ))}
           </div>

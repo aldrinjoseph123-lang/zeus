@@ -197,7 +197,7 @@ function DealBoard() {
                       </div>
 
                       <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-1.5">
-                        <span className={cx('text-[10px] uppercase tracking-[0.06em]', overdue ? 'font-semibold text-accent' : 'text-muted')}>
+                        <span className={cx('text-[10px] uppercase tracking-[0.06em]', overdue ? 'font-semibold text-accent-ink' : 'text-muted')}>
                           {overdue ? 'overdue' : date(deal.closeDate)}
                         </span>
                         {deal.owner ? (
@@ -420,7 +420,7 @@ function DealList() {
               { key: 'type', header: 'Type', width: '90px', render: (row) => <Badge tone={row.type === 'SERVICE' ? 'info' : 'neutral'}>{row.type === 'SERVICE' ? 'Service' : row.type === 'MIXED' ? 'Mixed' : 'Product'}</Badge> },
               { key: 'amount', header: 'Net (AED)', align: 'right', sortable: true, width: '116px', render: (row) => <span className="tabular font-semibold">{money(row.amount)}</span> },
               { key: 'probability', header: 'Prob', align: 'right', sortable: true, width: '64px', render: (row) => <span className="tabular text-muted">{percent(row.probability)}</span> },
-              { key: 'closeDate', header: 'Close', sortable: true, width: '106px', render: (row) => <span className={cx('text-[12px]', new Date(row.closeDate) < new Date() && row.status === 'OPEN' && 'font-semibold text-accent')}>{date(row.closeDate)}</span> },
+              { key: 'closeDate', header: 'Close', sortable: true, width: '106px', render: (row) => <span className={cx('text-[12px]', new Date(row.closeDate) < new Date() && row.status === 'OPEN' && 'font-semibold text-accent-ink')}>{date(row.closeDate)}</span> },
               { key: 'source', header: 'Source', width: '116px', render: (row) => <span className="text-[12px] text-muted">{row.source}</span> },
               { key: 'owner', header: 'Owner', width: '124px', render: (row) => <span className="text-[12px]">{row.owner?.name ?? 'Unassigned'}</span> },
             ]}

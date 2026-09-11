@@ -75,12 +75,12 @@ function TaskRow({ activity, onComplete, busy }: { activity: Activity; onComplet
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <Icon size={12} className="text-n400" />
+          <Icon size={12} className="text-muted" />
           <span className={cx('text-[13px] font-semibold', activity.status === 'Completed' && 'text-muted line-through')}>{activity.subject}</span>
           {activity.priority === 'Urgent' || activity.priority === 'High' ? <Badge tone="accent">{activity.priority}</Badge> : null}
         </div>
         {activity.description ? <p className="mt-0.5 line-clamp-1 text-[12px] text-muted">{activity.description}</p> : null}
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] uppercase tracking-[0.08em] text-n400">
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] uppercase tracking-[0.08em] text-muted">
           {link ? (
             <Link to={link} className="underline decoration-dotted underline-offset-2 hover:text-ink">
               {activity.deal ? `${activity.deal.reference} · ${activity.deal.name}` : activity.account?.name ?? activity.lead?.company}
@@ -94,7 +94,7 @@ function TaskRow({ activity, onComplete, busy }: { activity: Activity; onComplet
       </div>
 
       {activity.dueAt ? (
-        <span className={cx('shrink-0 text-right text-[11px]', overdue ? 'font-semibold text-accent' : 'text-muted')} title={dateTime(activity.dueAt)}>
+        <span className={cx('shrink-0 text-right text-[11px]', overdue ? 'font-semibold text-accent-ink' : 'text-muted')} title={dateTime(activity.dueAt)}>
           {relative(activity.dueAt)}
         </span>
       ) : null}
@@ -141,7 +141,7 @@ function MyDayView() {
         data[section.key].length === 0 ? null : (
           <div key={section.key}>
             <div className={cx('flex items-center justify-between border-b border-line px-4 py-2', section.tone === 'accent' ? 'bg-accent-soft' : 'bg-sunken')}>
-              <span className={cx('eyebrow', section.tone === 'accent' && 'text-accent')}>{section.title}</span>
+              <span className={cx('eyebrow', section.tone === 'accent' && 'text-accent-ink')}>{section.title}</span>
               <span className="text-[11px] text-muted">{data[section.key].length}</span>
             </div>
             <ul>

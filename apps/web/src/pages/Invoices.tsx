@@ -124,7 +124,7 @@ export default function Invoices() {
                 {
                   key: 'dueDate', header: 'Due', width: '104px',
                   render: (row) => (
-                    <span className={row.dueDate && new Date(row.dueDate) < new Date() && row.status !== 'PAID' ? 'text-[12px] font-semibold text-accent' : 'text-[12px] text-muted'}>
+                    <span className={row.dueDate && new Date(row.dueDate) < new Date() && row.status !== 'PAID' ? 'text-[12px] font-semibold text-accent-ink' : 'text-[12px] text-muted'}>
                       {date(row.dueDate)}
                     </span>
                   ),
@@ -135,7 +135,7 @@ export default function Invoices() {
                   key: 'outstanding', header: 'Outstanding', align: 'right', width: '120px',
                   render: (row) => {
                     const left = Number(row.total) - Number(row.amountPaid);
-                    return <span className={left > 0 ? 'tabular font-semibold text-accent' : 'tabular text-muted'}>{money(left)}</span>;
+                    return <span className={left > 0 ? 'tabular font-semibold text-accent-ink' : 'tabular text-muted'}>{money(left)}</span>;
                   },
                 },
               ]}

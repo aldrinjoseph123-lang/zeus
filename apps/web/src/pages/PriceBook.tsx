@@ -146,7 +146,7 @@ export default function PriceBook() {
                   render: (row) => (
                     <span>
                       <span className="block text-[12px]">{row.vendor?.name ?? '—'}</span>
-                      {row.vendorSku ? <span className="block text-[10px] text-n400">{row.vendorSku}</span> : null}
+                      {row.vendorSku ? <span className="block text-[10px] text-muted">{row.vendorSku}</span> : null}
                     </span>
                   ),
                 },
@@ -162,7 +162,7 @@ export default function PriceBook() {
                     return (
                       <span className="tabular">
                         <span className="block font-semibold">{moneyIn(row.cost, row.currency)}</span>
-                        {off !== null ? <span className="block text-[10px] text-n400">{percent(off, 0)} off list</span> : null}
+                        {off !== null ? <span className="block text-[10px] text-muted">{percent(off, 0)} off list</span> : null}
                       </span>
                     );
                   },
@@ -181,14 +181,14 @@ export default function PriceBook() {
                 {
                   key: 'validTo', header: 'Valid to', align: 'right', width: '120px',
                   render: (row) => {
-                    if (!row.validTo) return <span className="text-[12px] text-n400">Open-ended</span>;
+                    if (!row.validTo) return <span className="text-[12px] text-muted">Open-ended</span>;
                     const left = daysBetween(row.validTo);
                     const daysLeft = left === null ? null : -left;
                     const lapsed = daysLeft !== null && daysLeft < 0;
                     return (
-                      <span className={cx('tabular text-[12px]', daysLeft !== null && daysLeft <= 30 && 'font-semibold text-accent')}>
+                      <span className={cx('tabular text-[12px]', daysLeft !== null && daysLeft <= 30 && 'font-semibold text-accent-ink')}>
                         <span className="block">{date(row.validTo)}</span>
-                        <span className="block text-[10px] text-n400">
+                        <span className="block text-[10px] text-muted">
                           {lapsed ? `expired ${-daysLeft}d ago` : `${daysLeft}d left`}
                         </span>
                       </span>
@@ -357,7 +357,7 @@ export function PriceModal({ entry, dealId, registrationId, onClose }: {
         </div>
 
         {form.validTo && new Date(form.validTo) < new Date() ? (
-          <p className="flex items-center gap-1.5 text-[12px] text-accent">
+          <p className="flex items-center gap-1.5 text-[12px] text-accent-ink">
             <AlertTriangle size={13} /> That date has already passed, so this price will not be used.
           </p>
         ) : null}

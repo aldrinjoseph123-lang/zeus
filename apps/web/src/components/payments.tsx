@@ -186,7 +186,7 @@ export function PaymentLedger({ payments, currency = 'AED', onDeleted }: {
             </span>
             <span className="shrink-0 text-[11px] text-muted">{date(payment.paidAt)}</span>
             {can('invoices', 'delete') ? (
-              <button onClick={() => setRemoving(payment)} aria-label="Reverse this payment" className="shrink-0 text-n300 transition-colors hover:text-accent">
+              <button onClick={() => setRemoving(payment)} aria-label="Reverse this payment" className="shrink-0 text-n300 transition-colors hover:text-accent-ink">
                 <Trash2 size={14} />
               </button>
             ) : null}

@@ -102,7 +102,7 @@ export default function Coaching() {
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="tabular text-[13px] font-semibold">{money(e.amount)}</p>
-                      <p className="text-[10px] uppercase tracking-[0.08em] text-n400">close {date(e.closeDate)}</p>
+                      <p className="text-[10px] uppercase tracking-[0.08em] text-muted">close {date(e.closeDate)}</p>
                     </div>
                   </li>
                 ))}

@@ -95,13 +95,13 @@ export function LifecycleRail({
                 <span
                   className={cx(
                     'truncate text-[11px] font-bold uppercase tracking-[0.06em]',
-                    state === 'now' ? 'text-ink' : state === 'done' ? 'text-n600' : 'text-n400',
+                    state === 'now' ? 'text-ink' : state === 'done' ? 'text-n600' : 'text-muted',
                   )}
                 >
                   {step.label}
                 </span>
               </span>
-              {step.sub ? <span className="mt-0.5 block truncate text-[10px] text-n400">{step.sub}</span> : null}
+              {step.sub ? <span className="mt-0.5 block truncate text-[10px] text-muted">{step.sub}</span> : null}
             </button>
           );
         })}

@@ -87,9 +87,9 @@ export default function Contacts() {
                   key: 'account', header: 'Account', width: '220px',
                   render: (row) => row.account
                     ? <Link to={`/accounts/${row.account.id}`} onClick={(e) => e.stopPropagation()} className="text-[12px] font-semibold underline decoration-dotted underline-offset-2">{row.account.name}</Link>
-                    : <span className="text-n400">Unlinked</span>,
+                    : <span className="text-muted">Unlinked</span>,
                 },
-                { key: 'email', header: 'Email', render: (row) => row.email ? <a href={`mailto:${row.email}`} onClick={(e) => e.stopPropagation()} className="text-[12px] underline decoration-dotted underline-offset-2">{row.email}</a> : <span className="text-n400">—</span> },
+                { key: 'email', header: 'Email', render: (row) => row.email ? <a href={`mailto:${row.email}`} onClick={(e) => e.stopPropagation()} className="text-[12px] underline decoration-dotted underline-offset-2">{row.email}</a> : <span className="text-muted">—</span> },
                 { key: 'phone', header: 'Phone', width: '150px', render: (row) => <span className="text-[12px]">{row.phone ?? row.mobile ?? '—'}</span> },
                 { key: 'owner', header: 'Owner', width: '130px', render: (row) => <span className="text-[12px]">{row.owner?.name ?? 'Unassigned'}</span> },
               ]}

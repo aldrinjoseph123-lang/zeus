@@ -338,10 +338,10 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2">
                       <div className="w-24"><ProgressBar value={row.attainment ?? 0} tone={(row.attainment ?? 0) >= 100 ? 'secure' : 'accent'} /></div>
                       <span className="tabular text-[11px] font-semibold">{percent(row.attainment ?? 0)}</span>
-                      <span className="text-[10px] text-n400">of {moneyShort(row.target)}</span>
+                      <span className="text-[10px] text-muted">of {moneyShort(row.target)}</span>
                     </div>
                   ) : (
-                    <span className="text-[11px] text-n400">No target</span>
+                    <span className="text-[11px] text-muted">No target</span>
                   ),
               },
             ]}
@@ -422,7 +422,7 @@ export default function Dashboard() {
                     </span>
                     <span className="shrink-0 text-right">
                       <span className="tabular block text-[13px] font-semibold">{moneyShort(d.amount)}</span>
-                      <span className="block text-[10px] uppercase tracking-[0.08em] text-n400">{daysBetween(d.stageChangedAt)}d in stage</span>
+                      <span className="block text-[10px] uppercase tracking-[0.08em] text-muted">{daysBetween(d.stageChangedAt)}d in stage</span>
                     </span>
                   </Link>
                 ))
@@ -526,14 +526,14 @@ export default function Dashboard() {
                   </span>
                   <span className="shrink-0 text-right">
                     <span className="tabular block text-[13px] font-semibold">{moneyShort(d.amount)}</span>
-                    <span className="block text-[10px] text-n400">{d.probability}% likely</span>
+                    <span className="block text-[10px] text-muted">{d.probability}% likely</span>
                   </span>
                 </Link>
               ))}
             </div>
           )}
           {sees('deals', 'cost') ? null : (
-            <p className="border-t border-line px-4 py-2 text-[11px] text-n400">Cost and margin are hidden for your role.</p>
+            <p className="border-t border-line px-4 py-2 text-[11px] text-muted">Cost and margin are hidden for your role.</p>
           )}
         </Card>
       </div>

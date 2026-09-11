@@ -105,7 +105,7 @@ export function FunnelChart({ data, onStageClick }: {
             <span className="flex items-center gap-1.5 text-[12px] font-semibold">
               <span className="inline-block h-2.5 w-2.5" style={{ background: stage.color }} />
               {stage.name}
-              <span className="text-[10px] font-normal text-n400">{stage.probability}%</span>
+              <span className="text-[10px] font-normal text-muted">{stage.probability}%</span>
             </span>
             <span className="tabular text-[12px] text-muted">
               {stage.count} · <span className="font-semibold text-ink">{moneyShort(stage.value)}</span>

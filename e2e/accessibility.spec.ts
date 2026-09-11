@@ -27,22 +27,15 @@ const IMPACTS = ['serious', 'critical'];
 
 /**
  * Known debt, pinned rather than blocking — the same shape as the delete sweep's
- * NO_CHILDREN list: an entry needs a reason, and an entry that stops occurring fails
- * too, so the list cannot quietly outlive the problem.
+ * NO_CHILDREN list: an entry needs a reason, and a reason for something that no longer
+ * applies is a comment pretending to be a rule.
  *
- * It is empty, and it emptied itself. It held one entry — sixty-eight contrast failures
- * from components drawing text out of the raw neutral ramp — and the run that fixed them
- * failed on the stale-entry check rather than passing quietly with an exemption that no
- * longer applied. That is the only reason this mechanism is still here: the next piece of
- * debt that gets pinned should be as hard to forget.
+ * Empty for the second time, and again because the entry it held got fixed rather than
+ * tolerated. It first held sixty-eight contrast failures from the always-dark chrome;
+ * then eight from the accent red being read as small text, which now has a readable
+ * counterpart every screen uses. The mechanism stays for the next thing worth pinning.
  */
-const KNOWN: Record<string, { max: number; why: string }> = {
-  'color-contrast': {
-    max: 8,
-    why: 'text-accent is --action-accent (#e11d2e), calibrated as a background behind white, '
-      + 'and read as small text at 4.4:1 in daylight and 4.1:1 at night. The readable counterpart now exists as text-accent-ink, and the partner screens use it; swapping the remaining call sites across the app is its own change with its own changelog line. Pinned so it cannot grow meanwhile.',
-  },
-};
+const KNOWN: Record<string, { max: number; why: string }> = {};
 
 interface Hit { rule: string; impact: string; page: string; html: string }
 

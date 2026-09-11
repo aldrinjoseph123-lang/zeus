@@ -96,14 +96,14 @@ export default function Quotes() {
                   ),
                 },
                 { key: 'account', header: 'Customer', render: (row) => <span className="font-semibold">{row.account.name}</span> },
-                { key: 'deal', header: 'Deal', width: '110px', render: (row) => row.deal ? <span className="text-[12px] text-muted">{row.deal.reference}</span> : <span className="text-n400">—</span> },
+                { key: 'deal', header: 'Deal', width: '110px', render: (row) => row.deal ? <span className="text-[12px] text-muted">{row.deal.reference}</span> : <span className="text-muted">—</span> },
                 { key: 'status', header: 'Status', width: '104px', render: (row) => <Badge tone={STATUS_TONE[row.status] ?? 'neutral'}>{row.status}</Badge> },
                 { key: 'track', header: 'Progress', width: '72px', render: (row) => <LifecycleMini track={quoteTrack(row.status)} /> },
                 { key: 'issueDate', header: 'Issued', width: '104px', render: (row) => <span className="text-[12px] text-muted">{date(row.issueDate)}</span> },
                 {
                   key: 'validUntil', header: 'Valid to', width: '104px',
                   render: (row) => (
-                    <span className={row.validUntil && new Date(row.validUntil) < new Date() && row.status === 'SENT' ? 'text-[12px] font-semibold text-accent' : 'text-[12px] text-muted'}>
+                    <span className={row.validUntil && new Date(row.validUntil) < new Date() && row.status === 'SENT' ? 'text-[12px] font-semibold text-accent-ink' : 'text-[12px] text-muted'}>
                       {date(row.validUntil)}
                     </span>
                   ),

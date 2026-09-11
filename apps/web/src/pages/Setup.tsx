@@ -71,8 +71,8 @@ export default function Setup() {
                 {item.done
                   ? <Check size={16} className="text-secure" />
                   : item.skipped
-                    ? <MinusCircle size={16} className="text-n400" />
-                    : <Circle size={16} className={item.required ? 'text-accent' : 'text-n400'} />}
+                    ? <MinusCircle size={16} className="text-muted" />
+                    : <Circle size={16} className={item.required ? 'text-accent-ink' : 'text-muted'} />}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -102,7 +102,7 @@ export default function Setup() {
             <span>{skippedCount} skipped — still listed under the bell until done.</span>
             {editable ? (
               <button
-                className="font-semibold uppercase tracking-[0.08em] text-accent hover:underline"
+                className="font-semibold uppercase tracking-[0.08em] text-accent-ink hover:underline"
                 onClick={() => data.items.filter((i) => i.skipped).forEach((i) => skip.mutate({ key: i.key, skipped: false }))}
               >
                 Show skipped

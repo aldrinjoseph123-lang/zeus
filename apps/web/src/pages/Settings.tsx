@@ -449,7 +449,7 @@ function ListsSection() {
                 <span key={item} className="flex items-center gap-1 rounded-sharp border border-line bg-card px-2 py-1 text-[12px]">
                   {item}
                   {can('settings', 'update') ? (
-                    <button onClick={() => setItems(key, items(key).filter((i) => i !== item))} aria-label={`Remove ${item}`} className="text-n300 hover:text-accent">
+                    <button onClick={() => setItems(key, items(key).filter((i) => i !== item))} aria-label={`Remove ${item}`} className="text-n300 hover:text-accent-ink">
                       <X size={11} />
                     </button>
                   ) : null}
@@ -575,9 +575,9 @@ function CustomFieldsSection() {
                 key: 'options', header: 'Options',
                 render: (row) => row.options.length
                   ? <span className="text-[12px] text-muted">{row.options.join(' · ')}</span>
-                  : <span className="text-n400">—</span>,
+                  : <span className="text-muted">—</span>,
               },
-              { key: 'required', header: 'Required', align: 'center', width: '90px', render: (row) => row.required ? <Check size={14} className="mx-auto text-secure" /> : <span className="text-n400">—</span> },
+              { key: 'required', header: 'Required', align: 'center', width: '90px', render: (row) => row.required ? <Check size={14} className="mx-auto text-secure" /> : <span className="text-muted">—</span> },
               { key: 'order', header: 'Order', align: 'right', width: '70px', render: (row) => <span className="tabular text-[12px] text-muted">{row.order}</span> },
               {
                 key: 'actions', header: '', width: '50px',
@@ -585,7 +585,7 @@ function CustomFieldsSection() {
                   <button
                     onClick={(e) => { e.stopPropagation(); setRemoving(row); }}
                     aria-label={`Retire ${row.label}`}
-                    className="text-n300 transition-colors hover:text-accent"
+                    className="text-n300 transition-colors hover:text-accent-ink"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -734,12 +734,12 @@ function CustomFieldModal({ field, module, onClose }: { field: CustomField | nul
               {form.options.map((option) => (
                 <span key={option} className="flex items-center gap-1 rounded-sharp border border-line bg-card px-2 py-1 text-[12px]">
                   {option}
-                  <button onClick={() => setForm({ ...form, options: form.options.filter((o) => o !== option) })} aria-label={`Remove ${option}`} className="text-n300 hover:text-accent">
+                  <button onClick={() => setForm({ ...form, options: form.options.filter((o) => o !== option) })} aria-label={`Remove ${option}`} className="text-n300 hover:text-accent-ink">
                     <X size={11} />
                   </button>
                 </span>
               ))}
-              {form.options.length === 0 ? <span className="text-[12px] text-n400">No options yet.</span> : null}
+              {form.options.length === 0 ? <span className="text-[12px] text-muted">No options yet.</span> : null}
             </div>
             <Input
               placeholder="Type an option and press Enter…"
@@ -835,7 +835,7 @@ function PipelinesSection() {
                 <span key={stage.id} className="flex items-center gap-1.5 border border-line bg-card px-2 py-1 text-[11px]">
                   <span className="h-2 w-2" style={{ background: stage.color }} />
                   {stage.name}
-                  <span className="text-n400">{stage.probability}%</span>
+                  <span className="text-muted">{stage.probability}%</span>
                   {stage.isWon ? <Badge tone="secure">Won</Badge> : stage.isLost ? <Badge tone="accent">Lost</Badge> : null}
                 </span>
               ))}
@@ -887,7 +887,7 @@ function PipelinesSection() {
                     <input type="checkbox" checked={stage.isLost} onChange={(e) => setStages(stages.map((s, i) => (i === index ? { ...s, isLost: e.target.checked, isWon: false } : s)))} className="h-3.5 w-3.5 accent-[var(--red-500)]" />
                     Lost
                   </label>
-                  <button onClick={() => setStages(stages.filter((_, i) => i !== index))} aria-label="Remove stage" className="text-n300 hover:text-accent">
+                  <button onClick={() => setStages(stages.filter((_, i) => i !== index))} aria-label="Remove stage" className="text-n300 hover:text-accent-ink">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -963,7 +963,7 @@ function UsersSection() {
                 <div className="text-[12px] text-muted">
                   <div>{relative(row.lastLoginAt)}</div>
                   {row.lastLoginIp || row.lastLoginDevice ? (
-                    <div className="text-[10px] text-n400">{[row.lastLoginIp, row.lastLoginDevice].filter(Boolean).join(' · ')}</div>
+                    <div className="text-[10px] text-muted">{[row.lastLoginIp, row.lastLoginDevice].filter(Boolean).join(' · ')}</div>
                   ) : null}
                 </div>
               ),
@@ -1306,12 +1306,12 @@ function RoleModal({ role, modules, protectedFields, onClose }: {
                         className="h-4 w-4 accent-[var(--red-500)]"
                       />
                     ) : (
-                      <span className="text-n400">—</span>
+                      <span className="text-muted">—</span>
                     )}
                   </td>
                   <td className="px-2 py-1.5">
                     <span className="flex flex-wrap gap-2">
-                      {fields.length === 0 ? <span className="text-n400">—</span> : fields.map((field) => (
+                      {fields.length === 0 ? <span className="text-muted">—</span> : fields.map((field) => (
                         <label key={field} className="flex items-center gap-1 text-[11px]">
                           <input
                             type="checkbox"
@@ -1553,7 +1553,7 @@ function NotificationsSection() {
                 {can('settings', 'update') ? (
                   <>
                     <Button size="sm" variant="ghost" loading={test.isPending} onClick={() => test.mutate(hook.id)}>Test</Button>
-                    <button onClick={() => setDeletingHook(hook)} aria-label="Remove webhook" className="text-n300 hover:text-accent"><Trash2 size={14} /></button>
+                    <button onClick={() => setDeletingHook(hook)} aria-label="Remove webhook" className="text-n300 hover:text-accent-ink"><Trash2 size={14} /></button>
                   </>
                 ) : null}
               </div>
@@ -1610,7 +1610,7 @@ function NotificationsSection() {
                   </td>
                   <td className="px-3 py-2">
                     {rule.thresholdDays === null ? (
-                      <span className="text-n400">—</span>
+                      <span className="text-muted">—</span>
                     ) : (
                       <Input
                         className="w-20 px-2 py-1"
@@ -1734,9 +1734,9 @@ function ScheduledReportsCard() {
                   </span>
                 </span>
                 <span className="ml-auto flex shrink-0 items-center gap-3">
-                  <span className="text-[11px] text-n400">{s.lastRunAt ? `last sent ${relative(s.lastRunAt)}` : 'never sent yet'}</span>
+                  <span className="text-[11px] text-muted">{s.lastRunAt ? `last sent ${relative(s.lastRunAt)}` : 'never sent yet'}</span>
                   {can('settings', 'delete') ? (
-                    <button onClick={() => setDeleting(s)} aria-label="Remove schedule" className="text-n300 hover:text-accent"><Trash2 size={14} /></button>
+                    <button onClick={() => setDeleting(s)} aria-label="Remove schedule" className="text-n300 hover:text-accent-ink"><Trash2 size={14} /></button>
                   ) : null}
                 </span>
               </div>
@@ -1932,7 +1932,7 @@ function CollapsibleCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {status}
-          <ChevronDown size={16} className={cx('text-n400 transition-transform', open && 'rotate-180')} />
+          <ChevronDown size={16} className={cx('text-muted transition-transform', open && 'rotate-180')} />
         </div>
       </button>
       {open ? children : null}
@@ -2044,7 +2044,7 @@ function BackupsSection() {
                       {row.filename ?? '—'}{row.encrypted ? <span title="Encrypted"> 🔒</span> : null}
                     </span>
                     {row.error ? (
-                      <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-accent" title={row.error}>{row.error}</span>
+                      <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-accent-ink" title={row.error}>{row.error}</span>
                     ) : null}
                   </span>
                 ),
@@ -2212,7 +2212,7 @@ function RestoreModal({ run, onClose }: { run: BackupRunRow; onClose: () => void
               ))}
             </ul>
             {preview.applied && preview.failed?.length ? (
-              <div className="mt-2 border-t border-line pt-2 text-accent">
+              <div className="mt-2 border-t border-line pt-2 text-accent-ink">
                 {preview.failed.length} row(s) failed — first: {preview.failed[0].model} {preview.failed[0].id}: {preview.failed[0].error}
               </div>
             ) : null}
@@ -2436,7 +2436,7 @@ function WebhooksPanel() {
 
       {newSecret ? (
         <div className="border-b border-line bg-sunken px-4 py-3">
-          <p className="text-[12px] font-semibold text-accent">Signing secret — copy it now</p>
+          <p className="text-[12px] font-semibold text-accent-ink">Signing secret — copy it now</p>
           <p className="mt-1 text-[12px] text-n600">
             The receiving end needs this to check the signature. It is encrypted from here on,
             so this is the only time Zeus can show it.
@@ -2498,7 +2498,7 @@ function WebhooksPanel() {
               </span>
               <span className="block truncate font-mono text-[11px] text-muted">{hook.url}</span>
               <span className="block text-[11px] text-muted">{hook.events.length} event{hook.events.length === 1 ? '' : 's'}</span>
-              {hook.lastError ? <span className="block text-[11px] text-accent">{hook.lastError}</span> : null}
+              {hook.lastError ? <span className="block text-[11px] text-accent-ink">{hook.lastError}</span> : null}
             </div>
             {editable ? (
               <div className="flex shrink-0 gap-1.5">
@@ -2523,7 +2523,7 @@ function WebhooksPanel() {
                   {hook.deliveries.map((d) => (
                     <li key={d.id} className="flex items-baseline justify-between gap-3 text-[11px]">
                       <span className="truncate">
-                        <span className={cx('font-semibold', d.ok ? 'text-secure' : 'text-accent')}>{d.ok ? 'sent' : 'failed'}</span>
+                        <span className={cx('font-semibold', d.ok ? 'text-secure' : 'text-accent-ink')}>{d.ok ? 'sent' : 'failed'}</span>
                         {' · '}{d.event}{d.error ? ` · ${d.error}` : ''}
                       </span>
                       <span className="shrink-0 tabular text-muted">
@@ -2730,7 +2730,7 @@ function AuditSection() {
                       ))}
                     </p>
                   ) : null}
-                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">{dateTime(entry.at)}{entry.ip ? ` · ${entry.ip}` : ''}</p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-muted">{dateTime(entry.at)}{entry.ip ? ` · ${entry.ip}` : ''}</p>
                 </div>
               </li>
             ))}
@@ -2831,7 +2831,7 @@ function DataHealthCard() {
               </div>
               <p className="mt-1 pl-[22px] text-[11px] text-muted">{f.detail}</p>
               {f.examples.length ? (
-                <p className="mt-0.5 pl-[22px] text-[11px] text-n400">e.g. {f.examples.join(' · ')}</p>
+                <p className="mt-0.5 pl-[22px] text-[11px] text-muted">e.g. {f.examples.join(' · ')}</p>
               ) : null}
             </li>
           ))}
@@ -2868,7 +2868,7 @@ function StatusSection() {
                 <p className="truncate text-[11px] text-muted">{c.detail}</p>
               </div>
               {c.uptime ? <span className="hidden tabular text-[11px] text-muted sm:inline" title="Uptime — last 24h / 7d">{c.uptime.day}% · {c.uptime.week}%</span> : null}
-              {typeof c.latencyMs === 'number' ? <span className="tabular text-[11px] text-n400">{c.latencyMs} ms</span> : null}
+              {typeof c.latencyMs === 'number' ? <span className="tabular text-[11px] text-muted">{c.latencyMs} ms</span> : null}
               <Badge tone={c.ok ? 'secure' : 'accent'}>{c.ok ? 'Up' : 'Down'}</Badge>
             </li>
           ))}
@@ -2944,7 +2944,7 @@ function SessionLine({ row, onEnd, ending, canEnd }: { row: SessionRow; onEnd: (
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold">
           {row.who}
-          {row.isCurrent ? <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-accent">This device</span> : null}
+          {row.isCurrent ? <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-accent-ink">This device</span> : null}
           {row.previewBy ? <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-muted">Preview by {row.previewBy}</span> : null}
           {row.kind === 'portal' ? <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-muted">Portal</span> : null}
         </p>
@@ -2952,7 +2952,7 @@ function SessionLine({ row, onEnd, ending, canEnd }: { row: SessionRow; onEnd: (
           {row.device ?? 'Unknown device'} · {row.where}
           {row.account ? ` · ${row.account}` : ''}
         </p>
-        <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">
+        <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-muted">
           {row.revokedAt
             ? `Ended ${relative(row.revokedAt)}${row.revokedBy ? ` — ${REVOKED_REASON[row.revokedBy] ?? row.revokedBy}` : ''}`
             : `Signed in ${relative(row.startedAt)} · last seen ${relative(row.lastSeenAt)}`}
@@ -3151,11 +3151,11 @@ function EmailLogSection() {
                     to {e.to.join(', ')}{e.attachments.length ? ` · ${e.attachments.length} attachment${e.attachments.length === 1 ? '' : 's'}` : ''}
                     {e.resentFromId ? ' · resent' : ''}
                   </p>
-                  {e.status === 'FAILED' && e.error ? <p className="mt-0.5 truncate text-[12px] text-accent">{e.error}</p> : null}
+                  {e.status === 'FAILED' && e.error ? <p className="mt-0.5 truncate text-[12px] text-accent-ink">{e.error}</p> : null}
                 </button>
                 <div className="shrink-0 text-right">
                   <p className="text-[11px] uppercase tracking-[0.08em] text-muted">{MAIL_KINDS[e.kind] ?? e.kind}</p>
-                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">{dateTime(e.createdAt)}</p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-muted">{dateTime(e.createdAt)}</p>
                 </div>
               </li>
             ))}
@@ -3178,7 +3178,7 @@ function EmailLogSection() {
               {open.cc.length ? <Field label="Cc"><p className="break-words">{open.cc.join(', ')}</p></Field> : null}
               <Field label="Sent by"><p>{open.user?.name ?? 'Zeus, on a schedule'}</p></Field>
               <Field label="Status">
-                <p className={open.status === 'FAILED' ? 'text-accent' : 'text-secure'}>
+                <p className={open.status === 'FAILED' ? 'text-accent-ink' : 'text-secure'}>
                   {open.status === 'FAILED' ? 'Refused by Microsoft' : 'Accepted by Microsoft'}
                 </p>
               </Field>
@@ -3190,7 +3190,7 @@ function EmailLogSection() {
               </Link>
             ) : null}
             {open.preview ? <Field label="What it said"><p className="text-muted">{open.preview}…</p></Field> : null}
-            {open.error ? <Field label="Why it failed"><p className="break-words text-accent">{open.error}</p></Field> : null}
+            {open.error ? <Field label="Why it failed"><p className="break-words text-accent-ink">{open.error}</p></Field> : null}
             {open.status === 'FAILED' && can('audit', 'update') ? (
               <div className="flex items-center gap-2 border-t border-line pt-3">
                 <Button size="sm" variant="accent" loading={resend.isPending} onClick={() => resend.mutate(open.id)}>Send it again</Button>
@@ -3253,7 +3253,7 @@ function SystemLogSection() {
                 <Badge tone={LOG_TONE[e.level] ?? 'neutral'}>{e.level}</Badge>
                 <div className="min-w-0 flex-1">
                   <p className="break-words text-[13px]"><span className="text-muted">[{e.source}]</span> {e.message}</p>
-                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-n400">{dateTime(e.at)}</p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-muted">{dateTime(e.at)}</p>
                 </div>
                 <CopyButton value={`[${e.source}] ${e.message}`} label="" className="mt-0.5 shrink-0" />
               </li>
@@ -3384,7 +3384,7 @@ function TwoFactorPanel() {
             <b>{state.recoveryCodesLeft}</b> recovery {state.recoveryCodesLeft === 1 ? 'code' : 'codes'} left.
           </p>
           {state.recoveryCodesLeft <= 2 ? (
-            <p className="text-[12px] text-accent">
+            <p className="text-[12px] text-accent-ink">
               Almost out of recovery codes. Turn two-factor off and on again to get a fresh set.
             </p>
           ) : null}
@@ -3420,7 +3420,7 @@ function TwoFactorPanel() {
           <Input readOnly value={enrolment.otpauth} className="font-mono text-[11px]" onFocus={(e) => e.currentTarget.select()} />
 
           <div className="border border-accent bg-sunken px-3 py-3">
-            <p className="text-[12px] font-semibold text-accent">Save these recovery codes now</p>
+            <p className="text-[12px] font-semibold text-accent-ink">Save these recovery codes now</p>
             <p className="mt-1 text-[12px] text-n600">
               This is the only time they are shown. Each works once, and they are the only way
               back in if you lose the authenticator — without them, nobody can reach this

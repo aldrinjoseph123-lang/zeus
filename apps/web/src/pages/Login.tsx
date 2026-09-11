@@ -108,17 +108,17 @@ export default function Login() {
       <div className="hatch relative hidden flex-col justify-between bg-n950 p-10 text-white lg:flex">
         <div className="flex items-center gap-2">
           <span className="text-[22px] font-bold tracking-[0.22em]">ZEUS</span>
-          <span className="text-[22px] font-bold leading-none text-accent">.</span>
+          <span className="text-[22px] font-bold leading-none text-accent-ink">.</span>
         </div>
 
         <div>
-          <p className="eyebrow text-accent">Dubai Silicon Oasis · UAE</p>
+          <p className="eyebrow text-accent-ink">Dubai Silicon Oasis · UAE</p>
           <h1 className="mt-3 text-[42px] font-bold leading-[1.05]">
             Revenue,
             <br />
             under watch.
           </h1>
-          <p className="mt-4 max-w-sm text-[14px] leading-relaxed text-n400">
+          <p className="mt-4 max-w-sm text-[14px] leading-relaxed text-muted">
             Every lead, deal, quote and partner registration in one place — with the pipeline
             maths already done for you.
           </p>
@@ -144,7 +144,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           <div className="mb-6 lg:hidden">
             <span className="text-[22px] font-bold tracking-[0.22em]">ZEUS</span>
-            <span className="text-[22px] font-bold text-accent">.</span>
+            <span className="text-[22px] font-bold text-accent-ink">.</span>
           </div>
 
           <h2 className="text-[18px] font-bold uppercase tracking-[0.1em]">Sign in</h2>
@@ -174,7 +174,7 @@ export default function Login() {
                   {config.localLogin ? (
                     <div className="flex items-center gap-3">
                       <span className="h-px flex-1 bg-line" />
-                      <span className="text-[10px] uppercase tracking-[0.14em] text-n400">or</span>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-muted">or</span>
                       <span className="h-px flex-1 bg-line" />
                     </div>
                   ) : null}

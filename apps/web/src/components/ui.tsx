@@ -39,7 +39,7 @@ const BUTTON_STYLES: Record<ButtonVariant, string> = {
   accent: 'bg-accent text-white hover:bg-accent-hover border border-accent',
   outline: 'bg-card text-ink border border-n900 hover:bg-n50',
   ghost: 'bg-transparent text-muted border border-transparent hover:bg-n100 hover:text-ink',
-  danger: 'bg-card text-accent border border-accent hover:bg-accent hover:text-white',
+  danger: 'bg-card text-accent-ink border border-accent hover:bg-accent hover:text-white',
 };
 
 export function Button({
@@ -158,7 +158,7 @@ export function StatTile({
 // ── form controls ─────────────────────────────────────────────────────────────
 
 const CONTROL =
-  'w-full rounded-sharp border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-n400 ' +
+  'w-full rounded-sharp border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-muted ' +
   'focus:border-ink disabled:bg-sunken disabled:text-muted';
 
 export function Field({
@@ -176,11 +176,11 @@ export function Field({
       {label ? (
         <span className="eyebrow mb-1.5 block">
           {label}
-          {required ? <span className="text-accent"> *</span> : null}
+          {required ? <span className="text-accent-ink"> *</span> : null}
         </span>
       ) : null}
       {children}
-      {error ? <span className="mt-1 block text-xs text-accent">{error}</span> : hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}
+      {error ? <span className="mt-1 block text-xs text-accent-ink">{error}</span> : hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}
     </label>
   );
 }
@@ -228,7 +228,7 @@ export function Checkbox({ label, checked, onChange, disabled }: { label: ReactN
 export function SearchInput({ value, onChange, placeholder = 'Search…', className }: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
   return (
     <div className={cx('relative', className)}>
-      <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-n400" />
+      <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -236,7 +236,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', classN
         className={cx(CONTROL, 'pl-8', value && 'pr-8')}
       />
       {value ? (
-        <button onClick={() => onChange('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-n400 hover:text-ink">
+        <button onClick={() => onChange('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink">
           <X size={13} />
         </button>
       ) : null}
@@ -294,7 +294,7 @@ export function ProgressBar({ value, tone = 'accent', height = 6 }: { value: num
   );
 }
 
-export const Spinner = ({ size = 18 }: { size?: number }) => <Loader2 size={size} className="animate-spin text-n400" />;
+export const Spinner = ({ size = 18 }: { size?: number }) => <Loader2 size={size} className="animate-spin text-muted" />;
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   return (
@@ -386,9 +386,9 @@ export function Modal({
         <div className="flex items-start justify-between gap-4 border-b border-line bg-n950 px-5 py-3.5">
           <div className="min-w-0">
             <h2 className="truncate text-[14px] font-bold uppercase tracking-[0.1em] text-white">{title}</h2>
-            {subtitle ? <p className="mt-0.5 truncate text-xs text-n400">{subtitle}</p> : null}
+            {subtitle ? <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p> : null}
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-n400 transition-colors hover:text-white">
+          <button onClick={onClose} aria-label="Close" className="text-muted transition-colors hover:text-white">
             <X size={18} />
           </button>
         </div>
@@ -484,7 +484,7 @@ export function DataTable<T>({
                 onClick={column.sortable && onSort ? () => onSort(column.key) : undefined}
               >
                 {column.header}
-                {column.sortable && sortBy === column.key ? <span className="ml-1 text-accent">{sortDir === 'asc' ? '↑' : '↓'}</span> : null}
+                {column.sortable && sortBy === column.key ? <span className="ml-1 text-accent-ink">{sortDir === 'asc' ? '↑' : '↓'}</span> : null}
               </th>
             ))}
           </tr>
@@ -565,7 +565,7 @@ export function Tabs({ tabs, active, onChange }: { tabs: Array<{ key: string; la
           )}
         >
           {tab.label}
-          {tab.count !== undefined ? <span className="ml-1.5 text-n400">{tab.count}</span> : null}
+          {tab.count !== undefined ? <span className="ml-1.5 text-muted">{tab.count}</span> : null}
           {active === tab.key ? <span className="absolute inset-x-0 bottom-0 h-[2px] bg-accent" /> : null}
         </button>
       ))}
@@ -623,7 +623,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 {toast.action.label}
               </button>
             ) : null}
-            <button onClick={() => setToasts((c) => c.filter((t) => t.id !== toast.id))} aria-label="Dismiss" className="text-n400 hover:text-ink">
+            <button onClick={() => setToasts((c) => c.filter((t) => t.id !== toast.id))} aria-label="Dismiss" className="text-muted hover:text-ink">
               <X size={13} />
             </button>
           </div>

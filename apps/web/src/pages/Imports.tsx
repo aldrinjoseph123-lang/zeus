@@ -194,7 +194,7 @@ export default function Imports() {
                 <div key={field.key} className="grid grid-cols-[1fr_1fr] items-center gap-3">
                   <span className="text-[13px]">
                     {field.label}
-                    {field.required ? <span className="text-accent"> *</span> : null}
+                    {field.required ? <span className="text-accent-ink"> *</span> : null}
                   </span>
                   <Select
                     value={mapping[field.key] ?? ''}

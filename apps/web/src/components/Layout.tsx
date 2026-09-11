@@ -207,7 +207,7 @@ function NotificationBell() {
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="eyebrow">Notifications</span>
             {unread > 0 ? (
-              <button onClick={markRead} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent hover:underline">
+              <button onClick={markRead} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-ink hover:underline">
                 Mark all read
               </button>
             ) : null}
@@ -305,7 +305,7 @@ export default function Layout() {
     <aside className="flex h-full w-[212px] shrink-0 flex-col bg-n950 text-white">
       <div className="flex items-center gap-2 border-b border-n800 px-4 py-4">
         <span className="text-[19px] font-bold tracking-[0.22em]">ZEUS</span>
-        <span className="text-[19px] font-bold leading-none text-accent">.</span>
+        <span className="text-[19px] font-bold leading-none text-accent-ink">.</span>
         <span className="ml-auto text-[9px] uppercase tracking-[0.12em] text-nav-dim">Protect24x7</span>
       </div>
 
@@ -364,7 +364,7 @@ export default function Layout() {
             <p className="truncate text-[12px] font-semibold">{user?.name}</p>
             <p className="truncate text-[10px] uppercase tracking-[0.08em] text-nav-muted">{user?.role.name}</p>
           </div>
-          <button onClick={signOut} aria-label="Sign out" title="Sign out" className="text-nav-muted transition-colors hover:text-accent">
+          <button onClick={signOut} aria-label="Sign out" title="Sign out" className="text-nav-muted transition-colors hover:text-accent-ink">
             <LogOut size={15} />
           </button>
         </div>

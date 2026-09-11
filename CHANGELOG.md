@@ -99,10 +99,11 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ### Fixed
 
-- The accent red is calibrated as a background behind white; read as small text it fell
-  under the contrast floor in both themes. There is now a readable counterpart, and the
-  partner screens use it. The rest of the app still uses the background red as text in
-  some places — its own change, and it cannot get worse in the meantime.
+- **Every screen now passes an accessibility check, in both themes, with nothing pinned.**
+  Two colours were being read as text that were never calibrated for it: the accent red,
+  which is a background colour behind white, and the lightest grey in the palette. Both
+  now have counterparts meant to be read, used everywhere — 144 places across 27 files.
+  Small text that was at 2.9:1 is at 5.3:1 or better.
 - The step indicator on list rows — the little bars showing how far a quote or invoice has
   got — carried its meaning in an `aria-label` on a plain element, which screen readers are
   required to ignore. Anyone not seeing the bars was told nothing at all. It is now marked

@@ -135,7 +135,7 @@ export default function Accounts() {
                   key: 'lastActivityAt', header: 'Last activity', width: '128px',
                   render: (row) => {
                     const days = row.lastActivityAt ? Math.floor((Date.now() - new Date(row.lastActivityAt).getTime()) / 86_400_000) : null;
-                    return <span className={days === null || days > 7 ? 'text-[12px] font-semibold text-accent' : 'text-[12px] text-muted'}>{relative(row.lastActivityAt)}</span>;
+                    return <span className={days === null || days > 7 ? 'text-[12px] font-semibold text-accent-ink' : 'text-[12px] text-muted'}>{relative(row.lastActivityAt)}</span>;
                   },
                 },
                 { key: 'owner', header: 'Owner', width: '124px', render: (row) => <span className="text-[12px]">{row.owner?.name ?? 'Unassigned'}</span> },

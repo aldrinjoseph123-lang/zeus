@@ -116,7 +116,7 @@ export default function Leads() {
                   key: 'contact', header: 'Contact', width: '190px',
                   render: (row) => (
                     <span>
-                      {row.email ? <a href={`mailto:${row.email}`} onClick={(e) => e.stopPropagation()} className="block truncate text-[12px] underline decoration-dotted underline-offset-2">{row.email}</a> : <span className="block text-[12px] text-n400">No email</span>}
+                      {row.email ? <a href={`mailto:${row.email}`} onClick={(e) => e.stopPropagation()} className="block truncate text-[12px] underline decoration-dotted underline-offset-2">{row.email}</a> : <span className="block text-[12px] text-muted">No email</span>}
                       {row.phone ? <span className="block text-[11px] text-muted">{row.phone}</span> : null}
                     </span>
                   ),
@@ -124,7 +124,7 @@ export default function Leads() {
                 { key: 'source', header: 'Source', width: '124px', render: (row) => <span className="text-[12px]">{row.source}</span> },
                 { key: 'status', header: 'Status', width: '108px', render: (row) => <Badge tone={STATUS_TONE[row.status] ?? 'neutral'}>{row.status}</Badge> },
                 { key: 'track', header: 'Progress', width: '88px', render: (row) => <LifecycleMini track={leadTrack(row.status)} /> },
-                { key: 'rating', header: 'Rating', width: '78px', render: (row) => row.rating ? <Badge tone={row.rating === 'Hot' ? 'accent' : row.rating === 'Warm' ? 'watch' : 'neutral'}>{row.rating}</Badge> : <span className="text-n400">—</span> },
+                { key: 'rating', header: 'Rating', width: '78px', render: (row) => row.rating ? <Badge tone={row.rating === 'Hot' ? 'accent' : row.rating === 'Warm' ? 'watch' : 'neutral'}>{row.rating}</Badge> : <span className="text-muted">—</span> },
                 { key: 'estimatedValue', header: 'Est. value', align: 'right', width: '112px', render: (row) => <span className="tabular">{row.estimatedValue ? money(row.estimatedValue) : '—'}</span> },
                 { key: 'createdAt', header: 'Added', width: '104px', render: (row) => <span className="text-[12px] text-muted">{date(row.createdAt)}</span> },
                 { key: 'lastActivityAt', header: 'Last touch', width: '112px', render: (row) => <span className="text-[12px] text-muted">{relative(row.lastActivityAt)}</span> },

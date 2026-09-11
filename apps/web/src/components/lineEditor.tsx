@@ -249,7 +249,7 @@ export function LineEditor({
                 <td className="tabular whitespace-nowrap px-2 py-1.5 text-right font-semibold">{money(lineNet(line), true)}</td>
                 <td className="px-2 py-1.5">
                   {!locked && lines.length > 1 ? (
-                    <button onClick={() => onChange(lines.filter((l) => l.key !== line.key))} aria-label="Remove line" className="text-n300 transition-colors hover:text-accent">
+                    <button onClick={() => onChange(lines.filter((l) => l.key !== line.key))} aria-label="Remove line" className="text-n300 transition-colors hover:text-accent-ink">
                       <Trash2 size={14} />
                     </button>
                   ) : null}
@@ -296,14 +296,14 @@ function CostSource({ source }: { source: ResolvedCost }) {
       title={source.reason}
       className={cx(
         'mt-0.5 block max-w-28 truncate text-[10px]',
-        source.rateMissing || source.source === 'none' ? 'font-semibold text-accent'
+        source.rateMissing || source.source === 'none' ? 'font-semibold text-accent-ink'
           : source.source === 'special' ? 'font-semibold text-[var(--status-secure)]'
-          : 'text-n400',
+          : 'text-muted',
       )}
     >
       {label}
       {converted ? (
-        <span className="block text-n400">{source.sourceCurrency} {source.sourceCost} @ {source.rate}</span>
+        <span className="block text-muted">{source.sourceCurrency} {source.sourceCost} @ {source.rate}</span>
       ) : null}
     </span>
   );

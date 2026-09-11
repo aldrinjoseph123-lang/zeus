@@ -120,7 +120,7 @@ function EnablementPanel({ accountId }: { accountId: string }) {
                 <button
                   type="button"
                   aria-label={`Remove ${r.vendor.name}`}
-                  className="text-muted transition-colors hover:text-accent"
+                  className="text-muted transition-colors hover:text-accent-ink"
                   onClick={() => remove.mutate(r.vendor.id)}
                 >
                   <X size={12} />

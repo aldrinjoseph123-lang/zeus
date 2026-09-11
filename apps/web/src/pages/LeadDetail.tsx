@@ -111,14 +111,14 @@ export default function LeadDetail() {
                 {lead.status !== 'NURTURING' ? (
                   <button
                     onClick={() => setStatus.mutate('NURTURING')}
-                    className="text-[11px] font-semibold uppercase tracking-[0.06em] text-n400 underline decoration-dotted underline-offset-2 transition-colors hover:text-ink"
+                    className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted underline decoration-dotted underline-offset-2 transition-colors hover:text-ink"
                   >
                     Park as nurturing
                   </button>
                 ) : null}
                 <button
                   onClick={() => setStatus.mutate('DISQUALIFIED')}
-                  className="text-[11px] font-semibold uppercase tracking-[0.06em] text-n400 underline decoration-dotted underline-offset-2 transition-colors hover:text-accent"
+                  className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted underline decoration-dotted underline-offset-2 transition-colors hover:text-accent-ink"
                 >
                   Disqualify
                 </button>

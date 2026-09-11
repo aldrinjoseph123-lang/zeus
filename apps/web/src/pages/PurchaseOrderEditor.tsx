@@ -236,7 +236,7 @@ export default function PurchaseOrderEditor() {
               <>
                 {outstanding > 0 && po.status !== 'DRAFT' ? (
                   <span className="text-[12px] text-muted">
-                    Outstanding <strong className="tabular text-[13px] text-accent">{money(outstanding)}</strong>
+                    Outstanding <strong className="tabular text-[13px] text-accent-ink">{money(outstanding)}</strong>
                     {po.paymentDueDate ? <span className="ml-2">due {date(po.paymentDueDate)}</span> : null}
                   </span>
                 ) : po.status !== 'DRAFT' ? (
@@ -245,7 +245,7 @@ export default function PurchaseOrderEditor() {
                 {can('invoices', 'update') && !locked ? (
                   <button
                     onClick={() => setStatus.mutate('CANCELLED')}
-                    className="text-[11px] font-semibold uppercase tracking-[0.06em] text-n400 underline decoration-dotted underline-offset-2 transition-colors hover:text-accent"
+                    className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted underline decoration-dotted underline-offset-2 transition-colors hover:text-accent-ink"
                   >
                     Cancel order
                   </button>

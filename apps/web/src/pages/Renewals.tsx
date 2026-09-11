@@ -272,10 +272,10 @@ export default function Renewals() {
                     const left = daysBetween(row.endDate);
                     const daysLeft = left === null ? null : -left;
                     return (
-                      <span className={cx('tabular text-[12px]', daysLeft !== null && daysLeft <= 30 && 'font-semibold text-accent')}>
+                      <span className={cx('tabular text-[12px]', daysLeft !== null && daysLeft <= 30 && 'font-semibold text-accent-ink')}>
                         <span className="block">{date(row.endDate)}</span>
                         {daysLeft !== null ? (
-                          <span className="block text-[10px] text-n400">{daysLeft < 0 ? `${-daysLeft}d ago` : `${daysLeft}d left`}</span>
+                          <span className="block text-[10px] text-muted">{daysLeft < 0 ? `${-daysLeft}d ago` : `${daysLeft}d left`}</span>
                         ) : null}
                       </span>
                     );
@@ -288,7 +288,7 @@ export default function Renewals() {
                     row.renewalDeal ? (
                       <Link to={`/deals/${row.renewalDeal.id}`} onClick={(e) => e.stopPropagation()} className="text-[12px]">
                         <span className="block font-semibold underline decoration-dotted underline-offset-2">{row.renewalDeal.reference}</span>
-                        <span className="block text-[10px] text-n400">{row.renewalDeal.stage.name}</span>
+                        <span className="block text-[10px] text-muted">{row.renewalDeal.stage.name}</span>
                       </Link>
                     ) : row.status === 'ACTIVE' || row.status === 'EXPIRING' ? (
                       can('deals', 'create') ? (
@@ -301,8 +301,8 @@ export default function Renewals() {
                         >
                           Open
                         </Button>
-                      ) : <span className="text-[11px] text-accent">Not opened</span>
-                    ) : <span className="text-n400">—</span>,
+                      ) : <span className="text-[11px] text-accent-ink">Not opened</span>
+                    ) : <span className="text-muted">—</span>,
                 },
                 {
                   key: 'deliverables', header: '', width: '130px',

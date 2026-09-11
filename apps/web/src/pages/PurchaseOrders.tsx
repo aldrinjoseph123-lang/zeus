@@ -125,7 +125,7 @@ export default function PurchaseOrders() {
           <div className="flex flex-wrap gap-6 border-b border-line bg-sunken px-3 py-2">
             <span className="text-[12px] text-muted">Ordered <strong className="tabular ml-1 text-[14px] text-ink">{money(data.totals.ordered)}</strong></span>
             <span className="text-[12px] text-muted">{isSupplier ? 'Paid' : 'Settled'} <strong className="tabular ml-1 text-[14px] text-ink">{money(data.totals.paid)}</strong></span>
-            <span className="text-[12px] text-muted">Outstanding <strong className="tabular ml-1 text-[14px] text-accent">{money(data.totals.outstanding)}</strong></span>
+            <span className="text-[12px] text-muted">Outstanding <strong className="tabular ml-1 text-[14px] text-accent-ink">{money(data.totals.outstanding)}</strong></span>
           </div>
         ) : null}
 
@@ -172,7 +172,7 @@ export default function PurchaseOrders() {
                   render: (row) => {
                     const owed = Number(row.total) - Number(row.amountPaid);
                     const late = row.paymentDueDate && new Date(row.paymentDueDate) < new Date() && owed > 0;
-                    return <span className={cx('text-[12px]', late ? 'font-semibold text-accent' : 'text-muted')}>{date(row.paymentDueDate)}</span>;
+                    return <span className={cx('text-[12px]', late ? 'font-semibold text-accent-ink' : 'text-muted')}>{date(row.paymentDueDate)}</span>;
                   },
                 },
                 { key: 'total', header: 'Total', align: 'right', width: '120px', render: (row) => <span className="tabular font-semibold">{money(row.total)}</span> },
@@ -180,7 +180,7 @@ export default function PurchaseOrders() {
                   key: 'outstanding', header: 'Outstanding', align: 'right', width: '120px',
                   render: (row) => {
                     const owed = Number(row.total) - Number(row.amountPaid);
-                    return <span className={owed > 0 ? 'tabular font-semibold text-accent' : 'tabular text-muted'}>{money(owed)}</span>;
+                    return <span className={owed > 0 ? 'tabular font-semibold text-accent-ink' : 'tabular text-muted'}>{money(owed)}</span>;
                   },
                 },
               ]}

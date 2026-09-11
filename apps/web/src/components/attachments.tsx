@@ -172,7 +172,7 @@ export function AttachmentPanel({ parent, parentId }: { parent: AttachmentParent
                   <span className="block truncate text-[13px] font-semibold underline decoration-dotted underline-offset-2">
                     {attachment.filename}
                   </span>
-                  <span className="block text-[10px] uppercase tracking-[0.08em] text-n400" title={dateTime(attachment.createdAt)}>
+                  <span className="block text-[10px] uppercase tracking-[0.08em] text-muted" title={dateTime(attachment.createdAt)}>
                     {fileSize(attachment.sizeBytes)} · {attachment.uploadedBy?.name ?? 'Unknown'} · {relative(attachment.createdAt)}
                   </span>
                 </button>
@@ -180,7 +180,7 @@ export function AttachmentPanel({ parent, parentId }: { parent: AttachmentParent
                   <Download size={15} />
                 </button>
                 {canUpload ? (
-                  <button onClick={() => setDeleting(attachment)} aria-label={`Remove ${attachment.filename}`} className="shrink-0 text-n300 transition-colors hover:text-accent">
+                  <button onClick={() => setDeleting(attachment)} aria-label={`Remove ${attachment.filename}`} className="shrink-0 text-n300 transition-colors hover:text-accent-ink">
                     <Trash2 size={15} />
                   </button>
                 ) : null}

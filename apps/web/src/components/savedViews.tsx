@@ -65,7 +65,7 @@ export function SavedViews({ storageKey, current, onApply }: {
                   <Check size={12} className="text-muted" /> <span className="truncate">{v.name}</span>
                 </button>
                 <button
-                  className="px-2 py-2 text-n400 hover:text-accent"
+                  className="px-2 py-2 text-muted hover:text-accent-ink"
                   aria-label={`Delete view ${v.name}`}
                   onClick={() => persist(views.filter((x) => x.name !== v.name))}
                 >

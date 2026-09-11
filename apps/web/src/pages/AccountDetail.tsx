@@ -203,7 +203,7 @@ export default function AccountDetail() {
                           </span>
                         ),
                       },
-                      { key: 'email', header: 'Email', render: (row) => row.email ? <a href={`mailto:${row.email}`} className="text-[12px] underline decoration-dotted underline-offset-2">{row.email}</a> : <span className="text-n400">—</span> },
+                      { key: 'email', header: 'Email', render: (row) => row.email ? <a href={`mailto:${row.email}`} className="text-[12px] underline decoration-dotted underline-offset-2">{row.email}</a> : <span className="text-muted">—</span> },
                       { key: 'phone', header: 'Phone', width: '140px', render: (row) => <span className="text-[12px]">{row.phone ?? '—'}</span> },
                     ]}
                   />

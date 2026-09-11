@@ -157,7 +157,7 @@ export function ActivityPanel({ activities, links, invalidate }: {
             const overdue = open && activity.dueAt && new Date(activity.dueAt) < new Date();
             return (
               <li key={activity.id} className="flex gap-3 border-b border-line px-4 py-3">
-                <span className={cx('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-sharp border', overdue ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-card text-muted')}>
+                <span className={cx('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-sharp border', overdue ? 'border-accent bg-accent-soft text-accent-ink' : 'border-line bg-card text-muted')}>
                   <Icon size={14} />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -167,14 +167,14 @@ export function ActivityPanel({ activities, links, invalidate }: {
                     {activity.priority === 'Urgent' || activity.priority === 'High' ? <Badge tone="accent">{activity.priority}</Badge> : null}
                   </div>
                   {activity.description ? <p className="mt-0.5 whitespace-pre-wrap text-[12px] leading-relaxed text-n600">{activity.description}</p> : null}
-                  <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] uppercase tracking-[0.08em] text-n400">
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] uppercase tracking-[0.08em] text-muted">
                     <span>{activity.owner?.name ?? 'System'}</span>
                     <span>·</span>
                     <span title={dateTime(activity.createdAt)}>{relative(activity.createdAt)}</span>
                     {activity.dueAt ? (
                       <>
                         <span>·</span>
-                        <span className={cx('flex items-center gap-1', overdue && 'font-semibold text-accent')}>
+                        <span className={cx('flex items-center gap-1', overdue && 'font-semibold text-accent-ink')}>
                           <CalendarDays size={10} /> due {relative(activity.dueAt)}
                         </span>
                       </>

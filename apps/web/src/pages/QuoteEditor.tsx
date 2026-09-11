@@ -224,7 +224,7 @@ export default function QuoteEditor() {
               can('quotes', 'update') && !locked && quote.status !== 'REJECTED' ? (
                 <button
                   onClick={() => setStatus.mutate('REJECTED')}
-                  className="text-[11px] font-semibold uppercase tracking-[0.06em] text-n400 underline decoration-dotted underline-offset-2 transition-colors hover:text-accent"
+                  className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted underline decoration-dotted underline-offset-2 transition-colors hover:text-accent-ink"
                 >
                   Rejected
                 </button>
@@ -374,12 +374,12 @@ export default function QuoteEditor() {
                   <Row label="Cost" value={money(totals.totalCost, true)} muted />
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-muted">Margin</span>
-                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
+                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
                       {money(totals.marginAmount, true)} · {percent(totals.marginPct, 1)}
                     </span>
                   </div>
                   {totals.marginPct < 10 && totals.netAfterDiscount > 0 ? (
-                    <p className="mt-2 text-[11px] text-accent">
+                    <p className="mt-2 text-[11px] text-accent-ink">
                       {totals.marginPct < 0
                         ? 'This quote sells below cost — check the buy price before sending.'
                         : 'Margin is under 10% — check the vendor discount before sending.'}
@@ -391,7 +391,7 @@ export default function QuoteEditor() {
               {/* A role that cannot see cost still needs telling, and cannot work it out. */}
               {!showCost && quote?.marginWarning ? (
                 <div className="mt-3 border-t border-line pt-3">
-                  <p className="text-[11px] text-accent">
+                  <p className="text-[11px] text-accent-ink">
                     {quote.marginWarning.negative
                       ? 'This quote sells below what it costs us. Ask your manager before sending it.'
                       : `Margin is below the ${quote.marginWarning.floorPct}% floor. Ask your manager before sending it.`}

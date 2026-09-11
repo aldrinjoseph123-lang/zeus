@@ -67,7 +67,7 @@ export function ApprovalBar({ entity, id, record, module, onChanged }: {
     if (!mayEdit) return null;
     return (
       <div className="flex flex-wrap items-center gap-2 border-t border-line bg-sunken px-4 py-2.5">
-        <ShieldCheck size={13} className="shrink-0 text-n400" />
+        <ShieldCheck size={13} className="shrink-0 text-muted" />
         <span className="eyebrow">Approval</span>
         <span className="text-[12px] text-muted">Not requested. Send it to a sales manager if it needs signing off.</span>
         <Button size="sm" variant="ghost" className="ml-auto" loading={act.isPending} onClick={() => act.mutate('submit')}>

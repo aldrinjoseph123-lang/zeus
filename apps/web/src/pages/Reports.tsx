@@ -44,7 +44,7 @@ export default function Reports() {
   };
 
   const cell = (value: unknown, format?: string) => {
-    if (value === null || value === undefined || value === '') return <span className="text-n400">—</span>;
+    if (value === null || value === undefined || value === '') return <span className="text-muted">—</span>;
     if (format === 'money') return <span className="tabular">{money(value as number)}</span>;
     if (format === 'percent') return <span className="tabular">{percent(value as number, 1)}</span>;
     if (format === 'date') return <span className="text-[12px]">{date(value as string)}</span>;

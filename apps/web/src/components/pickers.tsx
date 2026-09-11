@@ -99,12 +99,12 @@ export function Lookup<T extends { id: string }>({
         <span className="truncate">{label}</span>
         <span className="flex shrink-0 items-center gap-1">
           {allowClear && !disabled ? (
-            <button type="button" onClick={() => { onChange(null, null); setLabel(null); }} aria-label="Clear" className="text-n400 hover:text-accent">
+            <button type="button" onClick={() => { onChange(null, null); setLabel(null); }} aria-label="Clear" className="text-muted hover:text-accent-ink">
               <X size={13} />
             </button>
           ) : null}
           {!disabled ? (
-            <button type="button" onClick={() => setOpen(true)} aria-label="Change" className="text-n400 hover:text-ink">
+            <button type="button" onClick={() => setOpen(true)} aria-label="Change" className="text-muted hover:text-ink">
               <ChevronDown size={14} />
             </button>
           ) : null}
@@ -122,7 +122,7 @@ export function Lookup<T extends { id: string }>({
         onChange={(e) => { setTerm(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="w-full rounded-sharp border border-line bg-card px-3 py-2 text-[13px] placeholder:text-n400 focus:border-n900 disabled:bg-n50"
+        className="w-full rounded-sharp border border-line bg-card px-3 py-2 text-[13px] placeholder:text-muted focus:border-n900 disabled:bg-n50"
       />
       {isFetching ? <span className="absolute right-2.5 top-1/2 -translate-y-1/2"><Spinner size={13} /></span> : null}
 
@@ -246,7 +246,7 @@ export function DuplicateWarning({ matches, domain, onProceed, onCancel, busy }:
   return (
     <div className="border border-[var(--red-300)] bg-accent-soft">
       <div className="flex items-start gap-2 border-b border-[var(--red-300)] px-3 py-2.5">
-        <AlertTriangle size={16} className="mt-px shrink-0 text-accent" />
+        <AlertTriangle size={16} className="mt-px shrink-0 text-accent-ink" />
         <div>
           <p className="text-[13px] font-semibold text-[var(--red-700)]">Possible duplicate</p>
           <p className="text-xs text-[var(--red-700)]">
