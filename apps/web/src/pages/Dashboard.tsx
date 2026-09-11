@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlarmClock, AlertTriangle, BadgeCheck, Building2, CalendarClock, CircleDollarSign, Clock, Flame, Layers,
-  ShieldCheck, TrendingUp, Users,
+  Handshake, ShieldCheck, TrendingUp, Users,
 } from 'lucide-react';
 import { api, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -56,6 +56,8 @@ interface Attention {
   thresholds: { staleAccountDays: number; staleDealDays: number; registrationWarnDays: number };
   /** Server errors in the last 24h. null for roles that cannot open the system log. */
   systemErrors: number | null;
+  /** Coverage, not activity count. Null when this person cannot open the register. */
+  partners: { total: number; overdue: number; unmanaged: number } | null;
   staleAccounts: Array<{ id: string; name: string; type: string; lastActivityAt: string | null; owner: { name: string } | null; _count: { deals: number } }>;
   stuckDeals: Array<{ id: string; reference: string; name: string; amount: number; stageChangedAt: string; closeDate: string; stage: { name: string; color: string }; account: { name: string }; owner: { name: string } | null }>;
   expiringRegistrations: Array<{
@@ -352,6 +354,30 @@ export default function Dashboard() {
         <Card>
           <CardHeader title="Needs attention" subtitle={attention ? `Stale after ${attention.thresholds.staleAccountDays} days · stuck after ${attention.thresholds.staleDealDays} days` : undefined} />
           {/* Server errors otherwise only exist in a log nobody is prompted to open. */}
+          {/*
+            * Coverage reads as a fraction on purpose. "42 visits" rewards seeing the same
+            * three partners again; "11 of 38 untouched" only improves when somebody new
+            * gets called, which is the behaviour the register exists to change.
+            */}
+          {attention?.partners && (attention.partners.overdue > 0 || attention.partners.unmanaged > 0) ? (
+            <Link
+              to="/partners"
+              className="flex items-center gap-2 border-b border-line px-4 py-2 text-[12px] transition-colors hover:bg-sunken"
+            >
+              <Handshake size={14} className="shrink-0 text-muted" />
+              <span>
+                <span className="font-semibold">
+                  {attention.partners.overdue} of {attention.partners.total} partners
+                </span>{' '}
+                past their contact rhythm
+                {attention.partners.unmanaged > 0 ? (
+                  <span className="text-muted"> · {attention.partners.unmanaged} with nobody managing them</span>
+                ) : null}
+              </span>
+              <span className="ml-auto text-[11px] underline">Open the register</span>
+            </Link>
+          ) : null}
+
           {attention?.systemErrors ? (
             <Link
               to="/settings/logs"
@@ -423,7 +449,7 @@ export default function Dashboard() {
                       </span>
                       {/* What is being signed off, not just how much. */}
                       {a.marginBelowFloor ? (
-                        <span className="block text-[11px] font-semibold text-accent">
+                        <span className="block text-[11px] font-semibold text-accent-ink">
                           {(a.marginPct ?? 0) < 0
                             ? `Sells below cost · ${percent(a.marginPct ?? 0, 1)} margin`
                             : `Thin margin · ${percent(a.marginPct ?? 0, 1)}`}

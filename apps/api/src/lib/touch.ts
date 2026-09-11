@@ -51,6 +51,8 @@ export async function touchContact(opts: {
   // more neglected than the last thing actually done with them.
   await prisma.account.updateMany({
     where: { id: opts.accountId, OR: [{ lastContactAt: null }, { lastContactAt: { lt: at } }] },
-    data: { lastContactAt: at },
+    // Clearing nudgedAt here is what lets the badly-overdue alert fire again if this
+    // partner is neglected a second time. Left set, it would warn once, ever.
+    data: { lastContactAt: at, nudgedAt: null },
   });
 }

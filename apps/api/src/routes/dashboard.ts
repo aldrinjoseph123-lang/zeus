@@ -370,6 +370,28 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
      * Only for roles that can open the system log: a count you have no permission to
      * investigate is noise, not information.
      */
+    /**
+     * Coverage, not activity count. "42 visits this quarter" rewards seeing the same three
+     * partners repeatedly, which is the habit worth catching; "11 of 38 untouched" only
+     * improves when somebody new gets called. Shown to whoever can open the register.
+     */
+    const partners = can(request.user, 'partners', 'read')
+      ? await (async () => {
+          const houseCadence = Number(await getSetting<number>('partners.contactCadenceDays', 30));
+          const rows = await prisma.account.findMany({
+            where: { type: 'PARTNER', deletedAt: null, isDormant: false },
+            select: { lastContactAt: true, engagementCadenceDays: true, channelManagerId: true },
+          });
+          const now = Date.now();
+          return {
+            total: rows.length,
+            overdue: rows.filter((r) => !r.lastContactAt
+              || now - r.lastContactAt.getTime() > (r.engagementCadenceDays ?? houseCadence) * 86_400_000).length,
+            unmanaged: rows.filter((r) => !r.channelManagerId).length,
+          };
+        })()
+      : null;
+
     const systemErrors = can(request.user, 'audit', 'read')
       ? await prisma.systemLog.count({ where: { level: 'error', at: { gte: new Date(Date.now() - 86_400_000) } } })
       : null;
@@ -377,6 +399,7 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
     return {
       thresholds: { staleAccountDays: Number(staleDays), staleDealDays: Number(staleDealDays), registrationWarnDays: Number(regDays) },
       systemErrors,
+      partners,
       staleAccounts,
       stuckDeals: stuckDeals.map((d) => ({ ...d, amount: num(d.amount) })),
       expiringRegistrations,

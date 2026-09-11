@@ -5,6 +5,7 @@ import { notify, sendPendingDigests } from '../services/notify.js';
 import { runDueScheduledReports } from '../services/scheduledReports.js';
 import { runScheduledBackup, checkMissedBackups, weeklyAutoVerify } from '../services/backup.js';
 import { dailyDataHealthSweep } from '../services/dataHealth.js';
+import { nudgeBadlyOverdue, sendWeeklyPartnerDigest } from '../services/partnerDigest.js';
 import { daysUntil, mailPartnerAboutRegistration } from '../services/registrations.js';
 import { unusedEntitlements } from '../services/deliverables.js';
 import { sweepRenewals } from '../services/renewals.js';
@@ -556,6 +557,26 @@ export function startScheduler(): void {
     const { weekOf, rows } = await takeWeeklyDealSnapshot();
     console.log(`[scheduler] weekly deal snapshot for ${weekOf.toISOString().slice(0, 10)}: ${rows} open deal(s)`);
   }), { timezone: TZ }));
+
+  /**
+   * The partner digest — Monday 06:00 GST, before the week is committed rather than after.
+   * Silent when nobody is overdue, which is the whole of what keeps it from being noise.
+   */
+  tasks.push(cron.schedule('0 6 * * 1', () => void safely('partnerDigest', async () => {
+    const { managers, partners } = await sendWeeklyPartnerDigest();
+    if (managers) console.log(`[scheduler] partner digest: ${partners} overdue across ${managers} manager(s)`);
+  }), { timezone: TZ }));
+
+  /**
+   * The individual nudge for a partner past twice its rhythm — every morning except
+   * Monday, because Monday's digest already names them, and two messages about the same
+   * partner on one morning is how people learn to filter both.
+   */
+  tasks.push(cron.schedule('0 7 * * 0,2,3,4,5,6', () => void safely('partnerNudge', async () => {
+    const sent = await nudgeBadlyOverdue();
+    if (sent) console.log(`[scheduler] nudged ${sent} badly overdue partner(s)`);
+  }), { timezone: TZ }));
+
 
   // Watch component health every 5 minutes: one snapshot, recorded for uptime and
   // checked for an up→down flip to alert admins.

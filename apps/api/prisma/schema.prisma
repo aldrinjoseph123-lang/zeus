@@ -162,6 +162,9 @@ model Account {
   /// account — a quote, a payment, a task booked for next month. That is the right
   /// meaning for a stale customer and the wrong one for "when did we last speak".
   lastContactAt         DateTime?
+  /// When the "badly overdue" nudge last fired, so one neglected partner cannot produce
+  /// the same alert every night. Cleared by the next logged contact — see lib/touch.ts.
+  nudgedAt              DateTime?
   /// Kept for its history, out of the engagement lists. A dormant partner still holds
   /// its registrations and they still expire; it simply stops being chased.
   isDormant             Boolean   @default(false)

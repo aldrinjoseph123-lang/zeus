@@ -111,7 +111,7 @@ export default function Partners() {
                 header: 'Partner',
                 render: (p: PartnerRow) => (
                   <span className="flex items-center gap-2">
-                    <Link to={`/accounts/${p.id}`} className="font-semibold hover:text-accent">{p.name}</Link>
+                    <Link to={`/accounts/${p.id}`} className="font-semibold hover:text-accent-ink">{p.name}</Link>
                     {p.isDormant ? <Badge tone="neutral">Dormant</Badge> : null}
                     {p.cadenceIsOwn ? <Badge tone="neutral">{p.cadenceDays}d</Badge> : null}
                   </span>
@@ -123,7 +123,7 @@ export default function Partners() {
                 header: 'Channel manager',
                 render: (p: PartnerRow) => (p.channelManager
                   ? <span>{p.channelManager.name}</span>
-                  : <span className="text-accent">Nobody</span>),
+                  : <span className="text-accent-ink">Nobody</span>),
               },
               { key: 'deals', header: 'Open deals', align: 'right', render: (p: PartnerRow) => p.openDeals || '—' },
               {
@@ -160,11 +160,11 @@ export default function Partners() {
  */
 function ContactState({ row }: { row: PartnerRow }) {
   if (!row.lastContactAt) {
-    return <span className="font-semibold text-accent">Never contacted</span>;
+    return <span className="font-semibold text-accent-ink">Never contacted</span>;
   }
   const overdue = (row.overdueDays ?? 0) > 0;
   return (
-    <span className={cx('flex items-baseline gap-2', overdue && 'text-accent')}>
+    <span className={cx('flex items-baseline gap-2', overdue && 'text-accent-ink')}>
       <span className={cx(overdue && 'font-semibold')}>{date(row.lastContactAt)}</span>
       <span className="text-[11px] text-muted">
         {overdue ? `${row.overdueDays}d overdue` : `due ${date(row.dueAt)}`}

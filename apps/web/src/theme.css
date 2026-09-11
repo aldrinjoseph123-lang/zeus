@@ -62,6 +62,14 @@
   --nav-muted: #a3a3a3;  /*  9.3:1 */
   --nav-dim: #8a8a8a;    /*  5.7:1 — subordinate, still legible */
 
+  /*
+   * The accent red, readable as text. --action-accent (#e11d2e) is calibrated as a
+   * *background* behind white — as small text it reads 4.4:1 on a sunken surface and
+   * 4.1:1 on a dark card, both under the floor. Backgrounds keep the brighter red;
+   * anything that has to be read uses this.
+   */
+  --text-accent: var(--red-600);
+
   --surface-danger: var(--red-50);
   --surface-danger-hover: #f9d8da;
   --text-on-accent-soft: var(--red-700);
@@ -126,6 +134,7 @@
   /* Danger text has to lift on a dark wash; --red-700 is a light-mode value. 5.9:1. */
   --surface-danger: #2a1416;
   --surface-danger-hover: #3a1b1e;
+  --text-accent: var(--red-300);
   --text-on-accent-soft: var(--red-300);
 
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5);
@@ -145,6 +154,7 @@
   --color-nav-text: var(--nav-text);
   --color-nav-muted: var(--nav-muted);
   --color-nav-dim: var(--nav-dim);
+  --color-accent-ink: var(--text-accent);
 
   --color-line: var(--border-default);
   --color-line-strong: var(--border-strong);

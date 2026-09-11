@@ -38,12 +38,9 @@ const IMPACTS = ['serious', 'critical'];
  */
 const KNOWN: Record<string, { max: number; why: string }> = {
   'color-contrast': {
-    max: 10,
-    why: 'text-accent is --red-500 (#e11d2e), which reads at 4.4:1 on a sunken surface in '
-      + 'daylight and 4.1:1 on a card at night — under the 4.5 floor in both. It is used as '
-      + 'text in 74 places across 28 files, and splitting it from the identical background '
-      + 'token that buttons use is an app-wide change with its own changelog line, not '
-      + 'something to fold into a feature release. Pinned so it cannot grow meanwhile.',
+    max: 8,
+    why: 'text-accent is --action-accent (#e11d2e), calibrated as a background behind white, '
+      + 'and read as small text at 4.4:1 in daylight and 4.1:1 at night. The readable counterpart now exists as text-accent-ink, and the partner screens use it; swapping the remaining call sites across the app is its own change with its own changelog line. Pinned so it cannot grow meanwhile.',
   },
 };
 

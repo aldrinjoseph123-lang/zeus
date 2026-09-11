@@ -423,6 +423,8 @@ export const REPORTS: ReportDef[] = [
       { key: 'registered', label: 'Registered', width: 78, align: 'right' },
       { key: 'regToWon', label: 'Reg → won', width: 80, align: 'right', format: 'percent' },
       { key: 'answerDays', label: 'Answer (days)', width: 90, align: 'right' },
+      { key: 'prevNet', label: 'Prior period (AED)', width: 130, align: 'right', format: 'money' },
+      { key: 'movement', label: 'Movement', width: 90, align: 'right', format: 'percent' },
     ],
     run: async (ctx) => {
       /**
@@ -459,6 +461,26 @@ export const REPORTS: ReportDef[] = [
           ${ctx.ownerSql}
         GROUP BY 1 ORDER BY net DESC
       `;
+
+      /**
+       * The same window, immediately before this one.
+       *
+       * A snapshot flatters a partner whose volume halved over three quarters — every
+       * single window looks fine on its own. Movement is the only column here that can
+       * show a relationship fading while it is still worth something.
+       */
+      const span = ctx.to.getTime() - ctx.from.getTime();
+      const prevFrom = new Date(ctx.from.getTime() - span);
+      const prior = await prisma.$queryRaw<Array<{ partner: string; net: number }>>`
+        SELECT a.name AS partner, COALESCE(SUM(d.amount), 0)::float8 AS net
+        FROM "Deal" d
+        JOIN "Account" a ON a.id = d."sourcePartnerId"
+        WHERE d."deletedAt" IS NULL AND d."createdAt" BETWEEN ${prevFrom} AND ${ctx.from}
+          ${ctx.ownerSql}
+        GROUP BY 1
+      `;
+      const before = new Map(prior.map((r) => [r.partner, Number(r.net)]));
+
       return {
         rows: rows.map((r) => ({
           partner: r.partner,
@@ -475,6 +497,12 @@ export const REPORTS: ReportDef[] = [
           // Null until registrations start carrying a requested date — inventing one for
           // the existing rows would have written a fictional same-day response into this.
           answerDays: r.answer_days === null ? null : Math.round(Number(r.answer_days) * 10) / 10,
+          prevNet: before.get(r.partner) ?? 0,
+          // No prior business is not a 100% rise — it is a partner that has just started,
+          // and calling that growth would put new names at the top of a decline report.
+          movement: before.get(r.partner)
+            ? ((Number(r.net) - before.get(r.partner)!) / before.get(r.partner)!) * 100
+            : null,
         })),
       };
     },

@@ -80,8 +80,29 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   expiring in the window, with unassigned rows grouped rather than dropped, because
   "nobody is on these" is the most useful line on it.
 
+### Added — it comes to you
+
+- **A weekly digest, Monday morning**, to each channel manager, naming only their own
+  overdue partners. **Silent when nothing is overdue** — a weekly message that always
+  arrives is a weekly message people stop opening.
+- **An individual nudge** when a partner passes twice its rhythm, sent once per crossing
+  rather than every night until somebody acts, and reset by the next logged contact so it
+  can fire again if they are neglected a second time. It runs every morning except Monday,
+  because Monday's digest already names them.
+- **Coverage on the dashboard**, in the panel people already open: *"2 of 4 partners past
+  their contact rhythm · 1 with nobody managing them"*. Reach rather than activity — a
+  visit count rewards seeing the same three partners again, coverage only improves when
+  somebody new gets called.
+- **Movement on the partner report**: the same window immediately before this one, so a
+  partner whose volume halved over three quarters stops looking healthy in every single
+  snapshot. A partner with no prior business shows no movement rather than a 100% rise.
+
 ### Fixed
 
+- The accent red is calibrated as a background behind white; read as small text it fell
+  under the contrast floor in both themes. There is now a readable counterpart, and the
+  partner screens use it. The rest of the app still uses the background red as text in
+  some places — its own change, and it cannot get worse in the meantime.
 - The step indicator on list rows — the little bars showing how far a quote or invoice has
   got — carried its meaning in an `aria-label` on a plain element, which screen readers are
   required to ignore. Anyone not seeing the bars was told nothing at all. It is now marked

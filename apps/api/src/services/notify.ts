@@ -42,6 +42,8 @@ export const NOTIFICATION_EVENTS = [
   { event: 'invoice_paid', label: 'Invoice paid in full', thresholdDays: null, defaults: { inApp: true, email: false, teams: true } },
   { event: 'duplicate_found', label: 'Possible duplicate created', thresholdDays: null, defaults: { inApp: true, email: false, teams: false } },
   { event: 'backup_failed', label: 'Backup failed', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
+  { event: 'partners_overdue', label: 'Weekly — partners you have not contacted', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
+  { event: 'partner_badly_overdue', label: 'A partner has gone past twice its contact rhythm', thresholdDays: null, defaults: { inApp: true, email: true, teams: false } },
   { event: 'backup_missed', label: 'Backup overdue — none has run in its expected window', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
   { event: 'backup_verify_failed', label: 'Weekly backup verification found a problem', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
   { event: 'data_integrity_failed', label: 'Daily data check found a problem', thresholdDays: null, defaults: { inApp: true, email: true, teams: true } },
