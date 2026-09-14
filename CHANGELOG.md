@@ -12,6 +12,25 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ---
 
+## Unreleased
+
+### Fixed — alerts that reported a blip as an outage
+
+Found on 14 September, when the office router's DNS dropped lookups for an afternoon.
+
+- **Outbound email no longer stays red for a day after one failed send.** It is now judged
+  by the most recent send. Before, two alert emails that failed at 15:00 kept email "down"
+  until 15:00 the next day, although the mail sent at 16:00 went out.
+- **Teams alerts are no longer marked down by a post that never reached Teams.** When the
+  last post failed on the network (DNS, a timeout), the status check now asks whether the
+  Teams host answers *now*. Before, one failed card held Teams down until another alert
+  happened to post, and that failure raised a "Teams alerts is down" alert of its own.
+  An error Teams itself sends back, such as a deleted channel, still counts as down.
+
+Nothing to do after the deploy.
+
+---
+
 ## v1.5.0 — 12 September 2026
 
 Partners stop being a list of companies and start being a relationship Zeus keeps track of.

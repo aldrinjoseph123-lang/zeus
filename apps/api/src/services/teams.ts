@@ -61,13 +61,16 @@ export function buildCard(input: CardInput): unknown {
   };
 }
 
+/** How an error Teams itself sent back begins — as opposed to a post that never reached it. */
+export const TEAMS_REFUSED = 'Teams webhook failed';
+
 export async function postToWebhook(url: string, card: CardInput): Promise<void> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(buildCard(card)),
   });
-  if (!res.ok) throw new Error(`Teams webhook failed (${res.status}): ${await res.text()}`);
+  if (!res.ok) throw new Error(`${TEAMS_REFUSED} (${res.status}): ${await res.text()}`);
 }
 
 /** Post to a named webhook, or the default one when no id is given. */

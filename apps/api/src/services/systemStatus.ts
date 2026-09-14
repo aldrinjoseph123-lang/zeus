@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import { getM365, graphFetch, pingM365 } from './graph.js';
 import { pingWhatsapp } from './whatsapp.js';
+import { TEAMS_REFUSED } from './teams.js';
 import { getSetting } from '../lib/settings.js';
 import { turnstileConfig, verifyTurnstile } from '../portal/requests.js';
 import { backupScheduleCount } from '../jobs/scheduler.js';
@@ -67,6 +68,9 @@ export async function uptimeSummary(): Promise<Record<string, { day: number; wee
  * A valid token says the app registration is fine; it says nothing about the mailbox
  * being reachable or the Mail.Send consent still standing. The email log knows what
  * really happened to the last few sends, which is the only evidence that counts.
+ *
+ * It is the *latest* send that decides. Counting every failure in the window held email
+ * red for a whole day after a network blip, while the mail after it was going out fine.
  */
 async function emailComponent(): Promise<Component> {
   const m365 = await getM365();
@@ -78,9 +82,9 @@ async function emailComponent(): Promise<Component> {
   const [failed, sent, latest] = await Promise.all([
     prisma.emailLog.count({ where: { status: 'FAILED', createdAt: { gte: since } } }),
     prisma.emailLog.count({ where: { status: 'SENT', createdAt: { gte: since } } }),
-    prisma.emailLog.findFirst({ where: { status: 'FAILED' }, orderBy: { createdAt: 'desc' }, select: { error: true } }),
+    prisma.emailLog.findFirst({ where: { createdAt: { gte: since } }, orderBy: { createdAt: 'desc' }, select: { status: true, error: true } }),
   ]);
-  if (failed > 0) {
+  if (latest?.status === 'FAILED') {
     return {
       key: 'email', label: 'Outbound email', ok: false,
       detail: `${failed} send${failed === 1 ? '' : 's'} failed in the last 24h${sent ? `, ${sent} went` : ''}. ${(latest?.error ?? '').slice(0, 120)}`,
@@ -99,11 +103,26 @@ async function emailComponent(): Promise<Component> {
   }
 }
 
-/** Teams cards go to incoming-webhook URLs; a channel that has been deleted stops working silently. */
+/**
+ * Teams cards go to incoming-webhook URLs; a channel that has been deleted stops working silently.
+ *
+ * The last post's error means two different things. Teams refusing it (channel gone, URL
+ * revoked) stays true until a post works. A post that never got an answer — DNS, a timeout —
+ * only says the network was bad at that moment, so that one is asked again: does the host
+ * answer now? Trusting the stale error held Teams "down" after a blip until some other alert
+ * happened to post, and the failed alert raised a Teams alert of its own.
+ */
 async function teamsComponent(): Promise<Component> {
-  const hooks = await prisma.teamsWebhook.findMany({ where: { isActive: true }, select: { name: true, lastError: true, lastPostAt: true } });
+  const hooks = await prisma.teamsWebhook.findMany({ where: { isActive: true }, select: { url: true, lastError: true } });
   if (hooks.length === 0) return { key: 'teams', label: 'Teams alerts', ok: true, detail: 'No channel connected.' };
-  const broken = hooks.filter((h) => h.lastError);
+  const verdicts = await Promise.all(hooks.map(async (h) => {
+    if (!h.lastError) return false;
+    if (h.lastError.startsWith(TEAMS_REFUSED)) return true;
+    // Any HTTP answer at all proves the path is back. The origin, not the webhook URL, so the
+    // probe can never post a card or trigger the workflow behind it.
+    return fetch(new URL(h.url).origin, { method: 'HEAD', signal: AbortSignal.timeout(5000) }).then(() => false, () => true);
+  }));
+  const broken = hooks.filter((_, i) => verdicts[i]);
   return broken.length > 0
     ? { key: 'teams', label: 'Teams alerts', ok: false, detail: `${broken.length} of ${hooks.length} channel(s) failing: ${(broken[0].lastError ?? '').slice(0, 100)}` }
     : { key: 'teams', label: 'Teams alerts', ok: true, detail: `${hooks.length} channel(s) connected.` };
