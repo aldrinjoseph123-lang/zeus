@@ -22,6 +22,10 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   search, and inside other records. The card shows only what the reader could see by opening
   the record, and says so when their role cannot open it. On a touch screen a long press opens
   the card and a tap still opens the record.
+- **With read logging on, previews are in the audit trail.** A preview shows a record's contact
+  details and value, so it counts as looking. It is logged as *preview*, once an hour per person
+  and record, so running the mouse down a list does not write a row per name. The audit trail
+  can be filtered by it.
 - **Tooltips are Zeus's own.** Every hint that used the browser's slow grey tooltip now shows at
   once in Zeus's style, and appears for keyboard focus too.
 - **Quick actions on list rows.** Hovering a row on Accounts, Contacts, Leads, Deals, or an

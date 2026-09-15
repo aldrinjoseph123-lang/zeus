@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma, num } from '../db.js';
 import { can, maskFields, ownerAllowed, scopeWhere } from '../auth/rbac.js';
-import { forbidden, HttpError, notFound } from '../lib/http.js';
+import { auditPreview } from '../lib/audit.js';
+import { clientIp, forbidden, HttpError, notFound } from '../lib/http.js';
 
 /**
  * The card shown when someone hovers a record's name.
@@ -15,6 +16,10 @@ const MODULES = { account: 'accounts', deal: 'deals', contact: 'contacts', lead:
 type PreviewType = keyof typeof MODULES;
 
 const owner = { select: { name: true } } as const;
+/** The audit trail's names for these, as opening the record writes them. */
+const ENTITY: Record<PreviewType, string> = { account: 'Account', deal: 'Deal', contact: 'Contact', lead: 'Lead' };
+const summaryOf = (r: { name?: string; reference?: string; firstName?: string; lastName?: string }) =>
+  r.reference ?? r.name ?? `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim();
 
 export default async function previewRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/previews/:type/:id', async (request) => {
@@ -27,6 +32,7 @@ export default async function previewRoutes(app: FastifyInstance): Promise<void>
     const record = await load(type as PreviewType, id, request.user);
     if (!record) throw notFound();
     if (!(await ownerAllowed(request.user, module, 'read', record.ownerId))) throw forbidden();
+    auditPreview(request.user, ENTITY[type as PreviewType], record.id, summaryOf(record), clientIp(request));
     return maskFields(request.user, module, record);
   });
 }

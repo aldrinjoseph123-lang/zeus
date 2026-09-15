@@ -246,7 +246,7 @@ export default function Settings() {
             section.path === 'backups' ? <BackupsSection /> :
             section.path === 'privacy' ? (
               <div className="flex flex-col gap-3">
-                <SettingsGroup prefix="audit." title="Read logging" description="Off by default. When on, opening a deal, account, contact, lead, quote or invoice is recorded as a 'read' entry in the audit trail — useful for compliance, but high volume." />
+                <SettingsGroup prefix="audit." title="Read logging" description="Off by default. When on, opening a deal, account, contact, lead, quote or invoice is recorded as a 'read' entry in the audit trail, and a hover preview as a 'preview' entry once an hour per person and record. Useful for compliance, but high volume." />
                 <SettingsGroup prefix="retention." title="Data retention" description="What Zeus purges on its own. Erasing one person's data lives on their contact or lead record (Erase data). Sign-in history has its own setting under Sign-in & security." />
                 <SettingsGroup prefix="syslog." title="Forward to SIEM" description="Stream every system-log event to a syslog server (RFC 5424) for central monitoring." />
               </div>
@@ -3019,7 +3019,7 @@ function AuditSection() {
           value={action}
           onChange={(e) => { setAction(e.target.value); setPage(1); }}
           placeholder="All actions"
-          options={['read', 'create', 'update', 'delete', 'merge', 'convert', 'export', 'import', 'send', 'login', 'login_failed', 'integration', 'backup'].map((v) => ({ value: v, label: v }))}
+          options={['read', 'preview', 'create', 'update', 'delete', 'merge', 'convert', 'export', 'import', 'send', 'login', 'login_failed', 'integration', 'backup'].map((v) => ({ value: v, label: v }))}
           className="w-[150px]"
         />
       </Toolbar>

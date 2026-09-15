@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { FastifyInstance } from 'fastify';
 import { migrateTestDatabase, prisma, request, resetDatabase, seedFixtures } from './harness.js';
 import type { Fixtures, TestUser } from './harness.js';
+import { invalidateSettings, setSetting } from '../lib/settings.js';
 
 /**
  * Hover previews. The card is a second way to read a record, so it must refuse exactly what
@@ -96,5 +97,42 @@ describe('record previews', () => {
     const contactCard = (await preview(reader, 'contact', contact.id)).body as Record<string, unknown>;
     assert.ok(!('email' in contactCard) || contactCard.email === null, 'a hidden email stays hidden on hover');
     assert.equal((await preview(reader, 'lead', d.id)).status, 403, 'a module the role cannot read at all');
+  });
+});
+
+describe('previews in the audit trail', () => {
+  const previews = async (entityId: string) => {
+    // The entry is written after the response; give it a moment.
+    for (let i = 0; i < 20; i++) {
+      const n = await prisma.auditLog.count({ where: { action: 'preview', entityId } });
+      if (n) return n;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return 0;
+  };
+
+  it('with read logging on, a preview is logged once an hour per person and record', async () => {
+    await setSetting('audit.logReads', true);
+    invalidateSettings();
+    const d = await deal(fx.rep);
+    await preview(fx.rep, 'deal', d.id);
+    assert.equal(await previews(d.id), 1);
+    await preview(fx.rep, 'deal', d.id);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await prisma.auditLog.count({ where: { action: 'preview', entityId: d.id } }), 1, 'the second look inside the hour is not another row');
+    await preview(fx.manager, 'deal', d.id);
+    await new Promise((r) => setTimeout(r, 300));
+    const rows = await prisma.auditLog.findMany({ where: { action: 'preview', entityId: d.id }, select: { userId: true, entity: true, summary: true } });
+    assert.deepEqual(rows.map((r) => r.userId).sort(), [fx.manager.id, fx.rep.id].sort(), 'another person is another row');
+    assert.deepEqual([rows[0].entity, rows[0].summary], ['Deal', d.reference]);
+  });
+
+  it('with read logging off, nothing is written', async () => {
+    await setSetting('audit.logReads', false);
+    invalidateSettings();
+    const d = await deal(fx.rep);
+    await preview(fx.rep, 'deal', d.id);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await prisma.auditLog.count({ where: { action: 'preview', entityId: d.id } }), 0);
   });
 });

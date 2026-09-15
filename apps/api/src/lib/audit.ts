@@ -57,7 +57,7 @@ export async function audit(opts: {
 
 /**
  * Record that a user *viewed* a record — but only when read-logging is switched on
- * (Settings → Audit trail), because one row per record open is high volume. Fire-and-
+ * (Settings → Data & privacy), because one row per record open is high volume. Fire-and-
  * forget: reading a record must never wait on, or fail because of, its own audit line.
  */
 export function auditRead(
@@ -70,6 +70,21 @@ export function auditRead(
   void (async () => {
     if (!(await getSetting<boolean>('audit.logReads', false))) return;
     await audit({ user, action: 'read', entity, entityId, summary, ip });
+  })().catch(() => undefined);
+}
+
+/**
+ * Record that a user saw a record's hover preview, when read-logging is on. A preview shows a
+ * record's contact details and value, so it counts as looking; but a mouse passing down a list
+ * must not write a row per name, so it is one `preview` entry per person, per record, per hour.
+ * ponytail: count-then-insert can let two simultaneous previews both write; harmless duplicates.
+ */
+export function auditPreview(user: SessionUser, entity: string, entityId: string, summary: string, ip?: string): void {
+  void (async () => {
+    if (!(await getSetting<boolean>('audit.logReads', false))) return;
+    const since = new Date(Date.now() - 3_600_000);
+    if (await prisma.auditLog.count({ where: { action: 'preview', userId: user.id, entityId, at: { gt: since } } })) return;
+    await audit({ user, action: 'preview', entity, entityId, summary, ip });
   })().catch(() => undefined);
 }
 
