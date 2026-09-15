@@ -34,8 +34,18 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   cannot be typed in the customer view. A Sales Executive sees the price but not the markup
   behind it, and cannot change or erase the worksheet by saving the quote.
 
-Still to come: pasting or uploading the vendor's quote (part 2) and the Excel exports
-(part 3).
+### Added — the worksheet as Excel (part 3 of 3)
+
+- **Download the worksheet once the quote is approved**, from the Worksheet view. Two files:
+  - **Excel**: the approved figures, for the record. For any role that sees cost.
+  - **With formulas**: the sell prices are live formulas over the vendor price, rate and
+    markup, so changing a markup or a rate reprices the sheet. Only for roles that approve
+    quotes. The formulas are Zeus's own arithmetic, so an untouched file shows exactly the
+    approved figures.
+- Both files say at the top that they contain buy prices and are not for customers or vendors.
+  Every download is recorded in the audit log.
+
+Still to come: reading the vendor's quote in by paste or upload (part 2).
 
 **After the deploy:** nothing. The migration only adds columns; existing quotes are unchanged.
 

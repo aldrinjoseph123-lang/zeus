@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import type { TableColumn } from './pdf.js';
+import { round2 } from '../lib/money.js';
 
 /**
  * Excel forbids * ? : \ / [ ] in a worksheet name, caps it at 31 chars, and rejects
@@ -252,4 +253,172 @@ export function parseCsv(text: string): { headers: string[]; rows: Array<Record<
     .map((r) => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? '').trim()])));
 
   return { headers, rows };
+}
+
+export interface WorksheetQuote {
+  number: string;
+  version: number;
+  status: string;
+  approvalStatus: string;
+  account: { name: string };
+  preparedBy: { name: string } | null;
+  defaultMarkupPct: unknown;
+  discountPct: unknown;
+  vatRate: unknown;
+  subtotal: unknown;
+  discountAmt: unknown;
+  vatAmount: unknown;
+  total: unknown;
+  totalCost: unknown;
+  marginAmount: unknown;
+  lines: Array<{
+    description: string; quantity: unknown; unitPrice: unknown; unitCost: unknown; discountPct: unknown;
+    lineTotal: unknown; lineCost: unknown; taxable: boolean;
+    vendor: { name: string } | null; vendorCode: string | null; vendorCurrency: string;
+    vendorUnitCost: unknown; fxRate: unknown; markupPct: unknown; isInternal: boolean;
+  }>;
+}
+
+/**
+ * The quote worksheet as a spreadsheet — the working a manager signed off, in the tool the
+ * team used to do it in.
+ *
+ * Two versions from one layout. `formulas: false` is the record: every figure is the one Zeus
+ * stored. `formulas: true` makes the sell cells real formulas over the cost cells, so a
+ * manager can change a markup or a rate and watch it move. Those formulas are Zeus's own
+ * arithmetic, cell for cell — marked up from the unrounded cost, rounded once, VAT per line
+ * on the discounted base — so an untouched file recalculates to exactly the stored figures.
+ * Each formula also carries its stored result, which is what Excel shows before it
+ * recalculates and what a viewer that never recalculates shows forever.
+ *
+ * Neither version is for a customer or a vendor: both carry buy prices.
+ */
+export async function quoteWorksheetXlsx(quote: WorksheetQuote, opts: { formulas: boolean }): Promise<Buffer> {
+  const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Zeus CRM';
+  wb.created = new Date();
+  // A cached result of zero does not survive the file, so have Excel work every formula out
+  // as it opens rather than show a blank where a 0.00 discount should be.
+  if (opts.formulas) wb.calcProperties.fullCalcOnLoad = true;
+  const ws = wb.addWorksheet(sheetName(`${quote.number} worksheet`), { views: [{ state: 'frozen', ySplit: 6 }] });
+
+  const black = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0A0A0A' } } as const;
+  const COLUMNS = [
+    ['Vendor', 22], ['Code', 14], ['Description', 34], ['Qty', 7], ['Vendor price', 13], ['Cur', 6], ['Rate', 9],
+    ['Unit cost AED', 13], ['Markup', 9], ['Unit sell AED', 13], ['Line total AED', 14], ['Line cost AED', 14], ['Margin', 9], ['VAT AED', 11],
+  ] as const;
+  COLUMNS.forEach(([, width], i) => { ws.getColumn(i + 1).width = width; });
+
+  // Row 1–2: what this is, and who must not receive it.
+  ws.mergeCells(1, 1, 1, COLUMNS.length);
+  Object.assign(ws.getCell('A1'), {
+    value: `${quote.number}${quote.version > 1 ? ` v${quote.version}` : ''} · WORKSHEET${opts.formulas ? ' · WITH FORMULAS' : ''}`,
+    font: { bold: true, size: 13, color: { argb: 'FFFFFFFF' } }, fill: black, alignment: { vertical: 'middle' },
+  });
+  ws.getRow(1).height = 26;
+  ws.mergeCells(2, 1, 2, COLUMNS.length);
+  Object.assign(ws.getCell('A2'), {
+    value: 'Internal — contains buy prices and markup. Not for customers or vendors.',
+    font: { bold: true, size: 9, color: { argb: 'FFC8121F' } },
+  });
+
+  // Row 3–4: the quote-level inputs. The formulas point at E4, G4 and I4, so changing one
+  // there reprices every line that depends on it.
+  const inputs: Array<[string, string, ExcelJS.CellValue, string?]> = [
+    ['A', 'Customer', quote.account.name],
+    ['C', 'Prepared by', quote.preparedBy?.name ?? '—'],
+    ['E', 'Default markup', quote.defaultMarkupPct === null ? null : Number(quote.defaultMarkupPct) / 100, '0.0%'],
+    ['G', 'Discount', Number(quote.discountPct) / 100, '0.0%'],
+    ['I', 'VAT', Number(quote.vatRate) / 100, '0.0%'],
+    ['K', 'Status', `${quote.status} · approval ${quote.approvalStatus.replace('_', ' ').toLowerCase()}`],
+  ];
+  for (const [col, label, value, fmt] of inputs) {
+    Object.assign(ws.getCell(`${col}3`), { value: label.toUpperCase(), font: { size: 8, bold: true, color: { argb: 'FF6B6B6B' } } });
+    const cell = ws.getCell(`${col}4`);
+    cell.value = value;
+    cell.font = { size: 11, bold: true };
+    if (fmt) cell.numFmt = fmt;
+  }
+
+  const header = ws.getRow(6);
+  COLUMNS.forEach(([label], i) => {
+    Object.assign(header.getCell(i + 1), {
+      value: label, fill: black, font: { bold: true, size: 9, color: { argb: 'FFFFFFFF' } },
+      alignment: { horizontal: i >= 3 && i !== 5 ? 'right' : 'left', vertical: 'middle' },
+      border: { bottom: { style: 'medium', color: { argb: 'FFE11D2E' } } },
+    });
+  });
+  header.height = 20;
+
+  const first = 7;
+  const last = first + quote.lines.length - 1;
+  const put = (ref: string, formula: string | null, result: number | string | null, numFmt?: string) => {
+    const cell = ws.getCell(ref);
+    cell.value = opts.formulas && formula ? { formula, result: result ?? undefined } as ExcelJS.CellValue : result;
+    if (numFmt) cell.numFmt = numFmt;
+  };
+
+  quote.lines.forEach((line, index) => {
+    const r = first + index;
+    const worksheet = line.vendorUnitCost !== null && line.vendorUnitCost !== undefined;
+    const ownMarkup = n(line.markupPct);
+    const effectiveMarkup = ownMarkup ?? n(quote.defaultMarkupPct);
+    const priced = worksheet && effectiveMarkup !== null;
+    const disc = Number(line.discountPct);
+    const lineTotal = Number(line.lineTotal);
+    const lineCost = Number(line.lineCost);
+    const vatRate = line.taxable ? Number(quote.vatRate) : 0;
+    const lineVat = round2(round2(lineTotal * (1 - Number(quote.discountPct) / 100)) * (vatRate / 100));
+
+    ws.getCell(`A${r}`).value = line.isInternal ? 'Internal' : line.vendor?.name ?? '';
+    ws.getCell(`B${r}`).value = line.vendorCode ?? '';
+    ws.getCell(`C${r}`).value = line.description;
+    put(`D${r}`, null, Number(line.quantity), '#,##0.##');
+    put(`E${r}`, null, worksheet ? Number(line.vendorUnitCost) : null, '#,##0.00##');
+    ws.getCell(`F${r}`).value = worksheet ? line.vendorCurrency : '';
+    put(`G${r}`, null, worksheet ? Number(line.fxRate) : null, '0.0000##');
+    put(`H${r}`, worksheet ? `ROUND(E${r}*G${r},2)` : null, Number(line.unitCost), '#,##0.00');
+    // A line on the default points at E4 rather than holding a copy of it.
+    put(`I${r}`, worksheet && ownMarkup === null && effectiveMarkup !== null ? '$E$4' : null, effectiveMarkup === null || !worksheet ? null : effectiveMarkup / 100, '0.0%');
+    put(`J${r}`, priced ? `ROUND(E${r}*G${r}*(1+I${r}),2)` : null, Number(line.unitPrice), '#,##0.00');
+    put(`K${r}`, disc > 0 ? `ROUND(ROUND(D${r}*J${r},2)-ROUND(ROUND(D${r}*J${r},2)*${disc / 100},2),2)` : `ROUND(D${r}*J${r},2)`, lineTotal, '#,##0.00');
+    put(`L${r}`, `ROUND(D${r}*H${r},2)`, lineCost, '#,##0.00');
+    put(`M${r}`, `IF(K${r}=0,"",(K${r}-L${r})/K${r})`, lineTotal === 0 ? '' : (lineTotal - lineCost) / lineTotal, '0.0%');
+    put(`N${r}`, `ROUND(ROUND(K${r}*(1-$G$4),2)*${vatRate / 100},2)`, lineVat, '#,##0.00');
+    if (index % 2 === 1) for (let c = 1; c <= COLUMNS.length; c++) ws.getRow(r).getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6F6F4' } };
+  });
+
+  // Totals, then the quote's own summary in the customer's terms.
+  const t = last + 1;
+  const sell = Number(quote.subtotal);
+  const cost = Number(quote.totalCost);
+  const net = sell - Number(quote.discountAmt);
+  ws.getCell(`A${t}`).value = 'TOTAL';
+  const empty = quote.lines.length === 0;
+  put(`I${t}`, empty ? null : `IF(L${t}=0,"",(K${t}-L${t})/L${t})`, cost === 0 ? '' : (sell - cost) / cost, '0.0%');
+  // Rounded as Zeus rounds while it adds; a bare SUM of money drifts a fraction of a fil.
+  put(`K${t}`, empty ? null : `ROUND(SUM(K${first}:K${last}),2)`, sell, '#,##0.00');
+  put(`L${t}`, empty ? null : `ROUND(SUM(L${first}:L${last}),2)`, cost, '#,##0.00');
+  put(`M${t}`, empty ? null : `IF(K${t}=0,"",(K${t}-L${t})/K${t})`, sell === 0 ? '' : (sell - cost) / sell, '0.0%');
+  put(`N${t}`, empty ? null : `ROUND(SUM(N${first}:N${last}),2)`, Number(quote.vatAmount), '#,##0.00');
+  ws.getRow(t).font = { bold: true };
+  ws.getRow(t).border = { top: { style: 'thin', color: { argb: 'FF0A0A0A' } } };
+
+  const summary: Array<[string, string, number, string]> = [
+    ['Subtotal', `K${t}`, sell, '#,##0.00'],
+    ['Discount', `ROUND(K${t}*$G$4,2)`, Number(quote.discountAmt), '#,##0.00'],
+    ['Net', `ROUND(K${t + 2}-K${t + 3},2)`, net, '#,##0.00'],
+    ['VAT', `N${t}`, Number(quote.vatAmount), '#,##0.00'],
+    ['Total', `ROUND(K${t + 4}+K${t + 5},2)`, Number(quote.total), '#,##0.00'],
+    ['Margin', `ROUND(K${t + 4}-L${t},2)`, Number(quote.marginAmount), '#,##0.00'],
+  ];
+  summary.forEach(([label, formula, value, fmt], i) => {
+    const r = t + 2 + i;
+    Object.assign(ws.getCell(`J${r}`), { value: label, font: { bold: label === 'Total' }, alignment: { horizontal: 'right' } });
+    put(`K${r}`, formula, value, fmt);
+    if (label === 'Total') ws.getCell(`K${r}`).font = { bold: true };
+  });
+
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }

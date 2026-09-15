@@ -352,6 +352,21 @@ export default function QuoteEditor() {
                       ))}
                     </span>
                   ) : null}
+                  {view === 'worksheet' && !isNew ? (
+                    <>
+                      {/* The saved quote, and only once it is approved — the server says so if not. */}
+                      <Button size="sm" icon={<FileDown size={13} />} title="The saved, approved worksheet as figures."
+                        onClick={() => download(`/quotes/${id}/worksheet.xlsx`, `${quote?.number}-worksheet.xlsx`).catch((err) => toast.push(err.message, 'error'))}>
+                        Excel
+                      </Button>
+                      {can('quotes', 'approve') ? (
+                        <Button size="sm" icon={<FileDown size={13} />} title="Live formulas over the cost cells. Internal: never send it to a customer or vendor."
+                          onClick={() => download(`/quotes/${id}/worksheet.xlsx?formulas=true`, `${quote?.number}-worksheet-formulas.xlsx`).catch((err) => toast.push(err.message, 'error'))}>
+                          With formulas
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : null}
                   {!locked && view === 'lines' ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setLines([...lines, blankLine()])}>Add line</Button> : null}
                 </span>
               }

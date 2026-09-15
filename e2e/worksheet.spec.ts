@@ -78,6 +78,20 @@ test.describe('quote worksheet', () => {
     await page.getByRole('button', { name: 'Customer view' }).click();
     await expect(page.locator('input[value="5738.28"]')).toBeDisabled();
 
-    expect(errors).toEqual([]);
+    // Excel: refused until a manager signs the quote off, then handed over.
+    await page.getByRole('button', { name: 'Worksheet' }).click();
+    await page.getByRole('button', { name: /^excel$/i }).click();
+    await expect(page.getByText(/has not been approved yet/)).toBeVisible();
+
+    expect((await request.post(`/api/approvals/quotes/${quote.id}/submit`, { data: {} })).status()).toBe(200);
+    expect((await request.post(`/api/approvals/quotes/${quote.id}/approve`, { data: {} })).status()).toBe(200);
+
+    const [file] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /with formulas/i }).click(),
+    ]);
+    expect(file.suggestedFilename()).toBe(`${quote.number}-worksheet-formulas.xlsx`);
+
+    expect(errors.filter((e) => !/status of 400/.test(e))).toEqual([]);
   });
 });

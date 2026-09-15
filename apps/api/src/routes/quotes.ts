@@ -2,14 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, auditRead, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requireDocument, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, listParams, notFound, orderBy, paged, patchOf, requireDocument, requirePermission } from '../lib/http.js';
 import { approvalRequired, blockedReason } from '../services/approvals.js';
-import { documentScope, maskFields, permissionFor } from '../auth/rbac.js';
+import { can, documentScope, maskFields, permissionFor } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
 import { formatAed, lineTotals } from '../lib/money.js';
 import { getSetting, vatRate } from '../lib/settings.js';
 import { recalcInvoice, recalcQuote, snapshotParties } from '../lib/commercial.js';
 import { quotePdf, type QuotePdfData } from '../services/pdf.js';
+import { quoteWorksheetXlsx } from '../services/xlsx.js';
 import { sendMail } from '../services/graph.js';
 import { notify, emailTemplate } from '../services/notify.js';
 import { touch } from '../lib/touch.js';
@@ -452,6 +453,39 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
       .header('content-type', 'application/pdf')
       .header('content-disposition', `attachment; filename="${quote.number}.pdf"`)
       .send(pdf);
+  });
+
+  /**
+   * The worksheet as Excel, once a manager has signed the quote off.
+   *
+   * The gate is the one on sending: if this quote needs approval, it must have it. What leaves
+   * Zeus as a spreadsheet is the working someone approved, not a draft. Only roles that see
+   * cost can have it at all. The version with live formulas goes to roles that approve quotes
+   * and nobody else, because it is the easiest thing in Zeus to forward to the wrong person.
+   */
+  app.get('/api/quotes/:id/worksheet.xlsx', { preHandler: requirePermission('quotes', 'read') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'read');
+    if ((permissionFor(request.user, 'quotes').fields ?? {}).unitCost === 'hidden') {
+      throw forbidden('The worksheet shows buy prices, which your role cannot see.');
+    }
+    const formulas = (request.query as { formulas?: string }).formulas === 'true';
+    if (formulas && !can(request.user, 'quotes', 'approve')) {
+      throw forbidden('The worksheet with formulas is for roles that approve quotes.');
+    }
+
+    const quote = await prisma.quote.findUniqueOrThrow({ where: { id }, include: quoteInclude });
+    const requirement = await approvalRequired('quotes', { total: quote.total });
+    if (requirement.required && quote.approvalStatus !== 'APPROVED') {
+      throw badRequest(`${quote.number} has not been approved yet. The worksheet can be downloaded once a manager has signed it off.`);
+    }
+
+    const file = await quoteWorksheetXlsx(quote, { formulas });
+    await audit({ user: request.user, action: 'export', entity: 'Quote', entityId: id, summary: `${quote.number} worksheet${formulas ? ' with formulas' : ''}`, ip: clientIp(request) });
+    return reply
+      .header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('content-disposition', `attachment; filename="${quote.number}-worksheet${formulas ? '-formulas' : ''}.xlsx"`)
+      .send(file);
   });
 
   /** Email the quote PDF from the shared mailbox and mark it sent. */
