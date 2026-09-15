@@ -98,6 +98,8 @@ export async function tableXlsx(opts: {
 export interface TemplateColumn {
   label: string;
   required?: boolean;
+  /** Group label, e.g. "Email or phone": a row with none of the group is flagged at import. */
+  expected?: string;
   type?: string;
   values?: string[];
   example?: string;
@@ -125,7 +127,7 @@ export async function templateXlsx(opts: { title: string; columns: TemplateColum
     cell.alignment = { vertical: 'middle' };
     cell.border = { bottom: { style: 'medium', color: { argb: 'FFE11D2E' } } };
     cell.note = [
-      col.required ? 'Required.' : 'Optional.',
+      col.required ? 'Required.' : col.expected ? `Expected: a row with no ${col.expected.toLowerCase()} is flagged at import.` : 'Optional.',
       col.values?.length ? `One of: ${col.values.join(', ')}.` : '',
       col.type === 'date' ? 'Date, ideally YYYY-MM-DD.' : '',
       col.type === 'number' ? 'Numbers only — no AED, no thousands separator.' : '',
@@ -162,7 +164,7 @@ export async function templateXlsx(opts: { title: string; columns: TemplateColum
   const guide = wb.addWorksheet('How to fill this in');
   guide.columns = [
     { header: 'Column', key: 'column', width: 22 },
-    { header: 'Required', key: 'required', width: 11 },
+    { header: 'Required', key: 'required', width: 24 },
     { header: 'Accepted values', key: 'values', width: 52 },
     { header: 'Example', key: 'example', width: 34 },
   ];
@@ -171,7 +173,7 @@ export async function templateXlsx(opts: { title: string; columns: TemplateColum
   for (const col of opts.columns) {
     guide.addRow({
       column: col.label,
-      required: col.required ? 'Yes' : 'No',
+      required: col.required ? 'Yes' : col.expected ? `Expected (${col.expected})` : 'No',
       values: col.values?.length
         ? col.values.join(' · ')
         : col.type === 'date' ? 'Date — YYYY-MM-DD'

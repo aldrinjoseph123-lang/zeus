@@ -14,7 +14,7 @@ import { formatAed } from '../lib/money.js';
 
 const leadSchema = z.object({
   firstName: z.string().min(1, 'First name is required.'),
-  lastName: z.string().min(1, 'Last name is required.'),
+  lastName: z.string().trim().default(''),
   company: z.string().min(1, 'Company is required.'),
   email: z.string().email().optional().nullable().or(z.literal('')),
   phone: z.string().optional().nullable(),
@@ -300,6 +300,7 @@ export default async function leadRoutes(app: FastifyInstance): Promise<void> {
         ? await prisma.account.findFirst({ where: { domain: lead.domain, deletedAt: null } })
         : null;
 
+    if (!account && !lead.company.trim()) throw badRequest('This lead has no company. Add one, or choose an existing account to convert into.');
     if (!account) {
       account = await prisma.account.create({
         data: {

@@ -9,7 +9,7 @@ import {
 import { AccountPicker, OwnerSelect } from '../components/pickers';
 import { useAuth } from '../lib/auth';
 
-interface FieldDef { key: string; label: string; required?: boolean; type?: string }
+interface FieldDef { key: string; label: string; required?: boolean; expected?: string; type?: string }
 interface ImportJobRow {
   id: string; module: string; filename: string; status: string; totalRows: number; imported: number; updated: number; skipped: number;
   createdAt: string; createdBy: { name: string } | null;
@@ -24,6 +24,8 @@ interface UploadResult {
 interface RunResult {
   dryRun: boolean; totalRows: number; wouldCreate: number; wouldUpdate: number; skipped: number;
   errors: Array<{ row: number; message: string }>;
+  /** Rows missing an expected detail: skipped unless importGaps was ticked. */
+  gaps: Array<{ row: number; message: string }>;
   preview: Array<{ row: number; action: string; label: string; note?: string }>;
 }
 
@@ -102,6 +104,7 @@ export default function Imports() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [onDuplicate, setOnDuplicate] = useState<'skip' | 'update' | 'create'>('skip');
   const [ownerId, setOwnerId] = useState('');
+  const [importGaps, setImportGaps] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -173,14 +176,14 @@ export default function Imports() {
       setChoices(Object.fromEntries(refs.filter((r) => r.status !== 'found').map((r) => [r.key, initialChoice(r)])));
       setResult(null);
       setError(null);
-      if (refs.every((r) => r.status === 'found')) run.mutate(true);
+      if (refs.every((r) => r.status === 'found')) run.mutate({ dryRun: true });
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Could not check the accounts.'),
   });
 
   const run = useMutation({
-    mutationFn: (dryRun: boolean) =>
-      api.post<RunResult>(`/imports/${upload!.jobId}/run`, { mapping, dryRun, onDuplicate, ownerId: ownerId || undefined, accounts: decisions }),
+    mutationFn: ({ dryRun, gaps = importGaps }: { dryRun: boolean; gaps?: boolean }) =>
+      api.post<RunResult>(`/imports/${upload!.jobId}/run`, { mapping, dryRun, onDuplicate, ownerId: ownerId || undefined, accounts: decisions, importGaps: gaps }),
     onSuccess: (res) => {
       setResult(res);
       setError(null);
@@ -202,6 +205,7 @@ export default function Imports() {
     setError(null);
     setReferences(null);
     setChoices({});
+    setImportGaps(false);
   };
 
   // A different column mapping can name different accounts; screen again rather than trust the old answers.
@@ -243,17 +247,20 @@ export default function Imports() {
             <div className="mb-4 border border-line bg-sunken px-3 py-2.5">
               <p className="text-[12px] text-n600">
                 Send this template to whoever is giving you the data. Its headers are the ones Zeus recognises, so a file
-                filled in from it maps itself — nothing to match up by hand. Required columns are marked in red.
+                filled in from it maps itself — nothing to match up by hand. Required columns are marked in red. Amber ones are
+                expected: a row without them is flagged, and you choose whether to import it.
               </p>
               {templateFields?.length ? (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {templateFields.map((field) => (
                     <span
                       key={field.key}
-                      title={field.required ? 'Required' : 'Optional'}
+                      title={field.required ? 'Required' : field.expected ? `Expected: a row with no ${field.expected.toLowerCase()} is flagged` : 'Optional'}
                       className={cx(
                         'border px-1.5 py-0.5 text-[11px]',
-                        field.required ? 'border-[var(--red-300)] bg-accent-soft font-semibold text-[var(--red-700)]' : 'border-line bg-card text-muted',
+                        field.required ? 'border-[var(--red-300)] bg-accent-soft font-semibold text-[var(--red-700)]'
+                          : field.expected ? 'border-[#e8c9a0] bg-[#fdf3e7] text-[#8a4d10]'
+                          : 'border-line bg-card text-muted',
                       )}
                     >
                       {field.label}
@@ -305,6 +312,7 @@ export default function Imports() {
                   <span className="text-[13px]">
                     {field.label}
                     {field.required ? <span className="text-accent-ink"> *</span> : null}
+                    {field.expected ? <span className="ml-1 text-[11px] text-[#8a4d10]" title={`A row with no ${field.expected.toLowerCase()} is flagged`}>expected</span> : null}
                   </span>
                   <Select
                     value={mapping[field.key] ?? ''}
@@ -340,8 +348,8 @@ export default function Imports() {
               <div className="flex gap-2">
                 <Button
                   size="sm" icon={<Play size={13} />} disabled={missingRequired.length > 0}
-                  loading={screen.isPending || (run.isPending && run.variables === true)}
-                  onClick={() => (SCREENED.has(upload.module) && references === null ? screen.mutate() : run.mutate(true))}
+                  loading={screen.isPending || (run.isPending && run.variables?.dryRun === true)}
+                  onClick={() => (SCREENED.has(upload.module) && references === null ? screen.mutate() : run.mutate({ dryRun: true }))}
                 >
                   Preview
                 </Button>
@@ -350,8 +358,8 @@ export default function Imports() {
                   variant="accent"
                   icon={<Upload size={13} />}
                   disabled={missingRequired.length > 0 || !result?.dryRun}
-                  loading={run.isPending && run.variables === false}
-                  onClick={() => run.mutate(false)}
+                  loading={run.isPending && run.variables?.dryRun === false}
+                  onClick={() => run.mutate({ dryRun: false })}
                 >
                   Import
                 </Button>
@@ -367,7 +375,7 @@ export default function Imports() {
               onAllNew={(type) => setChoices(Object.fromEntries(Object.entries(choices).map(([k, c]) => [k, { ...c, type }])))}
               settled={allSettled}
               loading={run.isPending}
-              onContinue={() => run.mutate(true)}
+              onContinue={() => run.mutate({ dryRun: true })}
             />
           ) : (
           <Card>
@@ -418,6 +426,25 @@ export default function Imports() {
                     <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto text-[11px] text-[var(--red-700)]">
                       {result.errors.slice(0, 20).map((issue) => (
                         <li key={issue.row}>Row {issue.row}: {issue.message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {result.gaps.length > 0 ? (
+                  <div className="border-b border-line bg-[#fdf3e7] px-4 py-2.5 text-[#8a4d10]">
+                    <label className="flex items-center gap-2 text-[12px] font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={importGaps}
+                        disabled={!result.dryRun || run.isPending}
+                        onChange={(e) => { setImportGaps(e.target.checked); run.mutate({ dryRun: true, gaps: e.target.checked }); }}
+                      />
+                      Import the {result.gaps.length} row{result.gaps.length === 1 ? '' : 's'} missing details, leaving them blank
+                    </label>
+                    <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto pl-6 text-[11px]">
+                      {result.gaps.slice(0, 20).map((gap) => (
+                        <li key={gap.row}>Row {gap.row}: {gap.message}</li>
                       ))}
                     </ul>
                   </div>

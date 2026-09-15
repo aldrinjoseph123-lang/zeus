@@ -50,8 +50,9 @@ async function upload(user: { cookie: string }, module: string, csv: string, fil
   return { status: res.statusCode, body: json as Record<string, never> };
 }
 
+// Most fixtures here are not about missing details, so they import rows with gaps; the gap tests say otherwise.
 const run = (user: { cookie: string }, jobId: string, payload: Record<string, unknown>) =>
-  request(app, user as never).post(`/api/imports/${jobId}/run`, payload);
+  request(app, user as never).post(`/api/imports/${jobId}/run`, { importGaps: true, ...payload });
 
 const ACCOUNTS_CSV = [
   'Name,Type,Domain,Industry',
@@ -510,5 +511,57 @@ describe('undoing an import', () => {
     assert.equal(await prisma.lead.count({ where: { deletedAt: null } }), 2);
     assert.equal(((await undo(uploaded.body.jobId)).body as { removed: number }).removed, 2);
     assert.equal(await prisma.lead.count({ where: { deletedAt: null } }), 0);
+  });
+});
+
+describe('rows missing an expected detail', () => {
+  type Result = { wouldCreate: number; skipped: number; errors: unknown[]; gaps: Array<{ row: number; message: string }>; preview: Array<{ row: number; action: string; note?: string }> };
+
+  it('are skipped and listed unless ticked, then import with the blanks left in', async () => {
+    const csv = ['First name,Last name,Company,Email,Phone', 'Anil,,StorTech,anil@stortech.ae,', 'Sonia,Mulani,,,', 'Shaji,,,,'].join('\n');
+    const uploaded = await upload(fx.admin, 'leads', csv);
+    const mapping = { firstName: 'First name', lastName: 'Last name', company: 'Company', email: 'Email', phone: 'Phone' };
+
+    const held = (await run(fx.admin, uploaded.body.jobId, { mapping, dryRun: true, importGaps: false })).body as unknown as Result;
+    assert.equal(held.wouldCreate, 1, 'a missing last name is not a gap');
+    assert.equal(held.skipped, 2);
+    assert.deepEqual(held.errors, [], 'gaps are not errors');
+    assert.deepEqual(held.gaps, [
+      { row: 3, message: 'Missing Company · Email or phone' },
+      { row: 4, message: 'Missing Company · Email or phone' },
+    ]);
+    assert.equal(held.preview.find((p) => p.row === 3)?.action, 'skip');
+
+    const res = await run(fx.admin, uploaded.body.jobId, { mapping, dryRun: false, importGaps: true });
+    const body = res.body as unknown as Result;
+    assert.equal(body.wouldCreate, 3);
+    assert.equal(body.gaps.length, 2, 'still listed, so the result says what came in thin');
+    const shaji = await prisma.lead.findFirstOrThrow({ where: { firstName: 'Shaji' } });
+    assert.equal(shaji.lastName, '');
+    assert.equal(shaji.company, '');
+  });
+
+  it('still never import a row without its name', async () => {
+    const uploaded = await upload(fx.admin, 'leads', ['First name,Company,Email', ',StorTech,anil@stortech.ae'].join('\n'));
+    const body = (await run(fx.admin, uploaded.body.jobId, { mapping: { firstName: 'First name', company: 'Company', email: 'Email' }, dryRun: false, importGaps: true })).body as unknown as Result;
+    assert.equal(body.wouldCreate, 0);
+    assert.equal(body.errors.length, 1);
+  });
+
+  it('count a value outside a closed list as missing: an account typed "Reseller" has no type', async () => {
+    const csv = ['Name,Type,Domain,Email', 'Northwind Trading LLC,Reseller,northwindtrading.ae,sales@northwindtrading.ae', 'Sandpiper Systems FZE,partner,sandpipersys.com,info@sandpipersys.com'].join('\n');
+    const uploaded = await upload(fx.admin, 'accounts', csv);
+    const body = (await run(fx.admin, uploaded.body.jobId, { mapping: { name: 'Name', type: 'Type', domain: 'Domain', email: 'Email' }, dryRun: true, importGaps: false })).body as unknown as Result;
+    assert.deepEqual(body.gaps, [{ row: 2, message: 'Missing Type' }], 'lower-case "partner" is a type');
+    assert.equal(body.wouldCreate, 1);
+  });
+
+  it('a lead with no company converts only into an account someone chooses', async () => {
+    const lead = await prisma.lead.create({ data: { firstName: 'Shaji', lastName: '', company: '', ownerId: fx.admin.id } });
+    const refused = await request(app, fx.admin).post(`/api/leads/${lead.id}/convert`, { createDeal: false });
+    assert.equal(refused.status, 400);
+    assert.match((refused.body as { error: string }).error, /no company/);
+    const converted = await request(app, fx.admin).post(`/api/leads/${lead.id}/convert`, { createDeal: false, accountId: fx.customer.id });
+    assert.equal(converted.status, 200, JSON.stringify(converted.body));
   });
 });

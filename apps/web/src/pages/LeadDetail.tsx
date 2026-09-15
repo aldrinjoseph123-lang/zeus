@@ -242,7 +242,7 @@ function EditLeadModal({ lead, onClose, onSaved }: { lead: LeadFull; onClose: ()
         {error ? <ErrorNote error={error} /> : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="First name" required><Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></Field>
-          <Field label="Last name" required><Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
+          <Field label="Last name"><Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
         </div>
         <Field label="Company" required><Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></Field>
         <div className="grid gap-3 sm:grid-cols-2">

@@ -181,7 +181,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const ready = form.firstName.trim() && form.lastName.trim() && form.company.trim();
+  const ready = form.firstName.trim() && form.company.trim();
 
   return (
     <Modal
@@ -214,7 +214,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
           <Field label="First name" required>
             <Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} autoFocus />
           </Field>
-          <Field label="Last name" required>
+          <Field label="Last name">
             <Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
           </Field>
         </div>

@@ -25,6 +25,11 @@ interface FieldDef {
   key: string;
   label: string;
   required?: boolean;
+  /**
+   * A detail a row normally has but can live without. Rows missing every field of a group (the
+   * label) are "gaps": skipped unless the person ticks to import them with the blanks left in.
+   */
+  expected?: string;
   /** Header names we recognise without being told. */
   aliases: string[];
   type?: 'number' | 'date' | 'boolean';
@@ -42,10 +47,10 @@ const SOURCES = ['Database', 'LinkedIn', 'Partner', 'Referral', 'Website', 'Even
 export const MODULE_FIELDS: Record<string, FieldDef[]> = {
   leads: [
     { key: 'firstName', label: 'First name', required: true, aliases: ['first name', 'firstname', 'given name', 'name'], example: 'Ahmed', example2: 'Priya' },
-    { key: 'lastName', label: 'Last name', required: true, aliases: ['last name', 'lastname', 'surname', 'family name'], example: 'Al Mansoori', example2: 'Nair' },
-    { key: 'company', label: 'Company', required: true, aliases: ['company', 'company name', 'organisation', 'organization', 'account'], example: 'Gulf Systems General Trading', example2: 'Al Noor Hospital Group' },
-    { key: 'email', label: 'Email', aliases: ['email', 'e-mail', 'email address', 'work email'], example: 'ahmed@gulfsystems.ae', example2: 'priya.nair@alnoorhealth.ae' },
-    { key: 'phone', label: 'Phone', aliases: ['phone', 'telephone', 'mobile', 'contact number'], example: '+971 50 123 4567', example2: '+971 2 555 8899' },
+    { key: 'lastName', label: 'Last name', aliases: ['last name', 'lastname', 'surname', 'family name'], example: 'Al Mansoori', example2: 'Nair' },
+    { key: 'company', label: 'Company', expected: 'Company', aliases: ['company', 'company name', 'organisation', 'organization', 'account'], example: 'Gulf Systems General Trading', example2: 'Al Noor Hospital Group' },
+    { key: 'email', label: 'Email', expected: 'Email or phone', aliases: ['email', 'e-mail', 'email address', 'work email'], example: 'ahmed@gulfsystems.ae', example2: 'priya.nair@alnoorhealth.ae' },
+    { key: 'phone', label: 'Phone', expected: 'Email or phone', aliases: ['phone', 'telephone', 'mobile', 'contact number'], example: '+971 50 123 4567', example2: '+971 2 555 8899' },
     { key: 'jobTitle', label: 'Job title', aliases: ['title', 'job title', 'designation', 'position'], example: 'IT Manager', example2: 'Head of Information Security' },
     { key: 'linkedinUrl', label: 'LinkedIn', aliases: ['linkedin', 'linkedin url', 'profile'], example: 'https://linkedin.com/in/ahmed-al-mansoori', example2: '' },
     { key: 'source', label: 'Source', aliases: ['source', 'lead source', 'origin'], values: SOURCES, example: 'LinkedIn', example2: 'Partner' },
@@ -58,11 +63,11 @@ export const MODULE_FIELDS: Record<string, FieldDef[]> = {
   ],
   accounts: [
     { key: 'name', label: 'Account name', required: true, aliases: ['name', 'account', 'company', 'company name', 'customer'], example: 'Emirates NBD Bank P.J.S.C.', example2: 'Falcon Technologies LLC' },
-    { key: 'type', label: 'Type', aliases: ['type', 'account type', 'category'], values: ['CUSTOMER', 'PARTNER', 'VENDOR', 'PROSPECT'], example: 'CUSTOMER', example2: 'PARTNER' },
-    { key: 'domain', label: 'Domain', aliases: ['domain', 'website', 'url', 'web'], example: 'emiratesnbd.com', example2: 'falcontech.ae' },
+    { key: 'type', label: 'Type', expected: 'Type', aliases: ['type', 'account type', 'category'], values: ['CUSTOMER', 'PARTNER', 'VENDOR', 'PROSPECT'], example: 'CUSTOMER', example2: 'PARTNER' },
+    { key: 'domain', label: 'Domain', expected: 'Domain', aliases: ['domain', 'website', 'url', 'web'], example: 'emiratesnbd.com', example2: 'falcontech.ae' },
     { key: 'industry', label: 'Industry', aliases: ['industry', 'sector', 'vertical'], example: 'Banking & Finance', example2: 'IT Reseller' },
-    { key: 'phone', label: 'Phone', aliases: ['phone', 'telephone', 'contact number'], example: '+971 4 316 0000', example2: '+971 4 887 1200' },
-    { key: 'email', label: 'Email', aliases: ['email', 'e-mail'], example: 'procurement@emiratesnbd.com', example2: 'sales@falcontech.ae' },
+    { key: 'phone', label: 'Phone', expected: 'Email or phone', aliases: ['phone', 'telephone', 'contact number'], example: '+971 4 316 0000', example2: '+971 4 887 1200' },
+    { key: 'email', label: 'Email', expected: 'Email or phone', aliases: ['email', 'e-mail'], example: 'procurement@emiratesnbd.com', example2: 'sales@falcontech.ae' },
     { key: 'trn', label: 'TRN', aliases: ['trn', 'tax number', 'vat number', 'tax registration number'], example: '100123456700003', example2: '100987654300003' },
     { key: 'addressLine1', label: 'Address', aliases: ['address', 'address line 1', 'street'], example: 'Baniyas Road, Deira', example2: 'Dubai Silicon Oasis, Building A' },
     { key: 'city', label: 'City', aliases: ['city', 'town'], example: 'Dubai', example2: 'Dubai' },
@@ -77,9 +82,9 @@ export const MODULE_FIELDS: Record<string, FieldDef[]> = {
     { key: 'lastName', label: 'Last name', aliases: ['last name', 'lastname', 'surname'], example: 'Al Hashimi', example2: 'Mathew' },
     // Required as a column; a blank cell is settled in screening rather than rejected.
     { key: 'accountName', label: 'Account name', required: true, aliases: ['company', 'account', 'company name', 'customer', 'organisation', 'account name'], example: 'Emirates NBD Bank P.J.S.C.', example2: 'Falcon Technologies LLC' },
-    { key: 'email', label: 'Email', aliases: ['email', 'e-mail', 'email address'], example: 'fatima.alhashimi@emiratesnbd.com', example2: 'john.mathew@falcontech.ae' },
-    { key: 'phone', label: 'Phone', aliases: ['phone', 'telephone', 'direct'], example: '+971 4 316 0142', example2: '+971 4 887 1215' },
-    { key: 'mobile', label: 'Mobile', aliases: ['mobile', 'cell', 'cellphone'], example: '+971 50 998 4411', example2: '+971 55 220 7788' },
+    { key: 'email', label: 'Email', expected: 'Email or phone', aliases: ['email', 'e-mail', 'email address'], example: 'fatima.alhashimi@emiratesnbd.com', example2: 'john.mathew@falcontech.ae' },
+    { key: 'phone', label: 'Phone', expected: 'Email or phone', aliases: ['phone', 'telephone', 'direct'], example: '+971 4 316 0142', example2: '+971 4 887 1215' },
+    { key: 'mobile', label: 'Mobile', expected: 'Email or phone', aliases: ['mobile', 'cell', 'cellphone'], example: '+971 50 998 4411', example2: '+971 55 220 7788' },
     { key: 'jobTitle', label: 'Job title', aliases: ['title', 'job title', 'designation'], example: 'CISO', example2: 'Account Manager' },
     { key: 'department', label: 'Department', aliases: ['department', 'function'], example: 'Information Security', example2: 'Sales' },
     { key: 'linkedinUrl', label: 'LinkedIn', aliases: ['linkedin', 'linkedin url'], example: 'https://linkedin.com/in/fatima-alhashimi', example2: '' },
@@ -407,10 +412,12 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
       defaults: z.record(z.string(), z.string()).optional(),
       /** What to do with each account screening raised, keyed by AccountReference.key. */
       accounts: z.record(z.string(), accountDecision).default({}),
+      /** Import rows missing an expected detail (see FieldDef.expected) instead of skipping them. */
+      importGaps: z.boolean().default(false),
     });
     const parsed = schema.safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
-    const { mapping, dryRun, onDuplicate, defaults, accounts: decisions } = parsed.data;
+    const { mapping, dryRun, onDuplicate, defaults, accounts: decisions, importGaps } = parsed.data;
 
     const job = await prisma.importJob.findUnique({ where: { id } });
     if (!job) throw notFound('Import job not found.');
@@ -424,6 +431,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
     const ownerId = parsed.data.ownerId ?? request.user.id;
 
     const errors: Array<{ row: number; message: string }> = [];
+    const gaps: Array<{ row: number; message: string }> = [];
     const preview: Array<{ row: number; action: string; label: string; note?: string }> = [];
     let imported = 0;
     let updated = 0;
@@ -503,20 +511,38 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
         continue;
       }
 
+      // A value outside a closed list ("Reseller" for Type) is as good as blank.
+      const given = (f: FieldDef) => {
+        const v = String(record[f.key] ?? '').trim().toLowerCase();
+        return v !== '' && (!f.values || f.values.some((allowed) => allowed.toLowerCase() === v));
+      };
+      const lacking = [...new Set(fields.flatMap((f) => (f.expected ? [f.expected] : [])))]
+        .filter((group) => !fields.some((f) => f.expected === group && given(f)));
+      if (lacking.length) {
+        const message = `Missing ${lacking.join(' · ')}`;
+        gaps.push({ row: rowNo, message });
+        if (!importGaps) {
+          skipped += 1;
+          preview.push({ row: rowNo, action: 'skip', label: String(record.firstName ?? record.name ?? ''), note: message });
+          continue;
+        }
+      }
+
       try {
         if (job.module === 'leads') {
           const domain = extractDomain(record.email as string);
           const dupes = await checkDuplicates({ module: 'leads', company: record.company as string, email: record.email as string, domain });
           if (dupes.hasDuplicates && onDuplicate === 'skip') {
             skipped += 1;
-            preview.push({ row: rowNo, action: 'skip', label: String(record.company), note: dupes.matches[0]?.reason });
+            preview.push({ row: rowNo, action: 'skip', label: String(record.company || record.firstName), note: dupes.matches[0]?.reason });
             continue;
           }
-          preview.push({ row: rowNo, action: dupes.hasDuplicates ? 'create (duplicate)' : 'create', label: `${record.firstName} ${record.lastName} — ${record.company}` });
+          const label = [[record.firstName, record.lastName].filter(Boolean).join(' '), record.company].filter(Boolean).join(' — ');
+          preview.push({ row: rowNo, action: dupes.hasDuplicates ? 'create (duplicate)' : 'create', label });
           if (!dryRun) {
             const lead = await prisma.lead.create({
               data: {
-                firstName: String(record.firstName), lastName: String(record.lastName), company: String(record.company),
+                firstName: String(record.firstName), lastName: (record.lastName as string) || '', company: (record.company as string) || '',
                 email: (record.email as string) || null, phone: (record.phone as string) || null,
                 jobTitle: (record.jobTitle as string) || null, linkedinUrl: (record.linkedinUrl as string) || null,
                 source: (record.source as string) || 'Database',
@@ -530,7 +556,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
                 domain, ownerId, lastActivityAt: new Date(),
               },
             });
-            ledger.created.push({ model: 'lead', id: lead.id, label: `${record.firstName} ${record.lastName} — ${record.company}` });
+            ledger.created.push({ model: 'lead', id: lead.id, label });
           }
           imported += 1;
         }
@@ -807,6 +833,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
       wouldUpdate: updated,
       skipped,
       errors: errors.slice(0, 200),
+      gaps: gaps.slice(0, 200),
       preview: preview.slice(0, 100),
     };
   });

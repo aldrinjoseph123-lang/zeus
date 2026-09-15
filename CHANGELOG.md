@@ -116,7 +116,15 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   not run until every one has an answer.
 - **A contact is never imported without an account.** A row with no account name is settled in
   the same step; if its email has a company domain, a name is suggested from it.
-- **A contact's last name is optional**, in imports and on the contact form.
+- **A contact's last name is optional**, in imports and on the contact form. So is a lead's.
+- **Only a record's name is required; other details can be missing.** Contacts need a first name
+  and an account; leads need a first name; accounts need a name; deals need a name and a
+  customer. Some details are *expected* and are marked amber in the template and the column
+  list: email or phone for contacts, leads and accounts, company for leads, and type and domain
+  for accounts. The preview lists every row missing one. A single tick box, *Import the rows
+  missing details, leaving them blank*, decides whether those rows are imported or skipped. A
+  Type that isn't one of Zeus's types counts as missing. A lead with no company can be
+  converted only into an account you choose.
 - **A contact always has an account**, however it is made: imported, converted from a lead, or
   added by hand. The contact form requires one, and an edit cannot remove it. Contacts already
   without an account are untouched until someone edits their account.
