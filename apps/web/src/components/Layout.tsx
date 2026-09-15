@@ -6,6 +6,7 @@ import {
   Receipt, ScrollText, Settings as SettingsIcon, ShieldCheck, Target, Upload, UserRound, Users, Moon, Sun, Presentation, Handshake,} from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { HoverLayer, preview } from './hover';
 import { relative } from '../lib/format';
 import { Avatar, Badge, Button, cx, Spinner, useDebounced } from './ui';
 import { useRecentUndo } from '../lib/undo';
@@ -406,6 +407,7 @@ export default function Layout() {
         <main className="min-w-0 flex-1 overflow-y-auto bg-sunken p-4 sm:p-6">
           <Outlet />
         </main>
+        <HoverLayer />
       </div>
     </div>
   );
@@ -484,10 +486,10 @@ function GlobalSearch() {
 
   const groups = [
     { label: 'Navigate', rows: navRows },
-    { label: 'Deals', rows: (data?.deals ?? []).map((d) => ({ id: d.id, primary: `${d.reference} · ${d.name}`, secondary: d.account.name, path: `/deals/${d.id}` })) },
-    { label: 'Accounts', rows: (data?.accounts ?? []).map((a) => ({ id: a.id, primary: a.name, secondary: a.type, path: `/accounts/${a.id}` })) },
-    { label: 'Leads', rows: (data?.leads ?? []).map((l) => ({ id: l.id, primary: `${l.firstName} ${l.lastName}`, secondary: l.company, path: `/leads/${l.id}` })) },
-    { label: 'Contacts', rows: (data?.contacts ?? []).map((c) => ({ id: c.id, primary: `${c.firstName} ${c.lastName}`, secondary: c.account?.name ?? '—', path: `/contacts?search=${encodeURIComponent(c.firstName)}` })) },
+    { label: 'Deals', rows: (data?.deals ?? []).map((d) => ({ id: d.id, primary: `${d.reference} · ${d.name}`, secondary: d.account.name, path: `/deals/${d.id}`, card: preview('deal', d.id) })) },
+    { label: 'Accounts', rows: (data?.accounts ?? []).map((a) => ({ id: a.id, primary: a.name, secondary: a.type, path: `/accounts/${a.id}`, card: preview('account', a.id) })) },
+    { label: 'Leads', rows: (data?.leads ?? []).map((l) => ({ id: l.id, primary: `${l.firstName} ${l.lastName}`, secondary: l.company, path: `/leads/${l.id}`, card: preview('lead', l.id) })) },
+    { label: 'Contacts', rows: (data?.contacts ?? []).map((c) => ({ id: c.id, primary: `${c.firstName} ${c.lastName}`, secondary: c.account?.name ?? '—', path: `/contacts?search=${encodeURIComponent(c.firstName)}`, card: preview('contact', c.id) })) },
   ].filter((group) => group.rows.length > 0);
 
   return (
@@ -515,7 +517,7 @@ function GlobalSearch() {
                 <p className="eyebrow border-b border-line bg-sunken px-3 py-1.5">{group.label}</p>
                 {group.rows.map((row) => (
                   <button key={row.id} onClick={() => go(row.path)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-accent-soft">
-                    <span className="truncate text-[13px]">{row.primary}</span>
+                    <span className="truncate text-[13px]" {...(('card' in row ? row.card : {}) as object)}>{row.primary}</span>
                     <span className="shrink-0 text-[11px] text-muted">{row.secondary}</span>
                   </button>
                 ))}

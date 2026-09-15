@@ -4,7 +4,7 @@ import { CalendarDays, CheckCircle2, Circle, Mail, PhoneCall, StickyNote, Users 
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { dateTime, relative } from '../lib/format';
-import { Badge, Button, Field, Input, Select, Textarea, cx, useToast } from './ui';
+import { Badge, Button, Field, Input, Modal, Select, Textarea, cx, useToast } from './ui';
 
 export interface ActivityRecord {
   id: string;
@@ -32,10 +32,12 @@ export interface TimelineLinks {
 /** A subject is a headline. Anything longer belongs in the detail. */
 const SUBJECT_LIMIT = 120;
 
-export function ActivityPanel({ activities, links, invalidate }: {
+export function ActivityPanel({ activities, links, invalidate, history = true }: {
   activities: ActivityRecord[];
   links: TimelineLinks;
   invalidate: () => void;
+  /** Off for the quick "log activity" from a list, which has no history to show. */
+  history?: boolean;
 }) {
   const { can } = useAuth();
   const toast = useToast();
@@ -147,7 +149,7 @@ export function ActivityPanel({ activities, links, invalidate }: {
         </div>
       ) : null}
 
-      <ol className="max-h-[520px] overflow-y-auto">
+      {history ? <ol className="max-h-[520px] overflow-y-auto">
         {activities.length === 0 ? (
           <li className="px-4 py-10 text-center text-xs text-muted">Nothing logged yet.</li>
         ) : (
@@ -194,7 +196,16 @@ export function ActivityPanel({ activities, links, invalidate }: {
             );
           })
         )}
-      </ol>
+      </ol> : null}
     </div>
+  );
+}
+
+/** Log a call, note or meeting against a record without opening it: the row action on lists. */
+export function LogActivityModal({ title, links, onClose }: { title: string; links: TimelineLinks; onClose: () => void }) {
+  return (
+    <Modal open onClose={onClose} title="Log activity" subtitle={title} width="md">
+      <ActivityPanel activities={[]} links={links} invalidate={onClose} history={false} />
+    </Modal>
   );
 }

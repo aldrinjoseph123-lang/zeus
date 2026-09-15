@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, relative } from '../lib/format';
 import { Badge, Button, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal, Textarea, useToast } from './ui';
+import { preview } from './hover';
 import { AccountPicker } from './pickers';
 
 /**
@@ -259,7 +260,7 @@ export function EngagementTab({ accountId }: { accountId: string }) {
                   <span className="block font-semibold">{row.subject}</span>
                   {row.contact ? (
                     <span className="block text-[11px] text-muted">
-                      with {row.contact.firstName} {row.contact.lastName}
+                      with <span {...preview('contact', row.contact.id)}>{row.contact.firstName} {row.contact.lastName}</span>
                     </span>
                   ) : null}
                   {row.description ? (

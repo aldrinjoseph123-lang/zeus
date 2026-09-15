@@ -8,6 +8,8 @@ import { date, money, relative } from '../lib/format';
 import {
   Badge, Button, Card, CardHeader, ConfirmDialog, DataTable, DefinitionList, EmptyState, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, StatTile, Tabs, Textarea, useToast,
 } from '../components/ui';
+import { QuickActions } from '../components/quickActions';
+import { preview } from '../components/hover';
 import { AccountPicker, ListSelect, OwnerSelect } from '../components/pickers';
 import { ActivityPanel, type ActivityRecord } from '../components/timeline';
 import { AttachmentPanel } from '../components/attachments';
@@ -169,7 +171,7 @@ export default function AccountDetail() {
                   rowKey={(row) => row.id}
                   onRowClick={(row) => navigate(`/deals/${row.id}`)}
                   columns={[
-                    { key: 'name', header: 'Deal', render: (row) => <span><span className="block font-semibold">{row.name}</span><span className="block text-[11px] text-muted">{row.reference}</span></span> },
+                    { key: 'name', header: 'Deal', render: (row) => <span><span className="block font-semibold" {...preview('deal', row.id)}>{row.name}</span><span className="block text-[11px] text-muted">{row.reference}</span></span> },
                     { key: 'stage', header: 'Stage', width: '120px', render: (row) => <span className="flex items-center gap-1.5"><span className="h-2 w-2" style={{ background: row.stage.color }} /><span className="text-[12px]">{row.stage.name}</span></span> },
                     { key: 'amount', header: 'Net', align: 'right', width: '106px', render: (row) => <span className="tabular font-semibold">{money(row.amount)}</span> },
                     { key: 'closeDate', header: 'Close', width: '100px', render: (row) => <span className="text-[12px] text-muted">{date(row.closeDate)}</span> },
@@ -190,13 +192,14 @@ export default function AccountDetail() {
                     dense
                     rows={account.contacts}
                     rowKey={(row) => row.id}
+                    rowActions={(row) => <QuickActions phone={row.phone} email={row.email} log={{ title: `${row.firstName} ${row.lastName}`.trim(), links: { contactId: row.id, accountId: account.id } }} />}
                     columns={[
                       {
                         key: 'name', header: 'Contact',
                         render: (row) => (
                           <span className="flex items-center gap-2">
                             <span>
-                              <span className="block font-semibold">{row.firstName} {row.lastName}</span>
+                              <span className="block font-semibold" {...preview('contact', row.id)}>{row.firstName} {row.lastName}</span>
                               <span className="block text-[11px] text-muted">{row.jobTitle ?? '—'}</span>
                             </span>
                             {row.isPrimary ? <Badge tone="dark">Primary</Badge> : null}

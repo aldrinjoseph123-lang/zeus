@@ -98,6 +98,7 @@ export function FunnelChart({ data, onStageClick }: {
         <button
           key={stage.name}
           onClick={onStageClick ? () => onStageClick(stage.name) : undefined}
+          title={`${stage.name}: ${stage.count} deal${stage.count === 1 ? '' : 's'} worth ${money(stage.value)}, ${money((stage.value * stage.probability) / 100)} weighted at ${stage.probability}%`}
           className="group w-full text-left"
           disabled={!onStageClick}
         >

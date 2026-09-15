@@ -9,6 +9,7 @@ import {
   Badge, Button, Card, DataTable, EmptyState, Loading, PageHeader, Pagination, SearchInput,
   Select, useDebounced, useToast,
 } from '../components/ui';
+import { preview } from '../components/hover';
 import { Toolbar } from '../components/pickers';
 import { LifecycleMini, quoteTrack } from '../components/lifecycle';
 
@@ -95,8 +96,8 @@ export default function Quotes() {
                     </span>
                   ),
                 },
-                { key: 'account', header: 'Customer', render: (row) => <span className="font-semibold">{row.account.name}</span> },
-                { key: 'deal', header: 'Deal', width: '110px', render: (row) => row.deal ? <span className="text-[12px] text-muted">{row.deal.reference}</span> : <span className="text-muted">—</span> },
+                { key: 'account', header: 'Customer', render: (row) => <span className="font-semibold" {...preview('account', row.account.id)}>{row.account.name}</span> },
+                { key: 'deal', header: 'Deal', width: '110px', render: (row) => row.deal ? <span className="text-[12px] text-muted" {...preview('deal', row.deal.id)}>{row.deal.reference}</span> : <span className="text-muted">—</span> },
                 { key: 'status', header: 'Status', width: '104px', render: (row) => <Badge tone={STATUS_TONE[row.status] ?? 'neutral'}>{row.status}</Badge> },
                 { key: 'track', header: 'Progress', width: '72px', render: (row) => <LifecycleMini track={quoteTrack(row.status)} /> },
                 { key: 'issueDate', header: 'Issued', width: '104px', render: (row) => <span className="text-[12px] text-muted">{date(row.issueDate)}</span> },

@@ -9,6 +9,8 @@ import {
   Badge, Button, Card, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Pagination, SearchInput, Select, Textarea, useDebounced, useToast,
 } from '../components/ui';
+import { QuickActions } from '../components/quickActions';
+import { preview } from '../components/hover';
 import { CustomFieldInputs, type CustomValues } from '../components/customFields';
 import { AccountPicker, DuplicateWarning, ListSelect, OwnerSelect, Toolbar, type DuplicateMatch } from '../components/pickers';
 import { LifecycleMini, leadTrack } from '../components/lifecycle';
@@ -100,6 +102,7 @@ export default function Leads() {
               rows={data?.data ?? []}
               rowKey={(row) => row.id}
               onRowClick={(row) => navigate(`/leads/${row.id}`)}
+              rowActions={(row) => <QuickActions phone={row.phone} email={row.email} log={{ title: `${row.firstName} ${row.lastName}`.trim(), links: { leadId: row.id } }} open={`/leads/${row.id}`} />}
               selection={can('leads', 'update') || can('leads', 'delete') ? { selected: bulk.selected, onToggle: bulk.toggle, onToggleAll: bulk.toggleAll } : undefined}
               empty={<EmptyState title="No leads yet" message="Add leads by hand, or bring a spreadsheet in through Import." />}
               columns={[
@@ -107,7 +110,7 @@ export default function Leads() {
                   key: 'name', header: 'Lead',
                   render: (row) => (
                     <span>
-                      <span className="block font-semibold">{row.firstName} {row.lastName}</span>
+                      <span className="block font-semibold" {...preview('lead', row.id)}>{row.firstName} {row.lastName}</span>
                       <span className="block text-[11px] text-muted">{row.company}{row.jobTitle ? ` · ${row.jobTitle}` : ''}</span>
                     </span>
                   ),

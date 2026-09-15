@@ -9,6 +9,7 @@ import {
   Button, Card, DataTable, EmptyState, Loading, PageHeader, Pagination, SearchInput,
   Select, StatTile, Tabs, cx, useDebounced, useToast,
 } from '../components/ui';
+import { preview } from '../components/hover';
 import { StatusPill } from '../components/payments';
 import { Toolbar } from '../components/pickers';
 import { LifecycleMini, poTrack } from '../components/lifecycle';
@@ -153,8 +154,8 @@ export default function PurchaseOrders() {
                   key: 'account', header: isSupplier ? 'Supplier' : 'Customer',
                   render: (row) => (
                     <span>
-                      <span className="block font-semibold">{row.account.name}</span>
-                      {row.deal ? <span className="block text-[11px] text-muted">{row.deal.reference}</span> : null}
+                      <span className="block font-semibold"><span {...preview('account', row.account.id)}>{row.account.name}</span></span>
+                      {row.deal ? <span className="block text-[11px] text-muted"><span {...preview('deal', row.deal.id)}>{row.deal.reference}</span></span> : null}
                     </span>
                   ),
                 },

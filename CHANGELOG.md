@@ -12,6 +12,24 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ---
 
+## Unreleased
+
+### Added — hover
+
+- **Hovering a record's name previews it.** After a short pause, a small card shows an account,
+  deal, contact or lead: its owner, stage and value, open deals, contact details and last
+  activity. It works wherever a record is named: the lists, the deals board, the dashboard,
+  search, and inside other records. The card shows only what the reader could see by opening
+  the record, and says so when their role cannot open it. On a touch screen a long press opens
+  the card and a tap still opens the record.
+- **Tooltips are Zeus's own.** Every hint that used the browser's slow grey tooltip now shows at
+  once in Zeus's style, and appears for keyboard focus too.
+- **Quick actions on list rows.** Hovering a row on Accounts, Contacts, Leads, Deals, or an
+  account's contacts shows Call, Email, Log activity and Open at its end. Log activity opens the
+  composer over the list. On a touch screen the actions are always shown.
+- **Figures behind the bars.** Hovering a progress bar gives its percentage, and hovering a
+  funnel stage gives its count, value and weighted value.
+
 ## v1.6.0 — 16 September 2026
 
 Quotes are priced from the vendor's own quote, imports check every account before they write and can be undone, and Settings saves through one bar.

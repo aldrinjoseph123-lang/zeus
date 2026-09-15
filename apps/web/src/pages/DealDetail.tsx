@@ -9,6 +9,7 @@ import {
   Badge, Button, Card, CardHeader, ConfirmDialog, DataTable, DefinitionList, EmptyState, ErrorNote,
   Field, Input, Loading, Modal, PageHeader, Select, Textarea, cx, useToast,
 } from '../components/ui';
+import { preview } from '../components/hover';
 import { AccountPicker, ContactPicker, ListSelect, OwnerSelect } from '../components/pickers';
 import { ActivityPanel, type ActivityRecord } from '../components/timeline';
 import { AttachmentPanel } from '../components/attachments';
@@ -195,7 +196,7 @@ export default function DealDetail() {
             ) : (
               <>
                 <p className="mt-1 text-[20px] font-bold leading-tight">{deal.partnerAccount ? 'Partner-sourced' : 'Direct'}</p>
-                <p className="mt-1 text-[11px] text-muted">{deal.partnerAccount?.name ?? deal.account.name}</p>
+                <p className="mt-1 text-[11px] text-muted"><span {...preview('account', deal.partnerAccount?.id ?? deal.account.id)}>{deal.partnerAccount?.name ?? deal.account.name}</span></p>
               </>
             )}
           </div>
@@ -275,7 +276,7 @@ export default function DealDetail() {
                       </span>
                     ) : <span className="text-muted">Direct deal</span>,
                   },
-                  { label: 'Primary contact', value: deal.primaryContact ? `${deal.primaryContact.firstName} ${deal.primaryContact.lastName}${deal.primaryContact.jobTitle ? ` · ${deal.primaryContact.jobTitle}` : ''}` : '—' },
+                  { label: 'Primary contact', value: deal.primaryContact ? <span {...preview('contact', deal.primaryContact.id)}>{`${deal.primaryContact.firstName} ${deal.primaryContact.lastName}${deal.primaryContact.jobTitle ? ` · ${deal.primaryContact.jobTitle}` : ''}`}</span> : '—' },
                   { label: 'Contact email', value: deal.primaryContact?.email ? <a href={`mailto:${deal.primaryContact.email}`} className="underline decoration-dotted underline-offset-2">{deal.primaryContact.email}</a> : '—' },
                   { label: 'Type', value: deal.type === 'SERVICE' ? 'Managed service' : deal.type === 'MIXED' ? 'Mixed' : 'Product reselling' },
                   { label: 'Source', value: deal.source },

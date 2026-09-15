@@ -9,6 +9,8 @@ import {
   Badge, Button, Card, ConfirmDialog, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Select, Textarea, useToast, cx, SearchInput, Pagination, useDebounced,
 } from '../components/ui';
+import { QuickActions } from '../components/quickActions';
+import { preview } from '../components/hover';
 import { CustomFieldInputs, type CustomValues } from '../components/customFields';
 import { SavedViews } from '../components/savedViews';
 import { AccountPicker, ContactPicker, DuplicateWarning, ListSelect, OwnerSelect, Toolbar, type DuplicateMatch } from '../components/pickers';
@@ -189,8 +191,8 @@ function DealBoard() {
                         <span className="text-[10px] uppercase tracking-[0.08em] text-muted">{deal.reference}</span>
                         {deal.partnerAccount ? <Badge tone="info">Partner</Badge> : null}
                       </div>
-                      <h4 className="mt-1 line-clamp-2 text-[13px] font-semibold leading-snug">{deal.name}</h4>
-                      <p className="mt-0.5 truncate text-[11px] text-muted">{deal.account.name}</p>
+                      <h4 className="mt-1 line-clamp-2 text-[13px] font-semibold leading-snug" {...preview('deal', deal.id)}>{deal.name}</h4>
+                      <p className="mt-0.5 truncate text-[11px] text-muted"><span {...preview('account', deal.account.id)}>{deal.account.name}</span></p>
 
                       <div className="tabular mt-2 flex items-baseline justify-between">
                         <span className="text-[14px] font-bold">{moneyShort(deal.amount)}</span>
@@ -390,6 +392,7 @@ function DealList() {
             rows={data?.data ?? []}
             rowKey={(row) => row.id}
             onRowClick={(row) => navigate(`/deals/${row.id}`)}
+            rowActions={(row: Deal) => <QuickActions log={{ title: row.name, links: { dealId: row.id, accountId: row.account.id } }} open={`/deals/${row.id}`} />}
             selection={can('deals', 'update') || can('deals', 'delete') ? { selected, onToggle: toggle, onToggleAll: toggleAll } : undefined}
             sortBy={sortBy}
             sortDir={sortDir}
@@ -401,10 +404,10 @@ function DealList() {
                 key: 'name', header: 'Deal', sortable: true,
                 render: (row) => (
                   <span>
-                    <span className="block font-semibold">{row.name}</span>
+                    <span className="block font-semibold" {...preview('deal', row.id)}>{row.name}</span>
                     <span className="block text-[11px] text-muted">
-                      {row.account.name}
-                      {row.partnerAccount ? <> · via {row.partnerAccount.name}</> : null}
+                      <span {...preview('account', row.account.id)}>{row.account.name}</span>
+                      {row.partnerAccount ? <> · via <span {...preview('account', row.partnerAccount.id)}>{row.partnerAccount.name}</span></> : null}
                     </span>
                   </span>
                 ),

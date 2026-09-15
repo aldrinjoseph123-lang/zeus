@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { money, date } from '../lib/format';
 import { Badge, Card, CardHeader, EmptyState, Loading, PageHeader, ProgressBar, cx } from '../components/ui';
+import { preview } from '../components/hover';
 import { OwnerSelect } from '../components/pickers';
 
 interface Coaching {
@@ -12,9 +13,9 @@ interface Coaching {
   quota: { period: string; target: number; won: number; wonCount: number; attainmentPct: number | null; weightedOpen: number; projectedPct: number | null };
   pipeline: Array<{ stage: { id: string; name: string; color: string }; count: number; net: number; weighted: number }>;
   openTotal: { count: number; net: number };
-  escalations: Array<{ reference: string; name: string; amount: number; stage: string; closeDate: string; reasons: string[] }>;
+  escalations: Array<{ id: string; reference: string; name: string; amount: number; stage: string; closeDate: string; reasons: string[] }>;
   activity: { done: number; open: number };
-  recentClosed: Array<{ reference: string; name: string; status: string; amount: number; lostReason: string | null; closedAt: string | null }>;
+  recentClosed: Array<{ id: string; reference: string; name: string; status: string; amount: number; lostReason: string | null; closedAt: string | null }>;
 }
 
 /** Rep-owned pipeline-review board for 1:1s — the rep drives it as the manager asks. */
@@ -97,7 +98,7 @@ export default function Coaching() {
                 {data.escalations.map((e) => (
                   <li key={e.reference} className="flex items-start gap-3 border-b border-line px-4 py-2.5 last:border-b-0 cursor-pointer hover:bg-accent-soft" onClick={() => navigate('/deals')}>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold">{e.name} <span className="text-[11px] font-normal text-muted">{e.reference} · {e.stage}</span></p>
+                      <p className="text-[13px] font-semibold"><span {...preview('deal', e.id)}>{e.name}</span> <span className="text-[11px] font-normal text-muted">{e.reference} · {e.stage}</span></p>
                       <div className="mt-1 flex flex-wrap gap-1">{e.reasons.map((r) => <Badge key={r} tone="watch">{r}</Badge>)}</div>
                     </div>
                     <div className="shrink-0 text-right">
@@ -128,7 +129,7 @@ export default function Coaching() {
                   {data.recentClosed.map((d) => (
                     <li key={d.reference} className="flex items-center gap-2 border-b border-line px-4 py-2 last:border-b-0 text-[12px]">
                       <Badge tone={d.status === 'WON' ? 'secure' : 'accent'}>{d.status}</Badge>
-                      <span className="min-w-0 flex-1 truncate">{d.name}{d.status === 'LOST' && d.lostReason ? <span className="text-muted"> · {d.lostReason}</span> : null}</span>
+                      <span className="min-w-0 flex-1 truncate"><span {...preview('deal', d.id)}>{d.name}</span>{d.status === 'LOST' && d.lostReason ? <span className="text-muted"> · {d.lostReason}</span> : null}</span>
                       <span className="tabular shrink-0 font-semibold">{money(d.amount)}</span>
                     </li>
                   ))}

@@ -31,6 +31,7 @@ import {
   Avatar, Badge, Button, Card, CardHeader, DataTable, EmptyState, Loading, PageHeader,
   ProgressBar, Select, StatTile, Tabs,
 } from '../components/ui';
+import { preview } from '../components/hover';
 
 interface Overview {
   period: { from: string; to: string; quarter: string };
@@ -507,7 +508,7 @@ export default function Dashboard() {
                 <Link key={i.id} to="/invoices" className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5 transition-colors hover:bg-sunken">
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-semibold">{i.number}</span>
-                    <span className="block text-[11px] text-muted">{i.account.name} · due {date(i.dueDate)}</span>
+                    <span className="block text-[11px] text-muted"><span {...preview('account', i.account.id)}>{i.account.name}</span> · due {date(i.dueDate)}</span>
                   </span>
                   <span className="tabular shrink-0 text-[13px] font-semibold">{money(i.total - i.amountPaid)}</span>
                 </Link>

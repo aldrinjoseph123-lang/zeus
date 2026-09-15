@@ -41,7 +41,7 @@ export default async function coachingRoutes(app: FastifyInstance): Promise<void
       prisma.target.findFirst({ where: { userId: null, year, quarter } }),
       prisma.deal.aggregate({ where: { deletedAt: null, status: 'WON', ownerId: userId, closedAt: { gte: start, lt: end } }, _sum: { amount: true }, _count: true }),
       prisma.activity.groupBy({ by: ['status'], where: { ownerId: userId, createdAt: { gte: new Date(Date.now() - 30 * 86_400_000) } }, _count: true }),
-      prisma.deal.findMany({ where: { deletedAt: null, status: { in: ['WON', 'LOST'] }, ownerId: userId }, orderBy: { closedAt: 'desc' }, take: 8, select: { reference: true, name: true, status: true, amount: true, lostReason: true, closedAt: true } }),
+      prisma.deal.findMany({ where: { deletedAt: null, status: { in: ['WON', 'LOST'] }, ownerId: userId }, orderBy: { closedAt: 'desc' }, take: 8, select: { id: true, reference: true, name: true, status: true, amount: true, lostReason: true, closedAt: true } }),
       getSetting<number>('coaching.highValueAmount', 50000),
       getSetting<number>('approvals.dealMinMarginPct', 0),
     ]);
@@ -78,7 +78,7 @@ export default async function coachingRoutes(app: FastifyInstance): Promise<void
       if (closePast) reasons.push('Close date passed');
       if (belowMargin) reasons.push(`Margin ${marginPct!.toFixed(1)}% below ${mm}%`);
       if (amount >= hv && (stuck || closePast)) reasons.push('High value & slipping');
-      return reasons.length ? [{ reference: d.reference, name: d.name, amount, stage: d.stage.name, closeDate: d.closeDate, reasons }] : [];
+      return reasons.length ? [{ id: d.id, reference: d.reference, name: d.name, amount, stage: d.stage.name, closeDate: d.closeDate, reasons }] : [];
     }).sort((a, b) => b.amount - a.amount);
 
     const quotaTarget = num((target ?? companyTarget)?.amount ?? 0);

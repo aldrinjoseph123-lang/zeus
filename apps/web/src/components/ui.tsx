@@ -285,10 +285,11 @@ export function Avatar({ name, color, size = 28 }: { name: string; color?: strin
   );
 }
 
-export function ProgressBar({ value, tone = 'accent', height = 6 }: { value: number; tone?: 'accent' | 'secure' | 'watch'; height?: number }) {
+export function ProgressBar({ value, tone = 'accent', height = 6, label }: { value: number; tone?: 'accent' | 'secure' | 'watch'; height?: number; label?: string }) {
   const color = { accent: 'var(--red-500)', secure: 'var(--status-secure)', watch: 'var(--status-watch)' }[tone];
+  // The bar is the picture; hovering it says the figure.
   return (
-    <div className="w-full bg-n100" style={{ height }}>
+    <div className="w-full bg-n100" style={{ height }} role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100} title={label ?? `${Math.round(value)}%`}>
       <div className="h-full transition-[width]" style={{ width: `${Math.min(100, Math.max(0, value))}%`, background: color, transitionDuration: 'var(--dur-slow)' }} />
     </div>
   );
@@ -455,7 +456,7 @@ export interface Column<T> {
 }
 
 export function DataTable<T>({
-  columns, rows, rowKey, onRowClick, sortBy, sortDir, onSort, empty, dense, selection,
+  columns, rows, rowKey, onRowClick, sortBy, sortDir, onSort, empty, dense, selection, rowActions,
 }: {
   columns: Array<Column<T>>;
   rows: T[];
@@ -468,6 +469,8 @@ export function DataTable<T>({
   dense?: boolean;
   /** Optional row selection — pass to get a leading checkbox column with select-all. */
   selection?: { selected: Set<string>; onToggle: (id: string) => void; onToggleAll: (ids: string[]) => void };
+  /** Buttons at the end of a row, shown when it is hovered or focused, and always on a touch screen. */
+  rowActions?: (row: T) => ReactNode;
 }) {
   if (rows.length === 0 && empty) return <>{empty}</>;
 
@@ -501,6 +504,7 @@ export function DataTable<T>({
                 {column.sortable && sortBy === column.key ? <span className="ml-1 text-accent-ink">{sortDir === 'asc' ? '↑' : '↓'}</span> : null}
               </th>
             ))}
+            {rowActions ? <th className="w-px"><span className="sr-only">Actions</span></th> : null}
           </tr>
         </thead>
         <tbody>
@@ -509,7 +513,7 @@ export function DataTable<T>({
               key={rowKey(row, index)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               className={cx(
-                'border-b border-line transition-colors',
+                'group border-b border-line transition-colors',
                 index % 2 === 1 && 'bg-sunken',
                 onRowClick && 'cursor-pointer hover:bg-accent-soft',
               )}
@@ -537,6 +541,13 @@ export function DataTable<T>({
                   {column.render(row)}
                 </td>
               ))}
+              {rowActions ? (
+                <td className="w-px whitespace-nowrap px-2 text-right" onClick={(e) => e.stopPropagation()}>
+                  <span className="inline-flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                    {rowActions(row)}
+                  </span>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

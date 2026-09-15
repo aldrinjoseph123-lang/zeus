@@ -8,6 +8,8 @@ import {
   Badge, Button, Card, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Pagination, SearchInput, Textarea, useDebounced, useToast,
 } from '../components/ui';
+import { QuickActions } from '../components/quickActions';
+import { preview } from '../components/hover';
 import { CustomFieldInputs, type CustomValues } from '../components/customFields';
 import { AccountPicker, DuplicateWarning, OwnerSelect, Toolbar, type DuplicateMatch } from '../components/pickers';
 import { BulkActionBar, useBulkSelection } from '../components/bulkActions';
@@ -68,6 +70,14 @@ export default function Contacts() {
               rows={data?.data ?? []}
               rowKey={(row) => row.id}
               onRowClick={(row) => row.account && navigate(`/accounts/${row.account.id}`)}
+              rowActions={(row) => (
+                <QuickActions
+                  phone={row.mobile ?? row.phone}
+                  email={row.email}
+                  log={{ title: `${row.firstName} ${row.lastName}`.trim(), links: { contactId: row.id, accountId: row.account?.id } }}
+                  open={row.account ? `/accounts/${row.account.id}` : null}
+                />
+              )}
               selection={can('contacts', 'update') || can('contacts', 'delete') ? { selected: bulk.selected, onToggle: bulk.toggle, onToggleAll: bulk.toggleAll } : undefined}
               empty={<EmptyState title="No contacts" message="Contacts arrive when you convert a lead, or add them to an account." />}
               columns={[
@@ -76,7 +86,7 @@ export default function Contacts() {
                   render: (row) => (
                     <span className="flex items-center gap-2">
                       <span>
-                        <span className="block font-semibold">{row.firstName} {row.lastName}</span>
+                        <span className="block font-semibold" {...preview('contact', row.id)}>{row.firstName} {row.lastName}</span>
                         <span className="block text-[11px] text-muted">{row.jobTitle ?? '—'}{row.department ? ` · ${row.department}` : ''}</span>
                       </span>
                       {row.isPrimary ? <Badge tone="dark">Primary</Badge> : null}
