@@ -92,6 +92,11 @@ test.describe('quote worksheet', () => {
     ]);
     expect(file.suggestedFilename()).toBe(`${quote.number}-worksheet-formulas.xlsx`);
 
+    // Re-pricing an approved quote voids the sign-off, and the bar says why.
+    await page.getByLabel('Default markup on cost, percent').fill('30');
+    await page.getByRole('button', { name: /^save$/i }).click();
+    await expect(page.getByText(/prices changed after it was approved/)).toBeVisible();
+
     expect(errors.filter((e) => !/status of 400/.test(e))).toEqual([]);
   });
 });

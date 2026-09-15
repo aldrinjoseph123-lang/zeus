@@ -14,6 +14,43 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Security — a Sales Executive could open every quote and invoice in the company
+
+- **Quotes and invoices now follow the role's scope.** The routes never checked it, so a rep
+  scoped to their team listed, opened, printed and could edit any quote or invoice. Neither
+  has an owner column. The rule chosen: a document belongs to **the owner of its deal, and
+  whoever made it**. A rep opens every quote on their own deal, including one a manager
+  prepared, and keeps the ones they prepared on someone else's. A document with neither
+  stays reachable.
+- The same rule now covers invoice ageing, the dashboard's overdue invoices, an account's
+  quote and invoice lists, submitting for approval, and both reports.
+- **Behaviour change:** a rep whose role edits "own" records can read a teammate's quote but
+  no longer edit it. Opening a document out of reach shows "unavailable" instead of an empty
+  form.
+
+### Security — cost reached roles that are not meant to see it
+
+- **A Sales Executive or Read Only user could read buy prices.** Masking hid a field only
+  on its own module's screens, but records travel between modules: a deal arrives with its
+  quotes, an account with its deals and quotes. Opening a deal returned the unit cost and
+  margin of every quote on it. An account returned deal cost and quote margin. Quote lines
+  carried `lineCost` (quantity × unit cost), and invoice lines carried `unitCost` itself.
+  A field hidden on any module is now hidden on every response, together with the fields
+  worked out from it. Roles that see cost are unaffected.
+- **The quotes report crashed for every role scoped narrower than "all".** It filtered
+  quotes by an owner field quotes do not have. It now uses the person who prepared the quote.
+
+### Changed — an approval covers the prices it was given
+
+- **Changing what the customer pays, or what it costs us, on an approved quote voids the
+  approval.** That means lines, quantities, prices, costs, discount, VAT or the worksheet's
+  markup. The quote must be sent for approval again before it can be sent or its worksheet
+  downloaded. A pending request is withdrawn the same way. Before this, a rep could get a
+  manager's approval and then change the prices.
+- Rewording notes, terms or a description keeps the approval.
+- The approval bar says why an approval was voided. An edit that voided one cannot be undone:
+  undo does not restore a signature.
+
 ### Added — the quote worksheet (part 1 of 3)
 
 - **A Worksheet view on every quote**, for roles that see cost. Each line records what the
@@ -47,35 +84,7 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 Still to come: reading the vendor's quote in by paste or upload (part 2).
 
-**After the deploy:** nothing. The migration only adds columns; existing quotes are unchanged.
-
-### Security — a Sales Executive could open every quote and invoice in the company
-
-- **Quotes and invoices now follow the role's scope.** The routes never checked it, so a rep
-  scoped to their team listed, opened, printed and could edit any quote or invoice. Neither
-  has an owner column. The rule chosen: a document belongs to **the owner of its deal, and
-  whoever made it**. A rep opens every quote on their own deal, including one a manager
-  prepared, and keeps the ones they prepared on someone else's. A document with neither
-  stays reachable.
-- The same rule now covers invoice ageing, the dashboard's overdue invoices, an account's
-  quote and invoice lists, submitting for approval, and both reports.
-- **Behaviour change:** a rep whose role edits "own" records can read a teammate's quote but
-  no longer edit it. Opening a document out of reach shows "unavailable" instead of an empty
-  form.
-
-### Security — cost reached roles that are not meant to see it
-
-- **A Sales Executive or Read Only user could read buy prices.** Masking hid a field only
-  on its own module's screens, but records travel between modules: a deal arrives with its
-  quotes, an account with its deals and quotes. Opening a deal returned the unit cost and
-  margin of every quote on it. An account returned deal cost and quote margin. Quote lines
-  carried `lineCost` (quantity × unit cost), and invoice lines carried `unitCost` itself.
-  A field hidden on any module is now hidden on every response, together with the fields
-  worked out from it. Roles that see cost are unaffected.
-- **The quotes report crashed for every role scoped narrower than "all".** It filtered
-  quotes by an owner field quotes do not have. It now uses the person who prepared the quote.
-
-
+### Fixed — alerts that reported a blip as an outage
 
 Found on 14 September, when the office router's DNS dropped lookups for an afternoon.
 
@@ -88,7 +97,7 @@ Found on 14 September, when the office router's DNS dropped lookups for an after
   happened to post, and that failure raised a "Teams alerts is down" alert of its own.
   An error Teams itself sends back, such as a deleted channel, still counts as down.
 
-Nothing to do after the deploy.
+**After the deploy:** nothing. The one migration only adds columns; existing quotes are unchanged.
 
 ---
 

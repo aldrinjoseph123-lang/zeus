@@ -57,3 +57,76 @@ describe('quote approval', () => {
     assert.ok(body.some((r) => r.entity === 'quotes' && r.id === q.id), 'quote appears in the manager queue');
   });
 });
+
+/**
+ * A sign-off is on the prices it was given.
+ *
+ * Until 15 Sep 2026 an approved quote stayed approved through any edit, so a rep could get
+ * a manager's yes and then change the prices before sending — and the worksheet exported
+ * as "approved" carried figures nobody had seen. The user's rule: a change to what the
+ * customer pays, or to what it costs us, voids the approval; a change to the words does not.
+ */
+describe('a price change voids the approval', () => {
+  /** A quote with real lines, prepared by the rep, submitted and approved. */
+  async function approvedQuote() {
+    const created = await request(app, fx.rep).post('/api/quotes', {
+      accountId: fx.customer.id,
+      lines: [{ description: 'Firewall', quantity: 2, unitPrice: 1000 }],
+    });
+    const id = (created.body as { id: string }).id;
+    assert.equal((await request(app, fx.rep).post(`/api/approvals/quotes/${id}/submit`, {})).status, 200);
+    assert.equal((await request(app, fx.manager).post(`/api/approvals/quotes/${id}/approve`, {})).status, 200);
+    return id;
+  }
+  const statusOf = async (id: string) => (await prisma.quote.findUniqueOrThrow({ where: { id } })).approvalStatus;
+
+  it('changing a price sends it back for approval, and sending is blocked again', async () => {
+    const id = await approvedQuote();
+    const res = await request(app, fx.rep).patch(`/api/quotes/${id}`, { lines: [{ description: 'Firewall', quantity: 2, unitPrice: 800 }] });
+    assert.equal(res.status, 200);
+    assert.equal(await statusOf(id), 'NOT_REQUIRED');
+    assert.match((await prisma.quote.findUniqueOrThrow({ where: { id } })).approvalNote ?? '', /prices changed/);
+    assert.equal((await request(app, fx.rep).post(`/api/quotes/${id}/status`, { status: 'SENT' })).status, 400, 'the old yes no longer lets it out');
+  });
+
+  it('so does a change of quantity, discount or VAT', async () => {
+    for (const change of [
+      { lines: [{ description: 'Firewall', quantity: 3, unitPrice: 1000 }] },
+      { discountPct: 10 },
+      { vatRate: 0 },
+    ]) {
+      const id = await approvedQuote();
+      await request(app, fx.rep).patch(`/api/quotes/${id}`, change);
+      assert.equal(await statusOf(id), 'NOT_REQUIRED', `${JSON.stringify(change)} should void the approval`);
+    }
+  });
+
+  it('rewording the notes, the terms or a description keeps it', async () => {
+    const id = await approvedQuote();
+    await request(app, fx.rep).patch(`/api/quotes/${id}`, { notes: 'Delivery in two weeks', terms: 'Net 30' });
+    await request(app, fx.rep).patch(`/api/quotes/${id}`, { lines: [{ description: 'Firewall appliance', quantity: 2, unitPrice: 1000 }] });
+    assert.equal(await statusOf(id), 'APPROVED');
+  });
+
+  it('a pending request is withdrawn too, so the manager does not approve prices that have gone', async () => {
+    const created = await request(app, fx.rep).post('/api/quotes', { accountId: fx.customer.id, lines: [{ description: 'Firewall', quantity: 1, unitPrice: 1000 }] });
+    const id = (created.body as { id: string }).id;
+    await request(app, fx.rep).post(`/api/approvals/quotes/${id}/submit`, {});
+    await request(app, fx.rep).patch(`/api/quotes/${id}`, { lines: [{ description: 'Firewall', quantity: 1, unitPrice: 1200 }] });
+    assert.equal(await statusOf(id), 'NOT_REQUIRED');
+    const queue = (await request(app, fx.manager).get('/api/approvals/pending')).body as Array<{ id: string }>;
+    assert.ok(!queue.some((r) => r.id === id));
+  });
+
+  it('a new default markup on the worksheet counts, though no line was sent', async () => {
+    const created = await request(app, fx.admin).post('/api/quotes', {
+      accountId: fx.customer.id, defaultMarkupPct: 20, lines: [{ description: 'FortiGate', quantity: 1, vendorUnitCost: 1000 }],
+    });
+    const id = (created.body as { id: string }).id;
+    await request(app, fx.admin).post(`/api/approvals/quotes/${id}/submit`, {});
+    await request(app, fx.manager).post(`/api/approvals/quotes/${id}/approve`, {});
+    await request(app, fx.admin).patch(`/api/quotes/${id}`, { defaultMarkupPct: 25 });
+    assert.equal(await statusOf(id), 'NOT_REQUIRED');
+    assert.equal((await request(app, fx.admin).get(`/api/quotes/${id}/worksheet.xlsx`)).status, 400, 'and the worksheet cannot be downloaded as approved');
+  });
+});

@@ -167,6 +167,17 @@ function flagWorksheetLines<T extends { defaultMarkupPct: unknown; lines: Array<
   };
 }
 
+/** What an approval signs: what the customer pays and what it costs us, and nothing else. */
+function priceOf(quote: {
+  discountPct: unknown; vatRate: unknown;
+  lines: Array<{ quantity: unknown; unitPrice: unknown; unitCost: unknown; discountPct: unknown; taxable: boolean }>;
+}): string {
+  return JSON.stringify([
+    num(quote.discountPct), num(quote.vatRate),
+    quote.lines.map((l) => [num(l.quantity), num(l.unitPrice), num(l.unitCost), num(l.discountPct), l.taxable]),
+  ]);
+}
+
 /**
  * Whether the margin on this quote is one somebody should look at, as a flag rather than
  * a figure.
@@ -318,6 +329,26 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     }
 
     await recalcQuote(id);
+
+    /**
+     * A sign-off is on the prices it was given. Compared after recalcQuote, because a new
+     * default markup changes prices without a single line being sent. Words — notes, terms, a
+     * description — leave it standing. Voiding it puts an approval into this edit's diff, which
+     * makes the edit itself not undoable: undo does not hand back a signature.
+     */
+    if (existing.approvalStatus === 'APPROVED' || existing.approvalStatus === 'PENDING') {
+      const repriced = await prisma.quote.findUniqueOrThrow({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
+      if (priceOf(repriced) !== priceOf(existing)) {
+        await prisma.quote.update({
+          where: { id },
+          data: {
+            approvalStatus: 'NOT_REQUIRED',
+            approvalNote: `The prices changed after it was ${existing.approvalStatus === 'APPROVED' ? 'approved' : 'sent for approval'}. Send it for approval again.`,
+            approvalRequestedAt: null, approvalRequestedById: null, approvalDecidedAt: null, approvalDecidedById: null,
+          },
+        });
+      }
+    }
 
     const after = await prisma.quote.findUniqueOrThrow({ where: { id } });
     const changes = diff(existing as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>);
