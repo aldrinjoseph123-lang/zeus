@@ -9,9 +9,10 @@ import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, notFound, requirePermission } from '../lib/http.js';
 import { readWorkbook, templateXlsx } from '../services/xlsx.js';
 import { checkDuplicates, extractDomain, freeEmailDomains, normalizeCompany } from '../services/dedupe.js';
+import { undoImport, type ImportLedger, type LedgerModel } from '../services/importUndo.js';
 import { nextReference } from '../lib/counters.js';
 import { applyVat } from '../lib/money.js';
-import { vatRate } from '../lib/settings.js';
+import { getSetting, vatRate } from '../lib/settings.js';
 
 /**
  * Spreadsheet import. Three steps, same as every CRM worth using:
@@ -148,6 +149,7 @@ function coerce(value: string | undefined, type?: string): unknown {
 }
 
 type AccountKind = 'CUSTOMER' | 'PARTNER' | 'VENDOR' | 'PROSPECT';
+
 
 /**
  * The columns of an import that name an account, and whether a row may leave one blank.
@@ -445,6 +447,12 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
      * The account a row belongs to, as screening settled it. `skip` leaves the row out; in a dry
      * run an account still to be created answers "new", so the preview can say so without one.
      */
+    // What this import writes, kept on the job so it can be undone record by record.
+    const ledger: ImportLedger = { created: [], updated: [] };
+    const updatedFrom = (model: LedgerModel, existing: Record<string, unknown>, data: Record<string, unknown>, label: string) => {
+      ledger.updated.push({ model, id: String(existing.id), label, before: Object.fromEntries(Object.keys(data).map((k) => [k, existing[k] ?? null])) });
+    };
+
     const createdAccounts = new Map<string, string>();
     const accountFor = async (field: string, name: unknown, rowNo: number): Promise<{ id: string | null; skip: boolean; note?: string }> => {
       const ref = ACCOUNT_FIELDS[job.module]?.find((r) => r.field === field);
@@ -468,6 +476,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
         select: { id: true },
       });
       createdAccounts.set(key, account.id);
+      ledger.created.push({ model: 'account', id: account.id, label: decision.name });
       return { id: account.id, skip: false, note };
     };
 
@@ -505,7 +514,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
           }
           preview.push({ row: rowNo, action: dupes.hasDuplicates ? 'create (duplicate)' : 'create', label: `${record.firstName} ${record.lastName} — ${record.company}` });
           if (!dryRun) {
-            await prisma.lead.create({
+            const lead = await prisma.lead.create({
               data: {
                 firstName: String(record.firstName), lastName: String(record.lastName), company: String(record.company),
                 email: (record.email as string) || null, phone: (record.phone as string) || null,
@@ -521,6 +530,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
                 domain, ownerId, lastActivityAt: new Date(),
               },
             });
+            ledger.created.push({ model: 'lead', id: lead.id, label: `${record.firstName} ${record.lastName} — ${record.company}` });
           }
           imported += 1;
         }
@@ -557,11 +567,17 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
 
           if (existing && onDuplicate === 'update') {
             preview.push({ row: rowNo, action: 'update', label: String(record.name) });
-            if (!dryRun) await prisma.account.update({ where: { id: existing.id }, data });
+            if (!dryRun) {
+              updatedFrom('account', existing, data, String(record.name));
+              await prisma.account.update({ where: { id: existing.id }, data });
+            }
             updated += 1;
           } else {
             preview.push({ row: rowNo, action: 'create', label: String(record.name) });
-            if (!dryRun) await prisma.account.create({ data: { ...data, ownerId, lastActivityAt: new Date() } });
+            if (!dryRun) {
+              const account = await prisma.account.create({ data: { ...data, ownerId, lastActivityAt: new Date() } });
+              ledger.created.push({ model: 'account', id: account.id, label: String(record.name) });
+            }
             imported += 1;
           }
         }
@@ -596,11 +612,17 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
 
           if (existing && onDuplicate === 'update') {
             preview.push({ row: rowNo, action: 'update', label, note: account.note });
-            if (!dryRun) await prisma.contact.update({ where: { id: existing.id }, data });
+            if (!dryRun) {
+              updatedFrom('contact', existing, data, label);
+              await prisma.contact.update({ where: { id: existing.id }, data });
+            }
             updated += 1;
           } else {
             preview.push({ row: rowNo, action: 'create', label, note: account.note });
-            if (!dryRun) await prisma.contact.create({ data: { ...data, ownerId } });
+            if (!dryRun) {
+              const contact = await prisma.contact.create({ data: { ...data, ownerId } });
+              ledger.created.push({ model: 'contact', id: contact.id, label });
+            }
             imported += 1;
           }
         }
@@ -631,11 +653,17 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
           };
           if (existing && onDuplicate === 'update') {
             preview.push({ row: rowNo, action: 'update', label: `${record.sku} ${record.name}` });
-            if (!dryRun) await prisma.product.update({ where: { id: existing.id }, data });
+            if (!dryRun) {
+              updatedFrom('product', existing, data, `${record.sku} ${record.name}`);
+              await prisma.product.update({ where: { id: existing.id }, data });
+            }
             updated += 1;
           } else {
             preview.push({ row: rowNo, action: 'create', label: `${record.sku} ${record.name}` });
-            if (!dryRun) await prisma.product.create({ data });
+            if (!dryRun) {
+              const product = await prisma.product.create({ data });
+              ledger.created.push({ model: 'product', id: product.id, label: `${record.sku} ${record.name}` });
+            }
             imported += 1;
           }
         }
@@ -685,11 +713,17 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
           }
           if (existing) {
             preview.push({ row: rowNo, action: 'update', label: `${record.sku} → ${data.cost}`, note: minQuantity > 1 ? `from ${minQuantity} units` : undefined });
-            if (!dryRun) await prisma.priceEntry.update({ where: { id: existing.id }, data });
+            if (!dryRun) {
+              updatedFrom('priceEntry', existing, data, `${record.sku} → ${data.cost}`);
+              await prisma.priceEntry.update({ where: { id: existing.id }, data });
+            }
             updated += 1;
           } else {
             preview.push({ row: rowNo, action: 'create', label: `${record.sku} → ${data.cost}`, note: minQuantity > 1 ? `from ${minQuantity} units` : undefined });
-            if (!dryRun) await prisma.priceEntry.create({ data });
+            if (!dryRun) {
+              const entry = await prisma.priceEntry.create({ data });
+              ledger.created.push({ model: 'priceEntry', id: entry.id, label: `${record.sku} → ${data.cost}` });
+            }
             imported += 1;
           }
         }
@@ -730,6 +764,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
                 closedAt: stage.isWon || stage.isLost ? new Date() : null,
               },
             });
+            ledger.created.push({ model: 'deal', id: deal.id, label: String(record.name) });
             await prisma.stageHistory.create({
               data: { dealId: deal.id, toStageId: stage.id, toStatus: stage.isWon ? 'WON' : stage.isLost ? 'LOST' : 'OPEN', amount: net, changedById: request.user.id },
             });
@@ -753,6 +788,7 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
         errors: errors.slice(0, 200) as never,
         dryRun,
         finishedAt: dryRun ? null : new Date(),
+        ...(dryRun ? {} : { undo: ledger as never }),
       },
     });
 
@@ -775,11 +811,43 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
     };
   });
 
-  app.get('/api/imports', { preHandler: requirePermission('imports', 'read') }, async () =>
-    prisma.importJob.findMany({
-      include: { createdBy: { select: { name: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    }),
-  );
+  app.get('/api/imports', { preHandler: requirePermission('imports', 'read') }, async () => {
+    const [jobs, hours] = await Promise.all([
+      prisma.importJob.findMany({ include: { createdBy: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      getSetting<number>('undo.windowHours', 72),
+    ]);
+    const cutoff = Date.now() - Number(hours) * 3_600_000;
+    // The ledger itself stays on the server: the list only needs to know whether Undo applies.
+    return jobs.map(({ undo, ...job }) => ({
+      ...job,
+      undoable: Boolean(undo) && !job.undoneAt && !job.dryRun && Boolean(job.finishedAt) && job.finishedAt!.getTime() >= cutoff,
+    }));
+  });
+
+  /**
+   * Undo a committed import: remove what it created, restore what it updated, and keep — naming
+   * each — whatever has been worked on since. Inside the same window as every other undo.
+   */
+  app.post('/api/imports/:id/undo', { preHandler: requirePermission('imports', 'create') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const job = await prisma.importJob.findUnique({ where: { id } });
+    if (!job) throw notFound('Import job not found.');
+    if (job.undoneAt) throw badRequest('That import has already been undone.');
+    if (!job.undo || job.dryRun || !job.finishedAt) {
+      throw badRequest('That import cannot be undone: it was run before Zeus kept a record of what imports write. Remove its records by hand.');
+    }
+    const hours = Number(await getSetting<number>('undo.windowHours', 72));
+    if (Date.now() - job.finishedAt.getTime() > hours * 3_600_000) {
+      throw badRequest(`Undo only reaches back ${hours} hours. Remove the records by hand, or widen the window in Settings.`);
+    }
+
+    const result = await undoImport(job.undo as unknown as ImportLedger, job.finishedAt);
+    await prisma.importJob.update({ where: { id }, data: { undoneAt: new Date(), undoneById: request.user.id, status: 'undone' } });
+    await audit({
+      user: request.user, action: 'undo', entity: job.module, entityId: id,
+      summary: `Undid import of ${job.filename}: ${result.removed} removed, ${result.restored} restored, ${result.kept.length} kept`,
+      ip: clientIp(request),
+    });
+    return result;
+  });
 }

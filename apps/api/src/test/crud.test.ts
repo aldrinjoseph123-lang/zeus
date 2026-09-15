@@ -98,7 +98,18 @@ describe('contacts CRUD + validation', () => {
   });
 
   it('400s a malformed email', async () => {
-    assert.equal((await request(app, fx.admin).post('/api/contacts', { firstName: 'Bad', lastName: 'Email', email: 'not-an-email' })).status, 400);
+    assert.equal((await request(app, fx.admin).post('/api/contacts', { firstName: 'Bad', lastName: 'Email', email: 'not-an-email', accountId: fx.customer.id })).status, 400);
+  });
+
+  it('never makes a contact without an account, and never takes one away (decided 15 Sep 2026)', async () => {
+    const orphan = await request(app, fx.admin).post('/api/contacts', { firstName: 'Nobody', lastName: 'Works' });
+    assert.equal(orphan.status, 400);
+    assert.match((orphan.body as { error: string }).error, /account/);
+
+    const created = await request(app, fx.admin).post('/api/contacts', { firstName: 'Some', lastName: 'One', accountId: fx.customer.id });
+    const id = (created.body as { id: string }).id;
+    assert.equal((await request(app, fx.admin).patch(`/api/contacts/${id}`, { accountId: null })).status, 400);
+    assert.equal((await request(app, fx.admin).patch(`/api/contacts/${id}`, { jobTitle: 'CTO' })).status, 200, 'an edit that leaves the account alone is fine');
   });
 
   it('404s an unknown id', async () => {

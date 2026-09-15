@@ -1,14 +1,22 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Download, FileSpreadsheet, FileUp, Play, Upload } from 'lucide-react';
+import { CheckCircle2, Download, FileSpreadsheet, FileUp, Play, Undo2, Upload } from 'lucide-react';
 import { api, ApiError, download } from '../lib/api';
 import { dateTime } from '../lib/format';
 import {
-  Badge, Button, Card, CardHeader, DataTable, EmptyState, ErrorNote, Field, Input, PageHeader, Select, cx, useToast,
+  Badge, Button, Card, CardHeader, ConfirmDialog, DataTable, EmptyState, ErrorNote, Field, Input, Modal, PageHeader, Select, cx, useToast,
 } from '../components/ui';
 import { AccountPicker, OwnerSelect } from '../components/pickers';
+import { useAuth } from '../lib/auth';
 
 interface FieldDef { key: string; label: string; required?: boolean; type?: string }
+interface ImportJobRow {
+  id: string; module: string; filename: string; status: string; totalRows: number; imported: number; updated: number; skipped: number;
+  createdAt: string; createdBy: { name: string } | null;
+  /** A committed import inside the undo window that kept a record of what it wrote. */
+  undoable: boolean;
+}
+interface UndoResult { removed: number; restored: number; kept: Array<{ label: string; reason: string }> }
 interface UploadResult {
   jobId: string; module: string; filename: string; headers: string[]; totalRows: number;
   sample: Array<Record<string, string>>; fields: FieldDef[]; suggestedMapping: Record<string, string>;
@@ -112,7 +120,21 @@ export default function Imports() {
 
   const { data: history } = useQuery({
     queryKey: ['import-jobs'],
-    queryFn: () => api.get<Array<{ id: string; module: string; filename: string; status: string; totalRows: number; imported: number; updated: number; skipped: number; createdAt: string; createdBy: { name: string } | null }>>('/imports'),
+    queryFn: () => api.get<ImportJobRow[]>('/imports'),
+  });
+
+  const { can } = useAuth();
+  const [undoing, setUndoing] = useState<ImportJobRow | null>(null);
+  const [undone, setUndone] = useState<{ job: ImportJobRow; result: UndoResult } | null>(null);
+  const undo = useMutation({
+    mutationFn: (job: ImportJobRow) => api.post<UndoResult>(`/imports/${job.id}/undo`, {}),
+    onSuccess: (result, job) => {
+      setUndoing(null);
+      setUndone({ job, result });
+      void queryClient.invalidateQueries({ queryKey: ['import-jobs'] });
+      void queryClient.invalidateQueries({ queryKey: [job.module] });
+    },
+    onError: (err) => { setUndoing(null); toast.push(err instanceof Error ? err.message : 'Could not undo the import.', 'error'); },
   });
 
   const pickFile = async (file: File) => {
@@ -454,13 +476,63 @@ export default function Imports() {
             columns={[
               { key: 'filename', header: 'File', render: (row) => <span className="font-semibold">{row.filename}</span> },
               { key: 'module', header: 'Into', width: '100px', render: (row) => <Badge>{row.module}</Badge> },
-              { key: 'status', header: 'Status', width: '96px', render: (row) => <Badge tone={row.status === 'done' ? 'secure' : row.status === 'failed' ? 'accent' : 'neutral'}>{row.status}</Badge> },
+              { key: 'status', header: 'Status', width: '96px', render: (row) => <Badge tone={row.status === 'done' ? 'secure' : row.status === 'failed' ? 'accent' : row.status === 'undone' ? 'watch' : 'neutral'}>{row.status}</Badge> },
               { key: 'counts', header: 'Result', width: '190px', render: (row) => <span className="tabular text-[12px] text-muted">{row.imported} created · {row.updated} updated · {row.skipped} skipped</span> },
               { key: 'createdAt', header: 'When', width: '160px', render: (row) => <span className="text-[12px] text-muted">{dateTime(row.createdAt)}</span> },
               { key: 'by', header: 'By', width: '130px', render: (row) => <span className="text-[12px]">{row.createdBy?.name ?? '—'}</span> },
+              {
+                key: 'undo', header: '', width: '92px', align: 'right',
+                render: (row) => (row.undoable && can('imports', 'create')
+                  ? <Button size="sm" variant="ghost" icon={<Undo2 size={12} />} onClick={() => setUndoing(row)}>Undo</Button>
+                  : null),
+              },
             ]}
           />
         </Card>
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(undoing)}
+        onClose={() => setUndoing(null)}
+        onConfirm={() => undoing && undo.mutate(undoing)}
+        loading={undo.isPending}
+        title={`Undo ${undoing?.filename ?? 'this import'}?`}
+        confirmLabel="Undo import"
+        message={
+          <>
+            Removes the {undoing?.imported ?? 0} record{undoing?.imported === 1 ? '' : 's'} it created
+            {undoing?.updated ? ` and puts the ${undoing.updated} it updated back as they were` : ''}.
+            Anything worked on since — put on a quote, given an activity, edited — is kept, and you will see which.
+          </>
+        }
+      />
+
+      {undone ? (
+        <Modal
+          open
+          onClose={() => setUndone(null)}
+          title="Import undone"
+          subtitle={`${undone.job.filename} · ${undone.result.removed} removed${undone.result.restored ? ` · ${undone.result.restored} restored` : ''}`}
+          footer={<Button variant="accent" onClick={() => setUndone(null)}>Done</Button>}
+        >
+          {undone.result.kept.length === 0 ? (
+            <p className="text-[13px]">Everything the import wrote has been taken back.</p>
+          ) : (
+            <>
+              <p className="mb-2 text-[13px]">
+                {undone.result.kept.length} record{undone.result.kept.length === 1 ? ' was' : 's were'} kept, because {undone.result.kept.length === 1 ? 'it has' : 'they have'} been worked on since:
+              </p>
+              <ul className="max-h-72 divide-y divide-line overflow-y-auto border border-line text-[13px]">
+                {undone.result.kept.map((k, i) => (
+                  <li key={`${k.label}-${i}`} className="px-3 py-2">
+                    <span className="font-semibold">{k.label}</span>
+                    <span className="block text-[11px] text-muted">{k.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Modal>
       ) : null}
     </>
   );

@@ -54,4 +54,16 @@ test('contacts import screens their accounts before anything is written', async 
   expect(rana[0]?.account?.name).toMatch(/^Blankrow/i);
   const sami = (await (await request.get('/api/contacts?search=Khoury')).json()).data;
   expect(sami).toHaveLength(0);
+
+  // And it can be taken back from the history: the newest row is this import.
+  const row = page.getByRole('row').filter({ hasText: 'contacts.xlsx' }).first();
+  await row.getByRole('button', { name: 'Undo' }).click();
+  await page.getByRole('button', { name: 'Undo import' }).click();
+  await expect(page.getByText('Import undone')).toBeVisible();
+  await expect(page.getByText(/4 removed/)).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  const gone = (await (await request.get(`/api/contacts?search=layla@screening${stamp}.ae`)).json()).data;
+  expect(gone).toHaveLength(0);
+  await expect(page.getByRole('row').filter({ hasText: 'contacts.xlsx' }).first().getByText('undone')).toBeVisible();
 });

@@ -19,7 +19,8 @@ const contactSchema = z.object({
   department: z.string().optional().nullable(),
   linkedinUrl: z.string().optional().nullable(),
   isPrimary: z.boolean().optional(),
-  accountId: z.string().optional().nullable(),
+  // Every contact works somewhere. Required on create; on an edit it may change but not be cleared.
+  accountId: z.string({ error: 'Choose the account this contact works at.' }).min(1, 'Choose the account this contact works at.'),
   ownerId: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   customFields: z.record(z.string(), z.unknown()).optional(),

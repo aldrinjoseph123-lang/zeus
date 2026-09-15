@@ -1390,6 +1390,11 @@ model ImportJob {
   createdBy   User?     @relation(fields: [createdById], references: [id])
   createdAt   DateTime  @default(now())
   finishedAt  DateTime?
+  /// What a committed import wrote: the records it created, and each record it updated with
+  /// its fields as they were before. Null for dry runs and for imports that predate undo.
+  undo        Json?
+  undoneAt    DateTime?
+  undoneById  String?
 }
 
 model BackupRun {

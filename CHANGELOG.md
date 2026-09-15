@@ -117,6 +117,14 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 - **A contact is never imported without an account.** A row with no account name is settled in
   the same step; if its email has a company domain, a name is suggested from it.
 - **A contact's last name is optional**, in imports and on the contact form.
+- **A contact always has an account**, however it is made: imported, converted from a lead, or
+  added by hand. The contact form requires one, and an edit cannot remove it. Contacts already
+  without an account are untouched until someone edits their account.
+- **Undo on import history.** An import can be undone for 72 hours (the same undo window as the
+  rest of Zeus). Undo removes the records it created and puts back the records it updated as they
+  were. Anything worked on since is kept and listed with the reason, such as a contact put on a
+  quote, a deal moved on, or a record edited again. Imports run before this release kept no
+  record of what they wrote, so they cannot be undone.
 - New accounts created by an import keep the email domain of their contacts, so the next
   duplicate check can find them.
 
@@ -140,7 +148,7 @@ Found on 14 September, when the office router's DNS dropped lookups for an after
   happened to post, and that failure raised a "Teams alerts is down" alert of its own.
   An error Teams itself sends back, such as a deleted channel, still counts as down.
 
-**After the deploy:** nothing. The two migrations only add columns; existing quotes are unchanged.
+**After the deploy:** nothing. The three migrations only add columns; existing records are unchanged.
 
 ---
 

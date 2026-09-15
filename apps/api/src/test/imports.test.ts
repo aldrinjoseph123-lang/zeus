@@ -413,3 +413,102 @@ describe('account screening', () => {
     assert.deepEqual(refs.map((r) => [r.name, r.type]), [['Al Noor Hospital', 'CUSTOMER'], ['Gronteq', 'PARTNER']]);
   });
 });
+
+/**
+ * Undo on import history. Chosen on 15 Sep 2026: remove what the import created, restore what it
+ * updated, keep and name anything worked on since, inside the usual undo window. Imports from
+ * before the ledger existed are not undoable.
+ */
+describe('undoing an import', () => {
+  const CSV = [
+    'First name,Last name,Account name,Email',
+    'Fatima,Al Hashimi,Northwind Trading LLC,fatima@northwind.ae',
+    'Priyadarsan,Roy,SPS Cloud Solutions,pd@spscloudsolutions.com',
+    'Kamel,Salameh,IT Works,k.salameh@it.works',
+  ].join('\n');
+  const MAPPING = { firstName: 'First name', lastName: 'Last name', accountName: 'Account name', email: 'Email' };
+
+  /** Northwind exists already and is linked; SPS and IT Works are created by the import. */
+  async function imported() {
+    const northwind = await prisma.account.create({ data: { name: 'Northwind Trading LLC', type: 'CUSTOMER' } });
+    const uploaded = await upload(fx.admin, 'contacts', CSV);
+    const refs = ((await request(app, fx.admin).post(`/api/imports/${uploaded.body.jobId}/accounts`, { mapping: MAPPING })).body as { references: Array<{ key: string; name: string; status: string }> }).references;
+    const accounts = Object.fromEntries(refs.filter((r) => r.status !== 'found').map((r) => [r.key, { action: 'create', name: r.name, type: 'PARTNER' }]));
+    const res = await run(fx.admin, uploaded.body.jobId, { mapping: MAPPING, dryRun: false, accounts });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return { jobId: uploaded.body.jobId as string, northwind };
+  }
+  const undo = (jobId: string) => request(app, fx.admin).post(`/api/imports/${jobId}/undo`, {});
+  const live = async (name: string) => prisma.account.findFirst({ where: { name, deletedAt: null } });
+
+  it('removes what it created, leaves what it only linked to, and cannot be done twice', async () => {
+    const { jobId, northwind } = await imported();
+    const history = (await request(app, fx.admin).get('/api/imports')).body as Array<{ id: string; undoable: boolean; undo?: unknown }>;
+    assert.equal(history.find((j) => j.id === jobId)?.undoable, true);
+    assert.equal(history.find((j) => j.id === jobId)?.undo, undefined, 'the ledger stays on the server');
+
+    const res = await undo(jobId);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { removed: 5, restored: 0, kept: [] }, 'three contacts and the two accounts made for them');
+    assert.equal(await prisma.contact.count({ where: { deletedAt: null } }), 0);
+    assert.equal(await live('SPS Cloud Solutions'), null);
+    assert.ok(await live('Northwind Trading LLC'), 'an account the import only linked to was never its to remove');
+    assert.equal((await prisma.account.findUniqueOrThrow({ where: { id: northwind.id } })).deletedAt, null);
+
+    assert.equal((await undo(jobId)).status, 400);
+    const after = (await request(app, fx.admin).get('/api/imports')).body as Array<{ id: string; undoable: boolean; status: string }>;
+    assert.deepEqual([after.find((j) => j.id === jobId)?.status, after.find((j) => j.id === jobId)?.undoable], ['undone', false]);
+  });
+
+  it('keeps and names a contact that has since been put on a quote — and the account that contact still needs', async () => {
+    const { jobId } = await imported();
+    const roy = await prisma.contact.findFirstOrThrow({ where: { lastName: 'Roy' } });
+    await prisma.quote.create({ data: { number: 'ZEU-Q-UNDO1', accountId: roy.accountId!, contactId: roy.id } });
+
+    const res = await undo(jobId);
+    const body = res.body as { removed: number; kept: Array<{ label: string; reason: string }> };
+    assert.deepEqual(body.kept.map((k) => k.label).sort(), ['Priyadarsan Roy', 'SPS Cloud Solutions']);
+    assert.match(body.kept.find((k) => k.label === 'Priyadarsan Roy')!.reason, /1 quotes/);
+    assert.equal(body.removed, 3, 'Fatima, Kamel and IT Works still go');
+    assert.ok(await live('SPS Cloud Solutions'));
+  });
+
+  it('puts updated records back as they were, unless they have changed again since', async () => {
+    const kept = await prisma.account.create({ data: { name: 'Sandpiper Systems FZE', type: 'PARTNER', domain: 'sandpipersys.com', industry: 'Retail' } });
+    const moved = await prisma.account.create({ data: { name: 'Northwind Trading LLC', type: 'CUSTOMER', domain: 'northwindtrading.ae', industry: 'Retail' } });
+    const uploaded = await upload(fx.admin, 'accounts', ACCOUNTS_CSV);
+    await run(fx.admin, uploaded.body.jobId, { mapping: { name: 'Name', type: 'Type', domain: 'Domain', industry: 'Industry' }, dryRun: false, onDuplicate: 'update' });
+    assert.equal((await prisma.account.findUniqueOrThrow({ where: { id: kept.id } })).industry, 'Technology');
+
+    // Someone edits one of them after the import (dated ahead, rather than waiting out the grace second).
+    await prisma.account.update({ where: { id: moved.id }, data: { industry: 'Shipping', updatedAt: new Date(Date.now() + 10_000) } });
+
+    const res = await undo(uploaded.body.jobId);
+    const body = res.body as { restored: number; kept: Array<{ label: string }> };
+    assert.equal((await prisma.account.findUniqueOrThrow({ where: { id: kept.id } })).industry, 'Retail', 'restored');
+    assert.equal((await prisma.account.findUniqueOrThrow({ where: { id: moved.id } })).industry, 'Shipping', 'a later edit is not overwritten');
+    assert.equal(body.restored, 1);
+    assert.deepEqual(body.kept.map((k) => k.label), ['Northwind Trading LLC']);
+  });
+
+  it('only within the undo window, and never for an import that kept no record', async () => {
+    const { jobId } = await imported();
+    await prisma.importJob.update({ where: { id: jobId }, data: { finishedAt: new Date(Date.now() - 73 * 3_600_000) } });
+    const late = await undo(jobId);
+    assert.equal(late.status, 400);
+    assert.match((late.body as { error: string }).error, /72 hours/);
+
+    const old = await prisma.importJob.create({ data: { module: 'leads', filename: 'before-undo.xlsx', status: 'done', dryRun: false, finishedAt: new Date() } });
+    const refused = await undo(old.id);
+    assert.equal(refused.status, 400);
+    assert.match((refused.body as { error: string }).error, /before Zeus kept a record/);
+  });
+
+  it('undoes a contacts file imported into leads by mistake', async () => {
+    const uploaded = await upload(fx.admin, 'leads', ['First name,Last name,Company,Email', 'Anil,Gupta,StorTech Solutions LLC,anil@stortech.ae', 'Sonia,Mulani,IBT Global,sonia@ibt.global'].join('\n'));
+    await run(fx.admin, uploaded.body.jobId, { mapping: { firstName: 'First name', lastName: 'Last name', company: 'Company', email: 'Email' }, dryRun: false });
+    assert.equal(await prisma.lead.count({ where: { deletedAt: null } }), 2);
+    assert.equal(((await undo(uploaded.body.jobId)).body as { removed: number }).removed, 2);
+    assert.equal(await prisma.lead.count({ where: { deletedAt: null } }), 0);
+  });
+});

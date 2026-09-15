@@ -123,7 +123,7 @@ export function ContactForm({ onClose, defaultAccountId, defaultAccountName, onS
 
   const create = useMutation({
     mutationFn: (ignoreDuplicates: boolean) =>
-      api.post('/contacts', { ...form, email: form.email || null, accountId: form.accountId || null, customFields: custom, ignoreDuplicates }),
+      api.post('/contacts', { ...form, email: form.email || null, accountId: form.accountId, customFields: custom, ignoreDuplicates }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['contacts'] });
       onSaved?.();
@@ -140,7 +140,8 @@ export function ContactForm({ onClose, defaultAccountId, defaultAccountName, onS
     },
   });
 
-  const ready = form.firstName.trim();
+  // A contact always belongs to an account, as it does when imported.
+  const ready = form.firstName.trim() && form.accountId;
 
   return (
     <Modal
@@ -173,7 +174,7 @@ export function ContactForm({ onClose, defaultAccountId, defaultAccountName, onS
           <Field label="Last name"><Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
         </div>
 
-        <Field label="Account">
+        <Field label="Account" required>
           <AccountPicker value={form.accountId || null} selectedLabel={defaultAccountName} onChange={(id) => setForm({ ...form, accountId: id ?? '' })} />
         </Field>
 
