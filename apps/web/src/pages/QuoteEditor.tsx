@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Copy, FileDown, Mail, Plus, Save } from 'lucide-react';
+import { ArrowLeft, Copy, FileDown, Mail, Plus, Save, Upload } from 'lucide-react';
 import { api, ApiError, download } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, dateInput, money, percent } from '../lib/format';
 import { LineEditor, blankLine, previewTotals, type EditableLine } from '../components/lineEditor';
 import { QuoteWorksheet, priceWorksheet } from '../components/quoteWorksheet';
+import { VendorQuoteImport } from '../components/vendorQuoteImport';
+import { AttachmentPanel } from '../components/attachments';
 import {
   Button, EmptyState, Card, CardHeader, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Textarea, cx, useToast,
@@ -53,6 +55,7 @@ export default function QuoteEditor() {
   const [discountPct, setDiscountPct] = useState(0);
   const [defaultMarkupPct, setDefaultMarkupPct] = useState<number | null>(null);
   const [view, setView] = useState<'lines' | 'worksheet'>('lines');
+  const [importing, setImporting] = useState(false);
   const [vatRate, setVatRate] = useState(5);
   const [terms, setTerms] = useState('');
   const [notes, setNotes] = useState('');
@@ -354,6 +357,9 @@ export default function QuoteEditor() {
                   ) : null}
                   {view === 'worksheet' && !isNew ? (
                     <>
+                      {!locked ? (
+                        <Button size="sm" variant="accent" icon={<Upload size={13} />} onClick={() => setImporting(true)}>Vendor quote</Button>
+                      ) : null}
                       {/* The saved quote, and only once it is approved — the server says so if not. */}
                       <Button size="sm" icon={<FileDown size={13} />} title="The saved, approved worksheet as figures."
                         onClick={() => download(`/quotes/${id}/worksheet.xlsx`, `${quote?.number}-worksheet.xlsx`).catch((err) => toast.push(err.message, 'error'))}>
@@ -396,6 +402,13 @@ export default function QuoteEditor() {
               />
             )}
           </Card>
+
+          {view === 'worksheet' && showCost && !isNew && id ? (
+            <Card>
+              <CardHeader title="Vendor documents" subtitle="The quotes vendors sent, kept with this quote. They show buy prices, so only roles that see cost can open them." />
+              <AttachmentPanel parent="quote" parentId={id} />
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader title="Terms & notes" />
@@ -490,6 +503,20 @@ export default function QuoteEditor() {
       </div>
 
       {sending && quote ? <SendModal quote={quote} onClose={() => setSending(false)} /> : null}
+      {importing && id ? (
+        <VendorQuoteImport
+          quoteId={id}
+          lines={lines}
+          rates={(settings?.['finance.exchangeRates'] ?? {}) as Record<string, number>}
+          baseCurrency={String(settings?.['finance.currency'] ?? 'AED')}
+          onClose={() => setImporting(false)}
+          onApply={(next, summary) => {
+            setLines(priceWorksheet(next, defaultMarkupPct));
+            setImporting(false);
+            toast.push(`${summary} Save the quote to keep them.`);
+          }}
+        />
+      ) : null}
     </>
   );
 }

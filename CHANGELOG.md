@@ -71,6 +71,23 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   cannot be typed in the customer view. A Sales Executive sees the price but not the markup
   behind it, and cannot change or erase the worksheet by saving the quote.
 
+### Added — reading the vendor's quote in (part 2 of 3)
+
+- **Vendor quote** on the Worksheet view: paste the table from the email, or upload the
+  vendor's Excel, CSV, Word or PDF. Zeus reads it on its own server; the document is never sent
+  to an outside service.
+- **Nothing goes onto the worksheet unchecked.** Each line found is shown beside the row it was
+  read from. Lines whose quantity × price matches their own total are ticked; the rest are
+  marked *check this*. The ticked lines are added up against **the vendor's printed total**,
+  and the screen says plainly whether anything was missed.
+- **Re-quotes:** a part number already on the worksheet updates that line's cost in place and
+  shows the change (1,180.00 → 1,250.00, +5.9%) rather than adding it twice. Markups stay as set.
+- **The original is kept with the quote** under *Vendor documents*. These carry buy prices, so
+  they are visible only to roles that see cost, and never appear on the account.
+- A scanned PDF has no text to read; Zeus says so and asks for the table or the Excel version.
+
+**After the deploy:** nothing to do. The server image now includes `pdftotext`, which reads PDFs.
+
 ### Added — the worksheet as Excel (part 3 of 3)
 
 - **Download the worksheet once the quote is approved**, from the Worksheet view. Two files:
@@ -81,8 +98,6 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
     approved figures.
 - Both files say at the top that they contain buy prices and are not for customers or vendors.
   Every download is recorded in the audit log.
-
-Still to come: reading the vendor's quote in by paste or upload (part 2).
 
 ### Fixed — alerts that reported a blip as an outage
 
@@ -97,7 +112,7 @@ Found on 14 September, when the office router's DNS dropped lookups for an after
   happened to post, and that failure raised a "Teams alerts is down" alert of its own.
   An error Teams itself sends back, such as a deleted channel, still counts as down.
 
-**After the deploy:** nothing. The one migration only adds columns; existing quotes are unchanged.
+**After the deploy:** nothing. The two migrations only add columns; existing quotes are unchanged.
 
 ---
 

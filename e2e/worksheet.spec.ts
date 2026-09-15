@@ -99,4 +99,39 @@ test.describe('quote worksheet', () => {
 
     expect(errors.filter((e) => !/status of 400/.test(e))).toEqual([]);
   });
+
+  test('reads a pasted vendor quote in, checks it against the vendor total, and applies it', async ({ page, request }) => {
+    const accounts = await (await request.get(`/api/accounts?search=${encodeURIComponent(E2E_ACCOUNT)}`)).json();
+    const created = await request.post('/api/quotes', { data: { accountId: accounts.data[0].id, defaultMarkupPct: 20, lines: [] } });
+    const quote = await created.json();
+
+    await page.goto(`/quotes/${quote.id}`);
+    await page.getByRole('button', { name: 'Worksheet' }).click();
+    await page.getByRole('button', { name: 'Vendor quote' }).click();
+
+    const pasted = [
+      'Part Number\tDescription\tQty\tUnit Price\tTotal',
+      'FG-3100F-BDL-950-12\tFortiGate-3100F Hardware\t2\t1,250.00\t2,500.00',
+      '\tFortiCare onboarding\t1\t300.00\t300.00',
+      '\tGrand Total (USD)\t\t\t2,800.00',
+    ].join('\n');
+    await page.getByLabel('Paste').fill(pasted);
+    await page.getByRole('button', { name: 'Read it' }).click();
+
+    await expect(page.getByText(/Nothing was missed/)).toBeVisible();
+    await page.getByRole('button', { name: /apply 2 lines/i }).click();
+    await expect(page.getByText(/2 lines added/)).toBeVisible();
+
+    // 1,250 USD at the stored rate, marked up by the quote's 20%: the line is priced, not typed.
+    const sheet = page.locator('table').filter({ hasText: 'Vendor price' });
+    await expect(sheet.locator('input[value="FG-3100F-BDL-950-12"]')).toBeVisible();
+    await page.getByRole('button', { name: /^save$/i }).click();
+    await expect(page.getByText('Quote saved.')).toBeVisible();
+
+    const saved = await (await request.get(`/api/quotes/${quote.id}`)).json();
+    expect(saved.lines.map((l: { vendorCode: string | null }) => l.vendorCode)).toEqual(['FG-3100F-BDL-950-12', null]);
+    expect(Number(saved.lines[0].vendorUnitCost)).toBe(1250);
+    // The pasted text is kept with the quote.
+    await expect(page.getByText('vendor-quote.txt')).toBeVisible();
+  });
 });

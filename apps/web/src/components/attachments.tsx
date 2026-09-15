@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 import { dateTime, relative } from '../lib/format';
 import { Button, ConfirmDialog, EmptyState, ErrorNote, Loading, cx, useToast } from './ui';
 
-export type AttachmentParent = 'account' | 'contact' | 'lead' | 'deal';
+export type AttachmentParent = 'account' | 'contact' | 'lead' | 'deal' | 'quote';
 
 interface Attachment {
   id: string;
@@ -22,6 +22,7 @@ const PARENT_MODULE: Record<AttachmentParent, string> = {
   contact: 'contacts',
   lead: 'leads',
   deal: 'deals',
+  quote: 'quotes',
 };
 
 function iconFor(filename: string, mime: string) {

@@ -707,6 +707,7 @@ model Quote {
   lines          QuoteLine[]
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[]
+  attachments    Attachment[]
 
   @@index([accountId])
   @@index([dealId])
@@ -1190,9 +1191,14 @@ model Attachment {
   deal            Deal?          @relation(fields: [dealId], references: [id])
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  /// A vendor's quote kept with the quote it was read into. It carries buy prices, so it is
+  /// linked to the quote alone and never to the account, where anyone on the account would see it.
+  quoteId         String?
+  quote           Quote?         @relation(fields: [quoteId], references: [id])
   createdAt       DateTime       @default(now())
 
   @@index([dealId])
+  @@index([quoteId])
   @@index([accountId])
   @@index([purchaseOrderId])
 }

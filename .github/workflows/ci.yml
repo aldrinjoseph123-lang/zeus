@@ -60,12 +60,13 @@ jobs:
           cache: npm
 
       # Matches the server version in the postgres service above — see PG_DUMP_PATH.
-      - name: Install PostgreSQL 17 client
+      # poppler-utils: pdftotext, which the vendor-quote reader shells out to.
+      - name: Install PostgreSQL 17 client and pdftotext
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y postgresql-client-17
+          sudo apt-get install -y postgresql-client-17 poppler-utils
 
       - run: npm ci
       - run: npm run db:generate

@@ -35,8 +35,10 @@ ENV NODE_ENV=production
 # postgresql-client must match the *server* major version: pg_dump refuses to dump a
 # newer server than itself, and Debian bookworm only ships client 15 while the db
 # service runs Postgres 17. Pull the client from the PostgreSQL project's own repo.
+# poppler-utils gives pdftotext, which reads a vendor's PDF quote into the worksheet on the
+# server itself, so the document is never sent to an outside service.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      openssl ca-certificates curl gnupg tini \
+      openssl ca-certificates curl gnupg tini poppler-utils \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
          -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
