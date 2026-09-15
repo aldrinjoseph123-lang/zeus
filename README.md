@@ -218,7 +218,7 @@ paste the new value; nothing else changes.
 
 In the Teams channel you want alerts in: **⋯ → Workflows → "Send webhook alerts to a
 channel"** (older Teams builds call it "Post to a channel when a webhook request is
-received"), then copy the generated URL into **Settings → Notifications → Add webhook**.
+received"), then copy the generated URL into **Settings → Teams channels → Add webhook**.
 Press **Test** to post a card. The URL is a secret — anyone holding it can post to the
 channel.
 
@@ -255,7 +255,7 @@ than no alarm.
 failed, missed or unverified, a data-integrity finding — go to the *Administrators only*
 audience. Commercial events keep the wider *Administrators and Sales Managers* one: a
 sales manager wants to know a deal was won and can do nothing about a failed backup.
-Both are editable per event in *Settings → Notifications*, and existing installs keep
+Both are editable per event in *Settings → Alert rules*, and existing installs keep
 whatever is already set there — the code fills in missing rules, it never overwrites
 your choices.
 
@@ -273,7 +273,7 @@ request-access form, and — when you switch it on — the staff sign-in at
 
 **Setting it up.** In Cloudflare → **Turnstile** → *Add widget*, mode **Managed**, with
 both hostnames on the one widget (`portal.protect24x7.com` and
-`zeus.protect24x7.com`). Paste the site key and secret into **Settings → Integrations →
+`zeus.protect24x7.com`). Paste the site key and secret into **Settings → Sign-in & security →
 Bot protection**. The secret is encrypted at rest; the site key is public by design.
 The portal form starts using it immediately. The staff sign-in does not — tick **Also
 protect the staff sign-in** for that, so configuring the portal cannot gate the whole
@@ -371,8 +371,8 @@ after a month. Both run in the nightly 03:00 prune.
 
 ## Backups to OneDrive
 
-Set the backup account and folder in Settings → Microsoft 365, then turn on
-`backup.enabled` and set `backup.cron` in Settings → Backups. OneDrive is one of three
+Set the backup account and folder in Settings → Microsoft 365, then in Settings → Backups
+tick *Run the physical backup on schedule* and pick the day and time. OneDrive is one of three
 independent destinations — if the upload fails, the local (and NAS) copies still exist,
 the run is recorded as `partial`, and you get a notification. Retention, encryption,
 the other two backup kinds and the restore paths are all covered in

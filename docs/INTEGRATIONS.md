@@ -58,7 +58,7 @@ alerts), **Teams cards**, and **OneDrive/SharePoint backup**.
 ### SSO behaviour
 
 - Accounts outside your tenant are rejected.
-- Unknown Microsoft users are refused unless **Settings → Integrations → Sign-in →
+- Unknown Microsoft users are refused unless **Settings → Sign-in & security →
   "Create users automatically on first Microsoft sign-in"** is enabled.
 
 ---

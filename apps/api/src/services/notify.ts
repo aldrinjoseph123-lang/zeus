@@ -8,7 +8,7 @@ import { alertText, sendWhatsapp } from './whatsapp.js';
 
 /**
  * One entry point for every alert. Each event type has a NotificationRule row
- * (edited in Settings → Notifications) that decides whether it fires and on which
+ * (edited in Settings → Alert rules) that decides whether it fires and on which
  * channels. Delivery failures are logged, never thrown — an unreachable webhook
  * must not roll back a deal update.
  */

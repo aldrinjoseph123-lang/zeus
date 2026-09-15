@@ -69,3 +69,40 @@ test.describe('settings draw each setting once', () => {
     });
   }
 });
+
+/**
+ * One save bar, and nothing thrown away by accident.
+ *
+ * The bar counts what changed, a value typed back to what is stored is not a change, and
+ * leaving the page (a link or Back) with changes pending asks first. Nothing is saved here:
+ * every path ends in Discard or Leave, so the stored settings are untouched.
+ */
+test('settings: the save bar counts edits and asks before they are thrown away', async ({ page }) => {
+  const bar = page.getByRole('region', { name: 'Unsaved changes' });
+  const leave = page.locator('div.fixed.inset-0', { hasText: 'Leave without saving?' });
+
+  await page.goto('/settings/finance');
+  await page.getByRole('link', { name: 'Company' }).click();
+  const city = page.getByLabel('City');
+  const stored = await city.inputValue();
+
+  await city.fill(`${stored} (edited)`);
+  await expect(bar).toContainText('1 unsaved change');
+  await city.fill(stored);
+  await expect(bar).toBeHidden();
+
+  await city.fill(`${stored} (edited)`);
+  await page.goBack();
+  await expect(leave).toBeVisible();
+  await leave.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page).toHaveURL(/\/settings\/company$/);
+  await expect(city).toHaveValue(`${stored} (edited)`);
+
+  await page.getByRole('link', { name: 'Approvals' }).click();
+  await expect(leave).toBeVisible();
+  await leave.getByRole('button', { name: 'Leave' }).click();
+  await expect(page).toHaveURL(/\/settings\/approvals$/);
+
+  await page.goto('/settings/company');
+  await expect(page.getByLabel('City')).toHaveValue(stored);
+});
