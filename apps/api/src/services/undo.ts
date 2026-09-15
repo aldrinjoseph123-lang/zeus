@@ -153,7 +153,9 @@ function stripChild(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     if (key === 'createdAt' || key === 'updatedAt') continue;
-    if (key.endsWith('Id') && key !== 'productId') continue;
+    // The parent link goes; references to other records stay. A quote line's vendor is not
+    // its parent, and dropping it here would undo the worksheet along with the edit.
+    if (key.endsWith('Id') && key !== 'productId' && key !== 'vendorId') continue;
     if (value !== null && typeof value === 'object') continue;
     out[key] = value;
   }

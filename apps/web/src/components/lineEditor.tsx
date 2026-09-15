@@ -38,6 +38,18 @@ export interface EditableLine {
   taxable: boolean;
   vatRate: number;
   termMonths?: number | null;
+  /** Quote worksheet — see QuoteWorksheet. Absent everywhere else, and for roles without cost. */
+  vendorId?: string | null;
+  vendorName?: string | null;
+  vendorCode?: string | null;
+  vendorCurrency?: string;
+  vendorUnitCost?: number | null;
+  fxRate?: number;
+  markupPct?: number | null;
+  isInternal?: boolean;
+  /** The worksheet sets this price, so the cell is not for typing in. Sent by the server for
+   *  roles that cannot see the markup behind it. */
+  priceFromWorksheet?: boolean;
 }
 
 export const blankLine = (defaultVat = 5): EditableLine => ({
@@ -199,18 +211,20 @@ export function LineEditor({
                     onChange={(e) => update(line.key, { unit: e.target.value })} />
                 </td>
                 <td className="px-2 py-1.5">
-                  <Input className="w-28 px-2 py-1 text-right" type="number" step="0.01" value={line.unitPrice} disabled={locked}
+                  <Input className="w-28 px-2 py-1 text-right" type="number" step="0.01" value={line.unitPrice} disabled={locked || line.priceFromWorksheet}
+                    title={line.priceFromWorksheet ? 'Priced on the worksheet, from the vendor quote and a markup.' : undefined}
                     onChange={(e) => update(line.key, { unitPrice: Number(e.target.value) })} />
                 </td>
                 {showCost ? (
                   <td className="px-2 py-1.5">
-                    <Input className="w-28 px-2 py-1 text-right" type="number" min="0" step="0.01" value={line.unitCost ?? 0} disabled={locked}
+                    <Input className="w-28 px-2 py-1 text-right" type="number" min="0" step="0.01" value={line.unitCost ?? 0} disabled={locked || line.vendorUnitCost != null}
+                      title={line.vendorUnitCost != null ? 'Worked out on the worksheet from the vendor price.' : undefined}
                       onChange={(e) => update(line.key, { unitCost: Number(e.target.value), costSource: null })} />
                     {line.costSource ? <CostSource source={line.costSource} /> : null}
                   </td>
                 ) : null}
                 <td className="px-2 py-1.5">
-                  <Input className="w-20 px-2 py-1 text-right" type="number" min="0" max="100" step="0.5" value={line.discountPct} disabled={locked}
+                  <Input className="w-20 px-2 py-1 text-right" type="number" min="0" max="100" step="0.5" value={line.discountPct} disabled={locked || line.priceFromWorksheet}
                     onChange={(e) => update(line.key, { discountPct: Number(e.target.value) })} />
                 </td>
                 {showVat ? (

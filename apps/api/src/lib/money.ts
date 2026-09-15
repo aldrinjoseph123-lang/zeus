@@ -25,6 +25,27 @@ export interface LineTotals {
   lineCost: number;
 }
 
+/**
+ * A worksheet line's cost and price, from what the vendor quoted.
+ *
+ * Markup is on cost — 100 at 20% sells for 120 — because that is how the team prices. What
+ * Zeus reports is margin on sell (20 ÷ 120 = 16.7%), and the two are shown side by side.
+ *
+ * The sell price is worked from the unrounded cost and rounded once. Rounding the cost first
+ * and marking that up compounds the error: 1,250 USD at 3.6725 is 4,590.625, which at 20%
+ * is 5,508.75, but 4,590.63 × 1.2 is 5,508.76.
+ */
+export function worksheetPrice(line: { vendorUnitCost: number; fxRate: number; markupPct: number | null }): {
+  unitCost: number;
+  unitPrice: number | null;
+} {
+  const cost = line.vendorUnitCost * line.fxRate;
+  return {
+    unitCost: round2(cost),
+    unitPrice: line.markupPct === null ? null : round2(cost * (1 + line.markupPct / 100)),
+  };
+}
+
 /** Per-line net after the line discount. */
 export function lineTotals(line: LineInput): LineTotals {
   const gross = round2(line.quantity * line.unitPrice);

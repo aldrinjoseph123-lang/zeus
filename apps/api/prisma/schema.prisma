@@ -177,6 +177,7 @@ model Account {
   deals                Deal[]              @relation("DealCustomer")
   partnerDeals         Deal[]              @relation("DealPartner")
   products             Product[]           @relation("ProductVendor")
+  quoteLinesSupplied   QuoteLine[]         @relation("QuoteLineVendor")
   registrations        DealRegistration[]  @relation("RegistrationVendor")
   partnerRegistrations DealRegistration[]  @relation("RegistrationPartner")
   partnerSubscriptions Subscription[]      @relation("SubscriptionPartner")
@@ -690,6 +691,9 @@ model Quote {
   total        Decimal @default(0) @db.Decimal(14, 2)
   totalCost    Decimal @default(0) @db.Decimal(14, 2)
   marginAmount Decimal @default(0) @db.Decimal(14, 2)
+  /// The worksheet's markup on cost, used by every line that does not set its own. Blank
+  /// until someone types one, so Zeus never invents a number that reads as policy.
+  defaultMarkupPct Decimal? @db.Decimal(6, 2)
 
   terms        String?
   notes        String?
@@ -727,6 +731,20 @@ model QuoteLine {
   lineCost    Decimal  @default(0) @db.Decimal(14, 2)
   /// Term in months for subscriptions/services; null for one-off.
   termMonths  Int?
+
+  /// The worksheet: what the vendor quoted, in the vendor's currency, and the markup on it.
+  /// A line with a `vendorUnitCost` is priced from these on the server; `unitCost` and
+  /// `unitPrice` are then results, not inputs. The rate is copied onto the line when the
+  /// cost is entered, so reopening the quote next month shows the arithmetic actually used.
+  vendorId       String?
+  vendor         Account? @relation("QuoteLineVendor", fields: [vendorId], references: [id])
+  vendorCode     String?
+  vendorCurrency String   @default("AED")
+  vendorUnitCost Decimal? @db.Decimal(14, 4)
+  fxRate         Decimal  @default(1) @db.Decimal(12, 6)
+  markupPct      Decimal? @db.Decimal(6, 2)
+  /// Bought in from nobody: freight, installation, our own engineers.
+  isInternal     Boolean  @default(false)
 
   @@index([quoteId])
 }

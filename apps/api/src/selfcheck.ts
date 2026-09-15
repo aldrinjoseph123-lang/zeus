@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { applyVat, lineTotals, round2, stripVat, taxDocumentTotals } from './lib/money.js';
+import { applyVat, lineTotals, round2, stripVat, taxDocumentTotals, worksheetPrice } from './lib/money.js';
 import { extractDomain, normalizeCompany } from './services/dedupe.js';
 import { parseCsv } from './services/xlsx.js';
 import { buildCard } from './services/teams.js';
@@ -49,6 +49,13 @@ check('stripVat inverts applyVat', () => {
 check('line discount applies before VAT', () => {
   assert.deepEqual(lineTotals({ quantity: 10, unitPrice: 100, discountPct: 10 }), { lineTotal: 900, lineCost: 0 });
   assert.deepEqual(lineTotals({ quantity: 3, unitPrice: 33.33, unitCost: 20 }), { lineTotal: 99.99, lineCost: 60 });
+});
+
+check('worksheet marks up the unrounded cost, and rounds once', () => {
+  // 1,250 USD at the peg is 4,590.625 AED. Rounding that first and marking it up gives 5,508.76.
+  assert.deepEqual(worksheetPrice({ vendorUnitCost: 1250, fxRate: 3.6725, markupPct: 20 }), { unitCost: 4590.63, unitPrice: 5508.75 });
+  assert.deepEqual(worksheetPrice({ vendorUnitCost: 42, fxRate: 1, markupPct: 15 }), { unitCost: 42, unitPrice: 48.3 });
+  assert.equal(worksheetPrice({ vendorUnitCost: 42, fxRate: 1, markupPct: null }).unitPrice, null, 'no markup means the price is typed, not worked out');
 });
 
 // ── per-line tax (invoices, credit notes, purchase orders) ────────────────────

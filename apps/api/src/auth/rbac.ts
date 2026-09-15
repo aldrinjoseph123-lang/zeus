@@ -251,11 +251,13 @@ export async function ownerAllowed(
 const hiddenCache = new WeakMap<object, Set<string>>();
 
 /**
- * Fields computed from a hidden one, which hand it straight back: `lineCost` is quantity ×
- * `unitCost`, printed beside the quantity, and `termCost` is the same on a subscription.
+ * Fields that hand a hidden one straight back. `lineCost` is quantity × `unitCost`, printed
+ * beside the quantity, and `termCost` is the same on a subscription. On the quote worksheet
+ * the vendor's price is the cost before conversion, and a markup turns the visible sell
+ * price back into the cost with one division.
  */
 const DERIVED_FROM: Record<string, string[]> = {
-  unitCost: ['lineCost', 'termCost'],
+  unitCost: ['lineCost', 'termCost', 'vendorUnitCost', 'markupPct', 'defaultMarkupPct'],
 };
 
 /**

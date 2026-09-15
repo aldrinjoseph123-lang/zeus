@@ -55,8 +55,12 @@ async function costedPaperwork(owner: TestUser) {
     },
   });
   const created = await request(app, fx.admin).post('/api/quotes', {
-    accountId: fx.customer.id, dealId: deal.id,
-    lines: [{ productId: product.id, description: 'FortiGate 3100F', quantity: 2, unitPrice: 5508.75, unitCost: 4590.63 }],
+    accountId: fx.customer.id, dealId: deal.id, defaultMarkupPct: 20,
+    lines: [
+      { productId: product.id, description: 'FortiGate 3100F', quantity: 2, unitPrice: 5508.75, unitCost: 4590.63 },
+      // A worksheet line: the vendor's price and a markup each give the cost straight back.
+      { description: 'EDR licence', vendorId: fx.vendor.id, quantity: 100, vendorUnitCost: 42, markupPct: 15 },
+    ],
   });
   assert.equal(created.status, 201);
   const quoteId = (created.body as { id: string }).id;
@@ -113,5 +117,6 @@ describe('a Sales Executive cannot see or derive cost', () => {
     const invoice = leaks((await request(app, fx.admin).get(`/api/invoices/${invoiceId}`)).body);
     assert.ok(quote.some((p) => p.endsWith('lineCost')), 'the admin reads line cost on a quote');
     assert.ok(invoice.some((p) => p.endsWith('unitCost')), 'the admin reads unit cost on an invoice');
+    assert.ok(quote.some((p) => p.endsWith('markupPct')) && quote.some((p) => p.endsWith('vendorUnitCost')), 'and the worksheet');
   });
 });

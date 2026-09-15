@@ -1,5 +1,5 @@
 import { prisma, num } from '../db.js';
-import { taxDocumentTotals, type TaxLineInput } from './money.js';
+import { taxDocumentTotals, worksheetPrice, type TaxLineInput } from './money.js';
 import { getSetting } from './settings.js';
 
 /**
@@ -72,30 +72,52 @@ export async function recalcQuote(quoteId: string): Promise<void> {
   const quote = await prisma.quote.findUnique({ where: { id: quoteId }, include: { lines: true } });
   if (!quote) return;
 
+  /**
+   * Worksheet lines are priced here, from what the vendor quoted, rather than trusted from
+   * the request. Here because every write ends here: a change to the quote's default markup
+   * arrives without any lines, and an undo restores lines without going near the route.
+   * A line with a vendor cost but no markup anywhere keeps the price that was typed.
+   */
+  const defaultMarkup = quote.defaultMarkupPct === null ? null : num(quote.defaultMarkupPct);
+  const lines = quote.lines.map((l) => {
+    const line = { id: l.id, quantity: num(l.quantity), unitPrice: num(l.unitPrice), unitCost: num(l.unitCost), discountPct: num(l.discountPct), taxable: l.taxable };
+    if (l.vendorUnitCost === null) return { ...line, worksheet: false };
+    const priced = worksheetPrice({
+      vendorUnitCost: num(l.vendorUnitCost),
+      fxRate: num(l.fxRate),
+      markupPct: l.markupPct === null ? defaultMarkup : num(l.markupPct),
+    });
+    return priced.unitPrice === null
+      ? { ...line, unitCost: priced.unitCost, worksheet: true }
+      : { ...line, unitCost: priced.unitCost, unitPrice: priced.unitPrice, discountPct: 0, worksheet: true };
+  });
+
   // Same per-line rounding as invoices and purchase orders, so an accepted quote
   // and the invoice raised from it can never differ by a fil.
-  const totals = taxDocumentTotals(
-    quote.lines.map((l) => ({
-      quantity: num(l.quantity),
-      unitPrice: num(l.unitPrice),
-      unitCost: num(l.unitCost),
-      discountPct: num(l.discountPct),
-      taxable: l.taxable,
-    })),
-    { headerDiscountPct: num(quote.discountPct), defaultVatRate: num(quote.vatRate) },
-  );
+  const totals = taxDocumentTotals(lines, { headerDiscountPct: num(quote.discountPct), defaultVatRate: num(quote.vatRate) });
 
-  await prisma.quote.update({
-    where: { id: quoteId },
-    data: {
-      subtotal: totals.subtotal,
-      discountAmt: totals.discountAmt,
-      vatAmount: totals.vatAmount,
-      total: totals.total,
-      totalCost: totals.totalCost,
-      marginAmount: totals.marginAmount,
-    },
-  });
+  await prisma.$transaction([
+    ...lines.flatMap((line, index) => (line.worksheet
+      ? [prisma.quoteLine.update({
+          where: { id: line.id },
+          data: {
+            unitCost: line.unitCost, unitPrice: line.unitPrice, discountPct: line.discountPct,
+            lineTotal: totals.lines[index].lineTotal, lineCost: totals.lines[index].lineCost,
+          },
+        })]
+      : [])),
+    prisma.quote.update({
+      where: { id: quoteId },
+      data: {
+        subtotal: totals.subtotal,
+        discountAmt: totals.discountAmt,
+        vatAmount: totals.vatAmount,
+        total: totals.total,
+        totalCost: totals.totalCost,
+        marginAmount: totals.marginAmount,
+      },
+    }),
+  ]);
 
   // Keep the parent deal's headline figure in step with its accepted/latest quote.
   if (quote.dealId) {

@@ -14,6 +14,31 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Added — the quote worksheet (part 1 of 3)
+
+- **A Worksheet view on every quote**, for roles that see cost. Each line records what the
+  vendor quoted, in the vendor's currency, the rate used, and a markup on cost. Zeus works
+  out the cost in dirhams and the sell price, and shows the margin on sell beside the markup,
+  because the approval floor and every report measure margin, not markup. 100 at 20% markup
+  sells for 120, which is a 16.7% margin.
+- **A default markup per quote**, with a per-line override. Changing the default reprices
+  every line that uses it.
+- **The rate is copied onto the line** when a currency is picked, so reopening the quote
+  later shows the arithmetic that was actually used.
+- **Internal lines** for costs bought from nobody, such as installation or freight.
+- **Subtotals per vendor**, to check each block against the quote that vendor sent.
+- A vendor part number that matches a catalogue SKU links the line to that product.
+- The server prices worksheet lines itself; a price sent from a browser is not trusted.
+  A new version of a quote carries the worksheet, and so does undo.
+- **Behaviour change:** on a line priced from the worksheet, the unit price and discount
+  cannot be typed in the customer view. A Sales Executive sees the price but not the markup
+  behind it, and cannot change or erase the worksheet by saving the quote.
+
+Still to come: pasting or uploading the vendor's quote (part 2) and the Excel exports
+(part 3).
+
+**After the deploy:** nothing. The migration only adds columns; existing quotes are unchanged.
+
 ### Security — cost reached roles that are not meant to see it
 
 - **A Sales Executive or Read Only user could read buy prices.** Masking hid a field only

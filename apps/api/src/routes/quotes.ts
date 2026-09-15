@@ -26,6 +26,14 @@ const lineSchema = z.object({
   discountPct: z.number().min(0).max(100).default(0),
   taxable: z.boolean().default(true),
   termMonths: z.number().int().positive().optional().nullable(),
+  // The worksheet. See recalcQuote for how these become the line's cost and price.
+  vendorId: z.string().optional().nullable(),
+  vendorCode: z.string().trim().optional().nullable(),
+  vendorCurrency: z.string().trim().length(3, 'A currency is a three-letter code.').toUpperCase().default('AED'),
+  vendorUnitCost: z.number().nonnegative().optional().nullable(),
+  fxRate: z.number().positive('An exchange rate must be above zero.').default(1),
+  markupPct: z.number().gt(-100, 'A markup of -100% gives the goods away.').optional().nullable(),
+  isInternal: z.boolean().default(false),
 });
 
 const quoteSchema = z.object({
@@ -36,6 +44,7 @@ const quoteSchema = z.object({
   issueDate: z.string().optional(),
   validUntil: z.string().optional().nullable(),
   discountPct: z.number().min(0).max(100).optional(),
+  defaultMarkupPct: z.number().gt(-100).optional().nullable(),
   vatRate: z.number().min(0).max(100).optional(),
   terms: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -47,7 +56,7 @@ const quoteInclude = {
   contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
   deal: { select: { id: true, reference: true, name: true } },
   preparedBy: { select: { id: true, name: true, email: true, phone: true } },
-  lines: { orderBy: { order: 'asc' as const } },
+  lines: { orderBy: { order: 'asc' as const }, include: { vendor: { select: { id: true, name: true } } } },
 };
 
 type IncomingLine = z.infer<typeof lineSchema>;
@@ -70,22 +79,28 @@ async function costedLines(
   lines: IncomingLine[],
   context: { quoteId?: string; dealId?: string | null },
 ): Promise<IncomingLine[]> {
-  const fields = permissionFor(user, 'quotes').fields ?? {};
-  if (fields.unitCost === 'write' || fields.unitCost === undefined) return lines;
+  const linked = await linkVendorCodes(lines);
+  if (mayWriteCost(user)) return linked;
 
   const previous = context.quoteId
     ? await prisma.quoteLine.findMany({ where: { quoteId: context.quoteId } })
     : [];
+  const byId = new Map(previous.map((l) => [l.id, l]));
   // A stored zero is not a cost worth protecting — it means nobody ever knew one, so it
   // is better to ask the price book again than to preserve the absence for ever.
   const known = previous.filter((l) => num(l.unitCost) > 0);
-  const byProduct = new Map(known.filter((l) => l.productId).map((l) => [l.productId, num(l.unitCost)]));
-  const byDescription = new Map(known.map((l) => [l.description, num(l.unitCost)]));
+  const byProduct = new Map(known.filter((l) => l.productId).map((l) => [l.productId, l]));
+  const byDescription = new Map(known.map((l) => [l.description, l]));
 
   return Promise.all(
-    lines.map(async (line) => {
-      const kept = (line.productId ? byProduct.get(line.productId) : undefined) ?? byDescription.get(line.description);
-      if (kept !== undefined) return { ...line, unitCost: kept };
+    linked.map(async (incoming) => {
+      const before = (incoming.id ? byId.get(incoming.id) : undefined)
+        ?? (incoming.productId ? byProduct.get(incoming.productId) : undefined)
+        ?? byDescription.get(incoming.description);
+      // The worksheet is cost by another name, so a role that cannot see cost can neither set
+      // it nor, by leaving it out of the lines it sends back, wipe it.
+      const line = { ...incoming, ...worksheetOf(before) };
+      if (before && num(before.unitCost) > 0) return { ...line, unitCost: num(before.unitCost) };
       if (!line.productId) return { ...line, unitCost: 0 };
 
       const priced = await resolvePrice({
@@ -98,6 +113,58 @@ async function costedLines(
   );
 }
 
+
+const mayWriteCost = (user: Parameters<typeof permissionFor>[0]) => {
+  const access = (permissionFor(user, 'quotes').fields ?? {}).unitCost;
+  return access === 'write' || access === undefined;
+};
+
+/** A stored line's worksheet fields, or none — as a line sent by a role that cannot see them. */
+function worksheetOf(line?: {
+  vendorId: string | null; vendorCode: string | null; vendorCurrency: string; vendorUnitCost: unknown;
+  fxRate: unknown; markupPct: unknown; isInternal: boolean;
+}) {
+  return {
+    vendorId: line?.vendorId ?? null,
+    vendorCode: line?.vendorCode ?? null,
+    vendorCurrency: line?.vendorCurrency ?? 'AED',
+    vendorUnitCost: line?.vendorUnitCost == null ? null : num(line.vendorUnitCost),
+    fxRate: line ? num(line.fxRate) : 1,
+    markupPct: line?.markupPct == null ? null : num(line.markupPct),
+    isInternal: line?.isInternal ?? false,
+  };
+}
+
+/**
+ * A vendor's part number that matches a catalogue SKU links the line to that product, so
+ * cost history and renewals still find it. No match is normal — most vendor lines are not
+ * in the catalogue — and is left alone.
+ */
+async function linkVendorCodes(lines: IncomingLine[]): Promise<IncomingLine[]> {
+  const codes = lines.filter((l) => !l.productId && l.vendorCode).map((l) => l.vendorCode!);
+  if (codes.length === 0) return lines;
+  const products = await prisma.product.findMany({
+    where: { sku: { in: codes, mode: 'insensitive' }, isActive: true },
+    select: { id: true, sku: true },
+  });
+  const bySku = new Map(products.map((p) => [p.sku.toLowerCase(), p.id]));
+  return lines.map((l) => (l.productId || !l.vendorCode ? l : { ...l, productId: bySku.get(l.vendorCode.toLowerCase()) ?? null }));
+}
+
+/**
+ * Which lines the worksheet prices, as a flag the editor can lock a price cell on. The flag
+ * is not the markup, so it survives masking and reaches the rep whose price would otherwise
+ * be quietly put back on save.
+ */
+function flagWorksheetLines<T extends { defaultMarkupPct: unknown; lines: Array<{ vendorUnitCost: unknown; markupPct: unknown }> }>(quote: T) {
+  return {
+    ...quote,
+    lines: quote.lines.map((l) => ({
+      ...l,
+      priceFromWorksheet: l.vendorUnitCost !== null && (l.markupPct !== null || quote.defaultMarkupPct !== null),
+    })),
+  };
+}
 
 /**
  * Whether the margin on this quote is one somebody should look at, as a flag rather than
@@ -166,7 +233,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
     if (!quote) throw notFound('Quote not found.');
     auditRead(request.user, 'Quote', quote.id, quote.number, clientIp(request));
-    return { ...maskFields(request.user, 'quotes', quote), marginWarning: await marginFlag(quote) };
+    return { ...maskFields(request.user, 'quotes', flagWorksheetLines(quote)), marginWarning: await marginFlag(quote) };
   });
 
   app.post('/api/quotes', { preHandler: requirePermission('quotes', 'create') }, async (request, reply) => {
@@ -190,6 +257,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
         issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
         validUntil: body.validUntil ? new Date(body.validUntil) : new Date(Date.now() + Number(validDays) * 86_400_000),
         discountPct: body.discountPct ?? 0,
+        defaultMarkupPct: mayWriteCost(request.user) ? body.defaultMarkupPct ?? null : null,
         vatRate: body.vatRate ?? defaultVat,
         terms: body.terms ?? defaultTerms,
         notes: body.notes ?? null,
@@ -207,8 +275,8 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     await touch({ accountId: body.accountId, dealId: body.dealId });
     await audit({ user: request.user, action: 'create', entity: 'Quote', entityId: quote.id, summary: quote.number, ip: clientIp(request) });
 
-    const full = await prisma.quote.findUnique({ where: { id: quote.id }, include: quoteInclude });
-    return reply.status(201).send(maskFields(request.user, 'quotes', full));
+    const full = await prisma.quote.findUniqueOrThrow({ where: { id: quote.id }, include: quoteInclude });
+    return reply.status(201).send(maskFields(request.user, 'quotes', flagWorksheetLines(full)));
   });
 
   app.patch('/api/quotes/:id', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
@@ -220,6 +288,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     const parsed = patchOf(quoteSchema).safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message, parsed.error.issues);
     const { lines, ...body } = parsed.data;
+    if (!mayWriteCost(request.user)) delete body.defaultMarkupPct;
 
     await prisma.quote.update({
       where: { id },
@@ -257,7 +326,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
       ip: clientIp(request),
     });
     const full = await prisma.quote.findUniqueOrThrow({ where: { id }, include: quoteInclude });
-    return { ...maskFields(request.user, 'quotes', full), marginWarning: await marginFlag(full) };
+    return { ...maskFields(request.user, 'quotes', flagWorksheetLines(full)), marginWarning: await marginFlag(full) };
   });
 
   /** New version of an existing quote — keeps the old one for the audit trail. */
@@ -265,6 +334,10 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const source = await prisma.quote.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!source) throw notFound('Quote not found.');
+
+    // Everything a line holds except its identity and its parent — including the worksheet,
+    // or version 2 of a marked-up quote arrives as typed prices with the working gone.
+    const copiedLines = source.lines.map(({ id: _id, quoteId: _quoteId, ...line }) => line);
 
     const copy = await prisma.quote.create({
       data: {
@@ -276,17 +349,12 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
         status: 'DRAFT',
         validUntil: source.validUntil,
         discountPct: source.discountPct,
+        defaultMarkupPct: source.defaultMarkupPct,
         vatRate: source.vatRate,
         terms: source.terms,
         notes: source.notes,
         preparedById: request.user.id,
-        lines: {
-          create: source.lines.map((l) => ({
-            productId: l.productId, order: l.order, description: l.description, quantity: l.quantity,
-            unit: l.unit, unitPrice: l.unitPrice, unitCost: l.unitCost, discountPct: l.discountPct,
-            taxable: l.taxable, lineTotal: l.lineTotal, lineCost: l.lineCost, termMonths: l.termMonths,
-          })),
-        },
+        lines: { create: copiedLines },
       },
     }).catch(async () => {
       // `number` is unique — a revision gets its own number rather than colliding.
@@ -300,24 +368,20 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
           status: 'DRAFT',
           validUntil: source.validUntil,
           discountPct: source.discountPct,
+          defaultMarkupPct: source.defaultMarkupPct,
           vatRate: source.vatRate,
           terms: source.terms,
           notes: source.notes,
           preparedById: request.user.id,
-          lines: {
-            create: source.lines.map((l) => ({
-              productId: l.productId, order: l.order, description: l.description, quantity: l.quantity,
-              unit: l.unit, unitPrice: l.unitPrice, unitCost: l.unitCost, discountPct: l.discountPct,
-              taxable: l.taxable, lineTotal: l.lineTotal, lineCost: l.lineCost, termMonths: l.termMonths,
-            })),
-          },
+          lines: { create: copiedLines },
         },
       });
     });
 
     await recalcQuote(copy.id);
     await audit({ user: request.user, action: 'create', entity: 'Quote', entityId: copy.id, summary: `Revision of ${source.number}`, ip: clientIp(request) });
-    return reply.status(201).send(await prisma.quote.findUnique({ where: { id: copy.id }, include: quoteInclude }));
+    const full = await prisma.quote.findUniqueOrThrow({ where: { id: copy.id }, include: quoteInclude });
+    return reply.status(201).send(maskFields(request.user, 'quotes', flagWorksheetLines(full)));
   });
 
   app.post('/api/quotes/:id/status', { preHandler: requirePermission('quotes', 'update') }, async (request) => {

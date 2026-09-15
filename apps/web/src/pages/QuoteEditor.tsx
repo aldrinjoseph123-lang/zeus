@@ -6,6 +6,7 @@ import { api, ApiError, download } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, dateInput, money, percent } from '../lib/format';
 import { LineEditor, blankLine, previewTotals, type EditableLine } from '../components/lineEditor';
+import { QuoteWorksheet, priceWorksheet } from '../components/quoteWorksheet';
 import {
   Button, Card, CardHeader, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Textarea, cx, useToast,
@@ -17,10 +18,18 @@ import { ApprovalBar, type ApprovalState } from '../components/approvals';
 interface QuoteFull extends ApprovalState {
   id: string; number: string; version: number; status: string; issueDate: string; validUntil: string | null;
   discountPct: string | number; vatRate: string | number; terms: string | null; notes: string | null;
+  /** Absent for roles that cannot see cost. */
+  defaultMarkupPct?: string | number | null;
   account: { id: string; name: string }; contact: { id: string; firstName: string; lastName: string; email: string | null } | null;
   deal: { id: string; reference: string; name: string } | null;
   preparedBy: { id: string; name: string } | null;
-  lines: Array<{ id: string; productId: string | null; description: string; quantity: string | number; unit: string; unitPrice: string | number; unitCost: string | number; discountPct: string | number; taxable: boolean; termMonths: number | null }>;
+  lines: Array<{
+    id: string; productId: string | null; description: string; quantity: string | number; unit: string; unitPrice: string | number;
+    unitCost?: string | number; discountPct: string | number; taxable: boolean; termMonths: number | null;
+    vendorId: string | null; vendor: { id: string; name: string } | null; vendorCode: string | null; vendorCurrency: string;
+    vendorUnitCost?: string | number | null; fxRate: string | number; markupPct?: string | number | null; isInternal: boolean;
+    priceFromWorksheet: boolean;
+  }>;
   /** Set by the server, so the warning reaches roles that cannot see the figure behind it. */
   marginWarning: { belowFloor: boolean; negative: boolean; floorPct: number } | null;
 }
@@ -42,6 +51,8 @@ export default function QuoteEditor() {
   const [contactId, setContactId] = useState('');
   const [validUntil, setValidUntil] = useState('');
   const [discountPct, setDiscountPct] = useState(0);
+  const [defaultMarkupPct, setDefaultMarkupPct] = useState<number | null>(null);
+  const [view, setView] = useState<'lines' | 'worksheet'>('lines');
   const [vatRate, setVatRate] = useState(5);
   const [terms, setTerms] = useState('');
   const [notes, setNotes] = useState('');
@@ -90,6 +101,7 @@ export default function QuoteEditor() {
       setContactId(quote.contact?.id ?? '');
       setValidUntil(dateInput(quote.validUntil));
       setDiscountPct(Number(quote.discountPct));
+      setDefaultMarkupPct(quote.defaultMarkupPct == null ? null : Number(quote.defaultMarkupPct));
       setVatRate(Number(quote.vatRate));
       setTerms(quote.terms ?? '');
       setNotes(quote.notes ?? '');
@@ -98,8 +110,13 @@ export default function QuoteEditor() {
           ? quote.lines.map((line) => ({
               key: line.id, productId: line.productId, description: line.description,
               quantity: Number(line.quantity), unit: line.unit, unitPrice: Number(line.unitPrice),
-              unitCost: Number(line.unitCost), discountPct: Number(line.discountPct),
+              unitCost: Number(line.unitCost ?? 0), discountPct: Number(line.discountPct),
               taxable: line.taxable, vatRate: Number(quote.vatRate), termMonths: line.termMonths,
+              vendorId: line.vendorId, vendorName: line.vendor?.name ?? null, vendorCode: line.vendorCode,
+              vendorCurrency: line.vendorCurrency, fxRate: Number(line.fxRate), isInternal: line.isInternal,
+              vendorUnitCost: line.vendorUnitCost == null ? null : Number(line.vendorUnitCost),
+              markupPct: line.markupPct == null ? null : Number(line.markupPct),
+              priceFromWorksheet: line.priceFromWorksheet,
             }))
           : [blankLine(vatRate)],
       );
@@ -119,12 +136,17 @@ export default function QuoteEditor() {
     contactId: contactId || null,
     validUntil: validUntil || null,
     discountPct,
+    // A role without cost access never had these to send; the server keeps what is stored.
+    ...(showCost ? { defaultMarkupPct } : {}),
     vatRate,
     terms: terms || null,
     notes: notes || null,
     lines: lines
       .filter((line) => line.description.trim())
       .map((line) => ({
+        // Lets the server recognise a line it already holds, so a rep's reworded description
+        // does not lose the worksheet behind it.
+        id: line.key,
         productId: line.productId,
         description: line.description.trim(),
         quantity: Number(line.quantity) || 0,
@@ -134,6 +156,15 @@ export default function QuoteEditor() {
         discountPct: Number(line.discountPct) || 0,
         taxable: line.taxable !== false,
         termMonths: line.termMonths,
+        ...(showCost ? {
+          vendorId: line.isInternal ? null : line.vendorId ?? null,
+          vendorCode: line.vendorCode ?? null,
+          vendorCurrency: line.vendorCurrency ?? 'AED',
+          vendorUnitCost: line.vendorUnitCost ?? null,
+          fxRate: line.fxRate ?? 1,
+          markupPct: line.markupPct ?? null,
+          isInternal: line.isInternal ?? false,
+        } : {}),
       })),
   });
 
@@ -250,8 +281,10 @@ export default function QuoteEditor() {
 
       {error ? <div className="mb-3"><ErrorNote error={error} /></div> : null}
 
-      <div className="grid gap-3 xl:grid-cols-[1fr_320px]">
-        <div className="flex flex-col gap-3">
+      {/* The worksheet needs the width; the totals move under it rather than squeezing it. */}
+      <div className={cx('grid gap-3', view === 'lines' && 'xl:grid-cols-[1fr_320px]')}>
+        {/* min-w-0: a grid item otherwise grows to its widest child, and the worksheet table would push the page sideways instead of scrolling in its own box. */}
+        <div className="flex min-w-0 flex-col gap-3">
           <Card>
             <CardHeader title="Customer" />
             <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
@@ -294,22 +327,54 @@ export default function QuoteEditor() {
 
           <Card>
             <CardHeader
-              title="Line items"
-              subtitle="Pick from the catalog or type a one-off line"
-              actions={!locked ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setLines([...lines, blankLine()])}>Add line</Button> : undefined}
+              title={view === 'worksheet' ? 'Worksheet' : 'Line items'}
+              subtitle={view === 'worksheet'
+                ? 'Vendor prices, the rate used and the markup. Only roles that see cost can open this.'
+                : 'Pick from the catalog or type a one-off line'}
+              actions={
+                <span className="flex items-center gap-2">
+                  {showCost ? (
+                    <span role="group" aria-label="View" className="flex border border-line">
+                      {(['lines', 'worksheet'] as const).map((v) => (
+                        <button
+                          key={v}
+                          aria-pressed={view === v}
+                          onClick={() => setView(v)}
+                          className={cx('px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors', view === v ? 'bg-n950 text-white' : 'text-muted hover:text-ink')}
+                        >
+                          {v === 'lines' ? 'Customer view' : 'Worksheet'}
+                        </button>
+                      ))}
+                    </span>
+                  ) : null}
+                  {!locked && view === 'lines' ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setLines([...lines, blankLine()])}>Add line</Button> : null}
+                </span>
+              }
             />
 
-            <LineEditor
-              lines={lines}
-              onChange={setLines}
-              locked={locked}
-              showCost={showCost}
-              defaultVat={vatRate}
-              showVat={false}
-              headerDiscountPct={discountPct}
-              dealId={dealId || quote?.deal?.id || null}
-              currency={String(settings?.['finance.currency'] ?? 'AED')}
-            />
+            {view === 'worksheet' && showCost ? (
+              <QuoteWorksheet
+                lines={lines}
+                onChange={setLines}
+                defaultMarkupPct={defaultMarkupPct}
+                onDefaultMarkupChange={(value) => { setDefaultMarkupPct(value); setLines(priceWorksheet(lines, value)); }}
+                rates={(settings?.['finance.exchangeRates'] ?? {}) as Record<string, number>}
+                baseCurrency={String(settings?.['finance.currency'] ?? 'AED')}
+                locked={locked}
+              />
+            ) : (
+              <LineEditor
+                lines={lines}
+                onChange={setLines}
+                locked={locked}
+                showCost={showCost}
+                defaultVat={vatRate}
+                showVat={false}
+                headerDiscountPct={discountPct}
+                dealId={dealId || quote?.deal?.id || null}
+                currency={String(settings?.['finance.currency'] ?? 'AED')}
+              />
+            )}
           </Card>
 
           <Card>
@@ -326,7 +391,7 @@ export default function QuoteEditor() {
         </div>
 
         {/* sticky totals */}
-        <div className="xl:sticky xl:top-4 xl:self-start">
+        <div className={cx(view === 'lines' && 'xl:sticky xl:top-4 xl:self-start')}>
           <Card>
             <CardHeader title="Totals" subtitle="AED" />
             <div className="space-y-2 px-4 py-4 text-[13px]">

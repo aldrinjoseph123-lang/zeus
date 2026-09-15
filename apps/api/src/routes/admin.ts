@@ -363,7 +363,10 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings/public', async (request) => {
     if (!request.user) throw badRequest('Not signed in.');
     const all = await getSettings();
-    const allowed = ['company.name', 'branding.', 'finance.currency', 'finance.vatRate', 'finance.vatLabel', 'lists.', 'pipeline.'];
+    // Exchange rates are public figures (the dirham is pegged), and the quote worksheet copies
+    // one onto a line the moment a vendor currency is picked. Not `finance.exchangeRateApi`,
+    // whose URL may carry a key — the prefix below does not reach it.
+    const allowed = ['company.name', 'branding.', 'finance.currency', 'finance.vatRate', 'finance.vatLabel', 'finance.exchangeRates', 'lists.', 'pipeline.'];
     return Object.fromEntries(Object.entries(all).filter(([key]) => allowed.some((p) => key === p || key.startsWith(p))));
   });
 
