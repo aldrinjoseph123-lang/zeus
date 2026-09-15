@@ -10,7 +10,8 @@ import { touch } from '../lib/touch.js';
 
 const contactSchema = z.object({
   firstName: z.string().min(1, 'First name is required.'),
-  lastName: z.string().min(1, 'Last name is required.'),
+  // Optional: plenty of real contacts are a first name and a mobile number.
+  lastName: z.string().trim().default(''),
   email: z.string().email().optional().nullable().or(z.literal('')),
   phone: z.string().optional().nullable(),
   mobile: z.string().optional().nullable(),

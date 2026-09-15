@@ -8,7 +8,7 @@ import { env } from '../env.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, notFound, requirePermission } from '../lib/http.js';
 import { readWorkbook, templateXlsx } from '../services/xlsx.js';
-import { checkDuplicates, extractDomain, normalizeCompany } from '../services/dedupe.js';
+import { checkDuplicates, extractDomain, freeEmailDomains, normalizeCompany } from '../services/dedupe.js';
 import { nextReference } from '../lib/counters.js';
 import { applyVat } from '../lib/money.js';
 import { vatRate } from '../lib/settings.js';
@@ -72,8 +72,10 @@ export const MODULE_FIELDS: Record<string, FieldDef[]> = {
   ],
   contacts: [
     { key: 'firstName', label: 'First name', required: true, aliases: ['first name', 'firstname', 'given name'], example: 'Fatima', example2: 'John' },
-    { key: 'lastName', label: 'Last name', required: true, aliases: ['last name', 'lastname', 'surname'], example: 'Al Hashimi', example2: 'Mathew' },
-    { key: 'accountName', label: 'Account name', aliases: ['company', 'account', 'company name', 'customer', 'organisation'], example: 'Emirates NBD Bank P.J.S.C.', example2: 'Falcon Technologies LLC' },
+    // Optional: plenty of real contacts are a first name and a mobile number.
+    { key: 'lastName', label: 'Last name', aliases: ['last name', 'lastname', 'surname'], example: 'Al Hashimi', example2: 'Mathew' },
+    // Required as a column; a blank cell is settled in screening rather than rejected.
+    { key: 'accountName', label: 'Account name', required: true, aliases: ['company', 'account', 'company name', 'customer', 'organisation', 'account name'], example: 'Emirates NBD Bank P.J.S.C.', example2: 'Falcon Technologies LLC' },
     { key: 'email', label: 'Email', aliases: ['email', 'e-mail', 'email address'], example: 'fatima.alhashimi@emiratesnbd.com', example2: 'john.mathew@falcontech.ae' },
     { key: 'phone', label: 'Phone', aliases: ['phone', 'telephone', 'direct'], example: '+971 4 316 0142', example2: '+971 4 887 1215' },
     { key: 'mobile', label: 'Mobile', aliases: ['mobile', 'cell', 'cellphone'], example: '+971 50 998 4411', example2: '+971 55 220 7788' },
@@ -143,6 +145,142 @@ function coerce(value: string | undefined, type?: string): unknown {
   }
   if (type === 'boolean') return ['yes', 'true', '1', 'y'].includes(value.toLowerCase());
   return value;
+}
+
+type AccountKind = 'CUSTOMER' | 'PARTNER' | 'VENDOR' | 'PROSPECT';
+
+/**
+ * The columns of an import that name an account, and whether a row may leave one blank.
+ *
+ * An import used to find an account by its exact name and, failing that, quietly create one as
+ * a Customer. So "StorTech Solutions LLC" became a second StorTech beside "StorTech Solutions",
+ * a partner arrived typed as a customer, and a contact whose row named no company was created
+ * belonging to nobody. Now every account a file mentions that Zeus does not already hold by
+ * that exact name is put to a person first: link it to one Zeus has, create it with a type,
+ * or leave its rows out.
+ */
+const ACCOUNT_FIELDS: Record<string, Array<{ field: string; label: string; required: boolean; type: AccountKind }>> = {
+  contacts: [{ field: 'accountName', label: 'Account', required: true, type: 'CUSTOMER' }],
+  deals: [
+    { field: 'accountName', label: 'Customer', required: true, type: 'CUSTOMER' },
+    { field: 'partnerName', label: 'Partner', required: false, type: 'PARTNER' },
+  ],
+  products: [{ field: 'vendorName', label: 'Vendor', required: false, type: 'VENDOR' }],
+  priceBook: [{ field: 'vendorName', label: 'Vendor', required: false, type: 'VENDOR' }],
+};
+
+const screened = (module: string, field: string) => (ACCOUNT_FIELDS[module] ?? []).some((r) => r.field === field);
+
+/** One named account shares a key however the file spelled its suffix; a blank is per row. */
+const referenceKey = (name: string, rowNo: number, field: string) =>
+  name ? `name:${normalizeCompany(name) || name.toLowerCase()}` : `row:${rowNo}:${field}`;
+
+export interface AccountReference {
+  key: string;
+  /** As the file wrote it; null for a row that named no account at all. */
+  name: string | null;
+  label: string;
+  rows: number[];
+  /** Who those rows are, so the screen can say "3 contacts: …". */
+  examples: string[];
+  status: 'found' | 'new' | 'blank';
+  found: { id: string; name: string; type: string } | null;
+  suggestions: Array<{ id: string; name: string; type: string; reason: string }>;
+  /** A name to create under when the file gave none, taken from the rows' email domain. */
+  suggestedName: string | null;
+  domain: string | null;
+  type: AccountKind;
+}
+
+const accountDecision = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('link'), accountId: z.string().min(1) }),
+  z.object({ action: z.literal('create'), name: z.string().trim().min(1, 'A new account needs a name.'), type: z.enum(['CUSTOMER', 'PARTNER', 'VENDOR', 'PROSPECT']) }),
+  z.object({ action: z.literal('skip') }),
+]);
+type AccountDecision = z.infer<typeof accountDecision>;
+
+function rowLabel(module: string, value: (key: string) => string): string {
+  if (module === 'contacts') return `${value('firstName')} ${value('lastName')}`.trim();
+  if (module === 'deals') return value('name');
+  return value('sku');
+}
+
+/** "buhani.co" → "Buhani": somewhere to start when a row names no company. */
+const nameFromDomain = (domain: string) => {
+  const label = domain.split('.')[0];
+  return label.charAt(0).toUpperCase() + label.slice(1);
+};
+
+/**
+ * Every account a file refers to, with what Zeus already knows about it. Found means an account
+ * of exactly that name exists and is used without asking. Anything else carries suggestions: an
+ * account whose name matches once legal suffixes are set aside, or that sits on the same email
+ * domain as the rows naming it.
+ */
+async function screenAccounts(module: string, rows: Array<Record<string, string>>, mapping: Record<string, string>): Promise<AccountReference[]> {
+  const refs = ACCOUNT_FIELDS[module];
+  if (!refs) return [];
+
+  const [accounts, free] = await Promise.all([
+    prisma.account.findMany({ where: { deletedAt: null }, select: { id: true, name: true, type: true, domain: true } }),
+    freeEmailDomains(),
+  ]);
+  const summary = (a: (typeof accounts)[number]) => ({ id: a.id, name: a.name, type: a.type });
+  const byName = new Map(accounts.map((a) => [a.name.trim().toLowerCase(), a]));
+  const normalised = accounts.map((a) => ({ account: a, key: normalizeCompany(a.name) }));
+
+  const out = new Map<string, AccountReference>();
+  rows.forEach((raw, index) => {
+    const rowNo = index + 2;
+    const value = (key: string) => (mapping[key] ? String(raw[mapping[key]] ?? '').trim() : '');
+    const emailDomain = extractDomain(value('email'));
+    const domain = emailDomain && !free.has(emailDomain) ? emailDomain : null;
+
+    for (const ref of refs) {
+      const name = value(ref.field);
+      if (!name && !ref.required) continue;
+      const key = referenceKey(name, rowNo, ref.field);
+      let entry = out.get(key);
+      if (!entry) {
+        const exact = name ? byName.get(name.toLowerCase()) : undefined;
+        entry = {
+          key, name: name || null, label: ref.label, rows: [], examples: [],
+          status: exact ? 'found' : name ? 'new' : 'blank',
+          found: exact ? summary(exact) : null,
+          suggestions: [], suggestedName: null, domain, type: ref.type,
+        };
+        out.set(key, entry);
+      }
+      entry.rows.push(rowNo);
+      const example = rowLabel(module, value);
+      if (example && entry.examples.length < 3) entry.examples.push(example);
+      entry.domain ??= domain;
+    }
+  });
+
+  for (const entry of out.values()) {
+    if (entry.status === 'found') continue;
+    const seen = new Set<string>();
+    const add = (a: (typeof accounts)[number], reason: string) => {
+      if (seen.has(a.id)) return;
+      seen.add(a.id);
+      entry.suggestions.push({ ...summary(a), reason });
+    };
+    if (entry.name) {
+      const wanted = normalizeCompany(entry.name);
+      for (const { account, key } of normalised) {
+        if (!wanted || !key) continue;
+        // Contained either way, but not on a fragment so short it matches half the database.
+        if (key === wanted || (Math.min(key.length, wanted.length) >= 5 && (key.includes(wanted) || wanted.includes(key)))) add(account, 'similar name');
+      }
+    }
+    if (entry.domain) {
+      for (const a of accounts) if (a.domain?.toLowerCase() === entry.domain) add(a, `same email domain, ${entry.domain}`);
+    }
+    entry.suggestions = entry.suggestions.slice(0, 5);
+    if (!entry.name && entry.domain) entry.suggestedName = nameFromDomain(entry.domain);
+  }
+  return [...out.values()];
 }
 
 export default async function importRoutes(app: FastifyInstance): Promise<void> {
@@ -242,6 +380,19 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
     });
   });
 
+  /** Step 2½ — which accounts does this file name, and which of them does Zeus not have. */
+  app.post('/api/imports/:id/accounts', { preHandler: requirePermission('imports', 'create') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const parsed = z.object({ mapping: z.record(z.string(), z.string()) }).safeParse(request.body);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
+    const job = await prisma.importJob.findUnique({ where: { id } });
+    if (!job) throw notFound('Import job not found.');
+    const stored = (job.mapping as { storedName?: string }).storedName;
+    if (!stored) throw badRequest('The uploaded file is no longer available. Upload it again.');
+    const { rows } = await readWorkbook(await readFile(path.join(env.UPLOAD_DIR, stored)), job.filename);
+    return { references: await screenAccounts(job.module, rows, parsed.data.mapping) };
+  });
+
   /** Step 2 & 3 — dry run then commit, same code path so the preview is honest. */
   app.post('/api/imports/:id/run', { preHandler: requirePermission('imports', 'create') }, async (request) => {
     const { id } = request.params as { id: string };
@@ -252,10 +403,12 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
       onDuplicate: z.enum(['skip', 'update', 'create']).default('skip'),
       ownerId: z.string().optional(),
       defaults: z.record(z.string(), z.string()).optional(),
+      /** What to do with each account screening raised, keyed by AccountReference.key. */
+      accounts: z.record(z.string(), accountDecision).default({}),
     });
     const parsed = schema.safeParse(request.body);
     if (!parsed.success) throw badRequest(parsed.error.issues[0].message);
-    const { mapping, dryRun, onDuplicate, defaults } = parsed.data;
+    const { mapping, dryRun, onDuplicate, defaults, accounts: decisions } = parsed.data;
 
     const job = await prisma.importJob.findUnique({ where: { id } });
     if (!job) throw notFound('Import job not found.');
@@ -274,21 +427,48 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
     let updated = 0;
     let skipped = 0;
 
-    // Cache name lookups so a 5000-row file does not run 5000 identical queries.
-    const accountCache = new Map<string, string | null>();
-    const resolveAccount = async (name: string, type: 'CUSTOMER' | 'PARTNER' | 'VENDOR' = 'CUSTOMER'): Promise<string | null> => {
-      const key = normalizeCompany(name);
-      if (!key) return null;
-      if (accountCache.has(key)) return accountCache.get(key)!;
-      let account = await prisma.account.findFirst({
-        where: { deletedAt: null, name: { equals: name, mode: 'insensitive' } },
+    // Nothing is written while an account the file names is still an open question.
+    const references = await screenAccounts(job.module, rows, mapping);
+    const byKey = new Map(references.map((r) => [r.key, r]));
+    const unsettled = references.filter((r) => r.status !== 'found' && !decisions[r.key]);
+    if (!dryRun && unsettled.length > 0) {
+      const names = unsettled.slice(0, 3).map((r) => r.name ?? `row ${r.rows[0]}`).join(', ');
+      throw badRequest(`Settle ${unsettled.length} account${unsettled.length === 1 ? '' : 's'} before importing: ${names}${unsettled.length > 3 ? '…' : ''}.`);
+    }
+    const linkIds = Object.values(decisions).flatMap((d) => (d.action === 'link' ? [d.accountId] : []));
+    if (linkIds.length > 0) {
+      const live = await prisma.account.count({ where: { id: { in: [...new Set(linkIds)] }, deletedAt: null } });
+      if (live !== new Set(linkIds).size) throw badRequest('One of the accounts chosen to link to no longer exists. Screen the accounts again.');
+    }
+
+    /**
+     * The account a row belongs to, as screening settled it. `skip` leaves the row out; in a dry
+     * run an account still to be created answers "new", so the preview can say so without one.
+     */
+    const createdAccounts = new Map<string, string>();
+    const accountFor = async (field: string, name: unknown, rowNo: number): Promise<{ id: string | null; skip: boolean; note?: string }> => {
+      const ref = ACCOUNT_FIELDS[job.module]?.find((r) => r.field === field);
+      const given = String(name ?? '').trim();
+      if (!given && !ref?.required) return { id: null, skip: false };
+      const key = referenceKey(given, rowNo, field);
+      const reference = byKey.get(key);
+      if (reference?.found) return { id: reference.found.id, skip: false };
+
+      const decision: AccountDecision | undefined = decisions[key];
+      if (!decision) return { id: null, skip: true, note: `${ref?.label ?? 'Account'} not settled yet` };
+      if (decision.action === 'skip') return { id: null, skip: true, note: 'Left out in screening' };
+      if (decision.action === 'link') return { id: decision.accountId, skip: false };
+
+      const note = `New ${decision.type.toLowerCase()}: ${decision.name}`;
+      const existing = createdAccounts.get(key);
+      if (existing) return { id: existing, skip: false, note };
+      if (dryRun) return { id: 'new', skip: false, note };
+      const account = await prisma.account.create({
+        data: { name: decision.name, type: decision.type, ownerId, domain: reference?.domain ?? null, lastActivityAt: new Date() },
         select: { id: true },
       });
-      if (!account && !dryRun) {
-        account = await prisma.account.create({ data: { name, type, ownerId, lastActivityAt: new Date() }, select: { id: true } });
-      }
-      accountCache.set(key, account?.id ?? null);
-      return account?.id ?? null;
+      createdAccounts.set(key, account.id);
+      return { id: account.id, skip: false, note };
     };
 
     const defaultVat = await vatRate();
@@ -306,7 +486,8 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
         if (record[key] === null || record[key] === undefined || record[key] === '') record[key] = value;
       }
 
-      const missing = fields.filter((f) => f.required && !record[f.key]).map((f) => f.label);
+      // An account column's blank cell is not a missing field: screening settles it.
+      const missing = fields.filter((f) => f.required && !record[f.key] && !screened(job.module, f.key)).map((f) => f.label);
       if (missing.length) {
         errors.push({ row: rowNo, message: `Missing required: ${missing.join(', ')}` });
         skipped += 1;
@@ -386,19 +567,27 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
         }
 
         else if (job.module === 'contacts') {
-          const accountId = record.accountName ? await resolveAccount(String(record.accountName)) : null;
+          const label = `${record.firstName} ${record.lastName ?? ''}`.trim();
+          // A contact never exists without an account; screening settled which one, or left the row out.
+          const account = await accountFor('accountName', record.accountName, rowNo);
+          if (account.skip) {
+            skipped += 1;
+            preview.push({ row: rowNo, action: 'skip', label, note: account.note });
+            continue;
+          }
+          const accountId = account.id === 'new' ? null : account.id;
           const existing = record.email
             ? await prisma.contact.findFirst({ where: { email: String(record.email), deletedAt: null } })
             : null;
 
           if (existing && onDuplicate === 'skip') {
             skipped += 1;
-            preview.push({ row: rowNo, action: 'skip', label: `${record.firstName} ${record.lastName}`, note: 'Email already on file' });
+            preview.push({ row: rowNo, action: 'skip', label, note: 'Email already on file' });
             continue;
           }
 
           const data = {
-            firstName: String(record.firstName), lastName: String(record.lastName),
+            firstName: String(record.firstName), lastName: String(record.lastName ?? ''),
             email: (record.email as string) || null, phone: (record.phone as string) || null,
             mobile: (record.mobile as string) || null, jobTitle: (record.jobTitle as string) || null,
             department: (record.department as string) || null, linkedinUrl: (record.linkedinUrl as string) || null,
@@ -406,11 +595,11 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
           };
 
           if (existing && onDuplicate === 'update') {
-            preview.push({ row: rowNo, action: 'update', label: `${record.firstName} ${record.lastName}` });
+            preview.push({ row: rowNo, action: 'update', label, note: account.note });
             if (!dryRun) await prisma.contact.update({ where: { id: existing.id }, data });
             updated += 1;
           } else {
-            preview.push({ row: rowNo, action: 'create', label: `${record.firstName} ${record.lastName}` });
+            preview.push({ row: rowNo, action: 'create', label, note: account.note });
             if (!dryRun) await prisma.contact.create({ data: { ...data, ownerId } });
             imported += 1;
           }
@@ -423,7 +612,13 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
             preview.push({ row: rowNo, action: 'skip', label: String(record.sku), note: 'SKU already exists' });
             continue;
           }
-          const vendorId = record.vendorName ? await resolveAccount(String(record.vendorName), 'VENDOR') : null;
+          const vendor = await accountFor('vendorName', record.vendorName, rowNo);
+          if (vendor.skip) {
+            skipped += 1;
+            preview.push({ row: rowNo, action: 'skip', label: String(record.sku), note: vendor.note });
+            continue;
+          }
+          const vendorId = vendor.id === 'new' ? null : vendor.id;
           const data = {
             sku: String(record.sku), name: String(record.name),
             type: (String(record.type ?? '').toUpperCase() === 'SERVICE' ? 'SERVICE' : 'PRODUCT') as never,
@@ -453,9 +648,13 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
             throw new Error(`No catalogue item with SKU "${record.sku}" — add it first, or import the catalogue.`);
           }
 
-          const vendorId = record.vendorName
-            ? await resolveAccount(String(record.vendorName), 'VENDOR')
-            : product.vendorId;
+          const vendor = await accountFor('vendorName', record.vendorName, rowNo);
+          if (vendor.skip) {
+            skipped += 1;
+            preview.push({ row: rowNo, action: 'skip', label: String(record.sku), note: vendor.note });
+            continue;
+          }
+          const vendorId = record.vendorName ? (vendor.id === 'new' ? null : vendor.id) : product.vendorId;
           const minQuantity = (record.minQuantity as number) ?? 1;
 
           // A vendor's refreshed list replaces the same tier rather than stacking a
@@ -497,15 +696,20 @@ export default async function importRoutes(app: FastifyInstance): Promise<void> 
 
         else if (job.module === 'deals') {
           if (!pipeline || pipeline.stages.length === 0) throw new Error('No default pipeline with stages is configured.');
-          const accountId = await resolveAccount(String(record.accountName));
-          if (!accountId && !dryRun) throw new Error(`Could not resolve customer "${record.accountName}".`);
-
-          const partnerId = record.partnerName ? await resolveAccount(String(record.partnerName), 'PARTNER') : null;
+          const customer = await accountFor('accountName', record.accountName, rowNo);
+          const partner = await accountFor('partnerName', record.partnerName, rowNo);
+          if (customer.skip || partner.skip) {
+            skipped += 1;
+            preview.push({ row: rowNo, action: 'skip', label: String(record.name), note: customer.note ?? partner.note });
+            continue;
+          }
+          const accountId = customer.id;
+          const partnerId = partner.id === 'new' ? null : partner.id;
           const stage = pipeline.stages.find((s) => norm(s.name) === norm(String(record.stageName ?? ''))) ?? pipeline.stages[0];
           const net = (record.amount as number) ?? 0;
           const { vatAmount, total } = applyVat(net, defaultVat);
 
-          preview.push({ row: rowNo, action: 'create', label: `${record.name} — ${record.accountName}`, note: `Stage: ${stage.name}` });
+          preview.push({ row: rowNo, action: 'create', label: `${record.name} — ${record.accountName || customer.note?.replace(/^New \w+: /, '')}`, note: [`Stage: ${stage.name}`, customer.note, partner.note].filter(Boolean).join(' · ') });
           if (!dryRun) {
             const deal = await prisma.deal.create({
               data: {

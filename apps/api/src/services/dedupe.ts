@@ -35,10 +35,14 @@ export function extractDomain(input: string | null | undefined): string | null {
 }
 
 
+/** gmail, outlook and the like: a domain that says nothing about which company someone is at. */
+export async function freeEmailDomains(): Promise<Set<string>> {
+  return new Set((await getSetting<string[]>('dedupe.freeEmailDomains', [])).map((d) => d.toLowerCase()));
+}
+
 async function isFreeEmailDomain(domain: string | null): Promise<boolean> {
   if (!domain) return false;
-  const list = await getSetting<string[]>('dedupe.freeEmailDomains', []);
-  return list.includes(domain.toLowerCase());
+  return (await freeEmailDomains()).has(domain.toLowerCase());
 }
 
 /** "Emirates NBD Bank P.J.S.C." -> "emirates nbd bank pjsc" -> "emirates nbd bank" */

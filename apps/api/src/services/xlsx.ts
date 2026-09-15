@@ -189,14 +189,42 @@ export async function templateXlsx(opts: { title: string; columns: TemplateColum
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
+/**
+ * Load a workbook someone else saved.
+ *
+ * Comments are the one part of a workbook an import never reads, and the part other tools
+ * write differently. openpyxl (and whatever uses it) points a sheet at its comments by absolute
+ * path; exceljs cannot follow that and the whole load fails with "Cannot read properties of
+ * undefined (reading 'comments')". Zeus's own import template puts a note on every header, so a
+ * template filled in and re-saved by such a tool could not be imported at all. The comments,
+ * their drawings and the references to them are taken out before loading.
+ */
+export async function loadWorkbook(buffer: Buffer): Promise<ExcelJS.Workbook> {
+  const { default: JSZip } = await import('jszip');
+  const zip = await JSZip.loadAsync(buffer);
+  for (const name of Object.keys(zip.files)) {
+    if (/^xl\/(comments[^/]*\.xml|comments\/.*|threadedComments\/.*|drawings\/[^/]*\.vml)$/.test(name)) {
+      zip.remove(name);
+    } else if (/^xl\/worksheets\/(_rels\/)?[^/]+\.(xml|rels)$/.test(name)) {
+      const xml = await zip.file(name)!.async('string');
+      const cleaned = xml
+        .replace(/<Relationship\b[^>]*\/(comments|vmlDrawing|threadedComment)"[^>]*\/>/g, '')
+        .replace(/<legacyDrawing\b[^>]*\/>/g, '');
+      if (cleaned !== xml) zip.file(name, cleaned);
+    }
+  }
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load((await zip.generateAsync({ type: 'nodebuffer' })) as never);
+  return wb;
+}
+
 /** Read the first sheet of an uploaded workbook (or CSV) into plain row objects. */
 export async function readWorkbook(buffer: Buffer, filename: string): Promise<{ headers: string[]; rows: Array<Record<string, string>> }> {
-  const wb = new ExcelJS.Workbook();
   if (filename.toLowerCase().endsWith('.csv')) {
     const text = buffer.toString('utf8');
     return parseCsv(text);
   }
-  await wb.xlsx.load(buffer as unknown as ArrayBuffer);
+  const wb = await loadWorkbook(buffer);
   const ws = wb.worksheets[0];
   if (!ws) return { headers: [], rows: [] };
 

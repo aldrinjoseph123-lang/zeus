@@ -104,6 +104,29 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 - Both files say at the top that they contain buy prices and are not for customers or vendors.
   Every download is recorded in the audit log.
 
+### Changed — imports settle their accounts first
+
+- **Every account an import names is settled before anything is written.** Contacts, deals,
+  catalogue items and vendor price lists all name an account. Before, a name Zeus did not have
+  exactly was silently created as a Customer, and a contact whose row named no company was
+  created belonging to nobody. Now a *Settle the accounts* step lists each one Zeus does not
+  hold by that exact name, with suggestions: an account whose name matches once "LLC", "FZE"
+  and the like are set aside, or one on the same email domain as the rows. For each, link it,
+  create it as a Customer, Partner, Prospect or Vendor, or leave its rows out. The import will
+  not run until every one has an answer.
+- **A contact is never imported without an account.** A row with no account name is settled in
+  the same step; if its email has a company domain, a name is suggested from it.
+- **A contact's last name is optional**, in imports and on the contact form.
+- New accounts created by an import keep the email domain of their contacts, so the next
+  duplicate check can find them.
+
+### Fixed — a template filled in elsewhere could not be imported
+
+- Zeus's import template puts a note on every header. A template re-saved by a tool that writes
+  those notes differently (openpyxl, and tools built on it) failed to upload with "Cannot read
+  properties of undefined (reading 'comments')", before a single row was read. Notes are now
+  ignored when a workbook is read. The same applies to vendor quotes uploaded as Excel.
+
 ### Fixed — alerts that reported a blip as an outage
 
 Found on 14 September, when the office router's DNS dropped lookups for an afternoon.

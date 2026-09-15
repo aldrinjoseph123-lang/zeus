@@ -89,8 +89,12 @@ describe('contacts CRUD + validation', () => {
     assert.equal((await request(app, fx.admin).get(`/api/contacts/${id}`)).status, 404);
   });
 
-  it('400s a create missing a required name', async () => {
-    assert.equal((await request(app, fx.admin).post('/api/contacts', { firstName: 'Only' })).status, 400);
+  it('400s a create missing a first name, and takes one with no last name', async () => {
+    assert.equal((await request(app, fx.admin).post('/api/contacts', { lastName: 'Only' })).status, 400);
+    // Plenty of real contacts are a first name and a mobile number (decided 15 Sep 2026).
+    const firstOnly = await request(app, fx.admin).post('/api/contacts', { firstName: 'Shaji', accountId: fx.customer.id });
+    assert.equal(firstOnly.status, 201, JSON.stringify(firstOnly.body));
+    assert.equal((firstOnly.body as { lastName: string }).lastName, '');
   });
 
   it('400s a malformed email', async () => {

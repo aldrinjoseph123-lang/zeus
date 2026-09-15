@@ -223,9 +223,8 @@ export async function rowsFromFile(fullPath: string, filename: string): Promise<
   }
 
   if (ext === 'xlsx') {
-    const { default: ExcelJS } = await import('exceljs');
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load((await readFile(fullPath)) as never);
+    const { loadWorkbook } = await import('./xlsx.js');
+    const wb = await loadWorkbook(await readFile(fullPath));
     const rows: string[][] = [];
     wb.worksheets[0]?.eachRow((row) => {
       rows.push(Array.from({ length: row.cellCount }, (_x, i) => row.getCell(i + 1).text.trim()));

@@ -4,9 +4,9 @@ import { CheckCircle2, Download, FileSpreadsheet, FileUp, Play, Upload } from 'l
 import { api, ApiError, download } from '../lib/api';
 import { dateTime } from '../lib/format';
 import {
-  Badge, Button, Card, CardHeader, DataTable, EmptyState, ErrorNote, Field, PageHeader, Select, cx, useToast,
+  Badge, Button, Card, CardHeader, DataTable, EmptyState, ErrorNote, Field, Input, PageHeader, Select, cx, useToast,
 } from '../components/ui';
-import { OwnerSelect } from '../components/pickers';
+import { AccountPicker, OwnerSelect } from '../components/pickers';
 
 interface FieldDef { key: string; label: string; required?: boolean; type?: string }
 interface UploadResult {
@@ -17,6 +17,62 @@ interface RunResult {
   dryRun: boolean; totalRows: number; wouldCreate: number; wouldUpdate: number; skipped: number;
   errors: Array<{ row: number; message: string }>;
   preview: Array<{ row: number; action: string; label: string; note?: string }>;
+}
+
+type AccountKind = 'CUSTOMER' | 'PARTNER' | 'VENDOR' | 'PROSPECT';
+
+interface AccountReference {
+  key: string;
+  name: string | null;
+  label: string;
+  rows: number[];
+  examples: string[];
+  status: 'found' | 'new' | 'blank';
+  found: { id: string; name: string; type: string } | null;
+  suggestions: Array<{ id: string; name: string; type: string; reason: string }>;
+  suggestedName: string | null;
+  domain: string | null;
+  type: AccountKind;
+}
+
+/** A person's answer for one account, before it is turned into what the server takes. */
+interface Choice {
+  /** `link:<id>` for a suggestion, or create / other / skip; '' until chosen. */
+  pick: string;
+  name: string;
+  type: AccountKind;
+  otherId: string | null;
+  otherName: string | null;
+}
+
+const KINDS: Array<{ value: AccountKind; label: string }> = [
+  { value: 'CUSTOMER', label: 'Customer' },
+  { value: 'PARTNER', label: 'Partner' },
+  { value: 'PROSPECT', label: 'Prospect' },
+  { value: 'VENDOR', label: 'Vendor' },
+];
+
+/** The imports whose rows point at an account, and so are screened before they run. */
+const SCREENED = new Set(['contacts', 'deals', 'products', 'priceBook']);
+
+/**
+ * A starting answer, so the common case is one click: the best suggestion if there is one, a new
+ * account under the file's own name if not. A blank row with nothing to suggest starts unanswered
+ * — someone has to decide who that contact belongs to.
+ */
+function initialChoice(ref: AccountReference): Choice {
+  const base = { name: ref.name ?? ref.suggestedName ?? '', type: ref.type, otherId: null, otherName: null };
+  if (ref.suggestions[0]) return { ...base, pick: `link:${ref.suggestions[0].id}` };
+  if (ref.name || ref.suggestedName) return { ...base, pick: 'create' };
+  return { ...base, pick: '' };
+}
+
+function decisionOf(choice: Choice) {
+  if (choice.pick.startsWith('link:')) return { action: 'link' as const, accountId: choice.pick.slice(5) };
+  if (choice.pick === 'other' && choice.otherId) return { action: 'link' as const, accountId: choice.otherId };
+  if (choice.pick === 'create' && choice.name.trim()) return { action: 'create' as const, name: choice.name.trim(), type: choice.type };
+  if (choice.pick === 'skip') return { action: 'skip' as const };
+  return null;
 }
 
 const MODULES = [
@@ -41,6 +97,8 @@ export default function Imports() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [references, setReferences] = useState<AccountReference[] | null>(null);
+  const [choices, setChoices] = useState<Record<string, Choice>>({});
 
   const { data: templateFields } = useQuery({
     queryKey: ['import-fields', module],
@@ -78,9 +136,29 @@ export default function Imports() {
     }
   };
 
+  const toSettle = (references ?? []).filter((r) => r.status !== 'found');
+  const decisions = Object.fromEntries(toSettle.flatMap((r) => {
+    const d = choices[r.key] ? decisionOf(choices[r.key]) : null;
+    return d ? [[r.key, d]] : [];
+  }));
+  const allSettled = toSettle.every((r) => decisions[r.key]);
+
+  /** Ask which accounts the file names; if Zeus has every one already, go straight to the preview. */
+  const screen = useMutation({
+    mutationFn: () => api.post<{ references: AccountReference[] }>(`/imports/${upload!.jobId}/accounts`, { mapping }),
+    onSuccess: ({ references: refs }) => {
+      setReferences(refs);
+      setChoices(Object.fromEntries(refs.filter((r) => r.status !== 'found').map((r) => [r.key, initialChoice(r)])));
+      setResult(null);
+      setError(null);
+      if (refs.every((r) => r.status === 'found')) run.mutate(true);
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : 'Could not check the accounts.'),
+  });
+
   const run = useMutation({
     mutationFn: (dryRun: boolean) =>
-      api.post<RunResult>(`/imports/${upload!.jobId}/run`, { mapping, dryRun, onDuplicate, ownerId: ownerId || undefined }),
+      api.post<RunResult>(`/imports/${upload!.jobId}/run`, { mapping, dryRun, onDuplicate, ownerId: ownerId || undefined, accounts: decisions }),
     onSuccess: (res) => {
       setResult(res);
       setError(null);
@@ -100,7 +178,17 @@ export default function Imports() {
     setMapping({});
     setResult(null);
     setError(null);
+    setReferences(null);
+    setChoices({});
   };
+
+  // A different column mapping can name different accounts; screen again rather than trust the old answers.
+  const remap = (next: Record<string, string>) => {
+    setMapping(next);
+    setReferences(null);
+    setResult(null);
+  };
+  const screening = SCREENED.has(upload?.module ?? '') && references !== null && toSettle.length > 0 && !result;
 
   return (
     <>
@@ -198,7 +286,7 @@ export default function Imports() {
                   </span>
                   <Select
                     value={mapping[field.key] ?? ''}
-                    onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}
+                    onChange={(e) => remap({ ...mapping, [field.key]: e.target.value })}
                     placeholder="— not mapped —"
                     options={upload.headers.map((header) => ({ value: header, label: header }))}
                   />
@@ -228,7 +316,11 @@ export default function Imports() {
                 {missingRequired.length ? `Map: ${missingRequired.map((f) => f.label).join(', ')}` : 'All required columns mapped.'}
               </span>
               <div className="flex gap-2">
-                <Button size="sm" icon={<Play size={13} />} disabled={missingRequired.length > 0} loading={run.isPending && run.variables === true} onClick={() => run.mutate(true)}>
+                <Button
+                  size="sm" icon={<Play size={13} />} disabled={missingRequired.length > 0}
+                  loading={screen.isPending || (run.isPending && run.variables === true)}
+                  onClick={() => (SCREENED.has(upload.module) && references === null ? screen.mutate() : run.mutate(true))}
+                >
                   Preview
                 </Button>
                 <Button
@@ -245,6 +337,17 @@ export default function Imports() {
             </div>
           </Card>
 
+          {screening ? (
+            <AccountScreening
+              references={references!}
+              choices={choices}
+              onChoose={(key, choice) => setChoices({ ...choices, [key]: choice })}
+              onAllNew={(type) => setChoices(Object.fromEntries(Object.entries(choices).map(([k, c]) => [k, { ...c, type }])))}
+              settled={allSettled}
+              loading={run.isPending}
+              onContinue={() => run.mutate(true)}
+            />
+          ) : (
           <Card>
             <CardHeader title="3. Preview" subtitle={result ? (result.dryRun ? 'Nothing has been written yet' : 'Import complete') : 'Run a preview to see what happens'} />
             {!result ? (
@@ -327,10 +430,17 @@ export default function Imports() {
                     Import finished.
                     <Button size="sm" variant="ghost" className="ml-auto" onClick={reset}>Import another file</Button>
                   </div>
+                ) : toSettle.length > 0 ? (
+                  <div className="border-t border-line px-4 py-2.5 text-[12px]">
+                    <button className="text-muted underline decoration-dotted underline-offset-2 hover:text-ink" onClick={() => setResult(null)}>
+                      Change how the {toSettle.length} account{toSettle.length === 1 ? ' was' : 's were'} settled
+                    </button>
+                  </div>
                 ) : null}
               </>
             )}
           </Card>
+          )}
         </div>
       )}
 
@@ -353,5 +463,86 @@ export default function Imports() {
         </Card>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Settle the accounts a file names that Zeus does not have by exactly that name — link each to
+ * one Zeus has, create it as the right kind of account, or leave its rows out. Nothing is
+ * imported until every one has an answer.
+ */
+function AccountScreening({ references, choices, onChoose, onAllNew, settled, loading, onContinue }: {
+  references: AccountReference[];
+  choices: Record<string, Choice>;
+  onChoose: (key: string, choice: Choice) => void;
+  onAllNew: (type: AccountKind) => void;
+  settled: boolean;
+  loading: boolean;
+  onContinue: () => void;
+}) {
+  const open = references.filter((r) => r.status !== 'found');
+  const found = references.length - open.length;
+  const answered = open.filter((r) => choices[r.key] && decisionOf(choices[r.key])).length;
+
+  return (
+    <Card>
+      <CardHeader
+        title="3. Settle the accounts"
+        subtitle={`${open.length} account${open.length === 1 ? '' : 's'} in this file need${open.length === 1 ? 's' : ''} an answer${found ? ` · ${found} matched exactly` : ''}. Nothing is imported until each is settled.`}
+      />
+      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-sunken px-4 py-2.5 text-[12px]">
+        <span className="text-muted">Create every new account as</span>
+        <Select className="w-32 py-1" aria-label="Type for every new account" value="" placeholder="choose…" options={KINDS} onChange={(e) => e.target.value && onAllNew(e.target.value as AccountKind)} />
+      </div>
+
+      <ul className="max-h-[520px] divide-y divide-line overflow-y-auto">
+        {open.map((ref) => {
+          const choice = choices[ref.key];
+          const set = (patch: Partial<Choice>) => onChoose(ref.key, { ...choice, ...patch });
+          const rows = `${ref.rows.length} row${ref.rows.length === 1 ? '' : 's'}`;
+          return (
+            <li key={ref.key} className="grid gap-2 px-4 py-3 sm:grid-cols-[1fr_1.2fr]">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-[13px] font-semibold">
+                  {ref.name ?? <span className="text-accent-ink">No {ref.label.toLowerCase()} given</span>}
+                  <Badge className="shrink-0 whitespace-nowrap" tone={ref.status === 'blank' ? 'accent' : 'watch'}>{ref.status === 'blank' ? `row ${ref.rows[0]}` : 'not in Zeus'}</Badge>
+                </p>
+                <p className="truncate text-[11px] text-muted">
+                  {ref.label} · {rows}{ref.examples.length ? `: ${ref.examples.join(', ')}` : ''}{ref.domain ? ` · ${ref.domain}` : ''}
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Select
+                  aria-label={`What to do with ${ref.name ?? `row ${ref.rows[0]}`}`}
+                  value={choice.pick}
+                  placeholder={choice.pick === '' ? 'Choose…' : undefined}
+                  onChange={(e) => set({ pick: e.target.value })}
+                  options={[
+                    ...ref.suggestions.map((sg) => ({ value: `link:${sg.id}`, label: `Link to ${sg.name} — ${sg.reason}` })),
+                    { value: 'create', label: 'Create a new account' },
+                    { value: 'other', label: 'Link to another account…' },
+                    { value: 'skip', label: `Leave ${ref.rows.length === 1 ? 'this row' : `these ${ref.rows.length} rows`} out` },
+                  ]}
+                />
+                {choice.pick === 'create' ? (
+                  <div className="grid grid-cols-[1fr_auto] gap-1.5">
+                    <Input className="py-1" aria-label="New account name" value={choice.name} placeholder="Account name" onChange={(e) => set({ name: e.target.value })} />
+                    <Select className="w-32 py-1" aria-label="New account type" value={choice.type} options={KINDS} onChange={(e) => set({ type: e.target.value as AccountKind })} />
+                  </div>
+                ) : null}
+                {choice.pick === 'other' ? (
+                  <AccountPicker value={choice.otherId} selectedLabel={choice.otherName} onChange={(id, row) => set({ otherId: id, otherName: row?.name ?? null })} />
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="flex items-center justify-between gap-2 border-t border-line bg-sunken px-4 py-3">
+        <span className="text-[11px] text-muted">{answered} of {open.length} settled</span>
+        <Button size="sm" icon={<Play size={13} />} disabled={!settled} loading={loading} onClick={onContinue}>Continue to preview</Button>
+      </div>
+    </Card>
   );
 }

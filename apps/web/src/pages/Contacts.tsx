@@ -140,7 +140,7 @@ export function ContactForm({ onClose, defaultAccountId, defaultAccountName, onS
     },
   });
 
-  const ready = form.firstName.trim() && form.lastName.trim();
+  const ready = form.firstName.trim();
 
   return (
     <Modal
@@ -170,7 +170,7 @@ export function ContactForm({ onClose, defaultAccountId, defaultAccountName, onS
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="First name" required><Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} autoFocus /></Field>
-          <Field label="Last name" required><Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
+          <Field label="Last name"><Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
         </div>
 
         <Field label="Account">
