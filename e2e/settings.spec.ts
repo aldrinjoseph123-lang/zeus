@@ -13,8 +13,8 @@ import { test, expect } from '@playwright/test';
  * a matter of counting, which is why this lives here rather than in the static checks.
  */
 const SECTIONS = [
-  'company', 'finance', 'lists', 'fields', 'pipelines', 'users', 'roles',
-  'targets', 'notifications', 'integrations', 'portal', 'backups',
+  'company', 'general', 'finance', 'approvals', 'targets', 'pipelines', 'renewals', 'duplicates', 'lists', 'fields',
+  'users', 'roles', 'security', 'integrations', 'portal', 'notifications', 'teams', 'reports', 'backups',
 ];
 
 /**

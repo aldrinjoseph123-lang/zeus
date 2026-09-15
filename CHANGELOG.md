@@ -136,6 +136,32 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 - New accounts created by an import keep the email domain of their contacts, so the next
   duplicate check can find them.
 
+### Changed — Settings, reorganised
+
+- **The menu is grouped** under Business, Sales setup, People & security, Connections, Alerts,
+  Data & health, and You.
+- **One save bar.** Each card no longer has its own Save button. When anything changes, a bar
+  at the bottom shows how many changes there are and saves or discards them together.
+  Following a link or closing the tab with changes unsaved asks first. Alert rules used to save
+  on every click; they now wait for the bar too.
+- **Fields are in the order a person reads them**, under sub-headings: Company is identity,
+  address, contact, bank; Finance & VAT is VAT, currency, then quotes, invoices and purchase
+  orders. Every window reads start before end.
+- **Plain inputs.** Hours are chosen from a list of times instead of typed as 0–23. The backup
+  schedule is "Every day / Every Monday … at 02:00" instead of a cron string; an unusual
+  schedule still shows its cron. The default role for new users is picked from the roles. "Rates
+  last fetched" is no longer an editable box.
+- **Sign-in & security** is its own page: sign-in methods, sessions, lockout, and bot protection.
+  These used to sit under Integrations.
+- **Alert rules** are grouped into Sales, Finance, Partners, and Security & system. Each group
+  has one "who gets it" control that sets every alert in it. The Teams and WhatsApp columns only
+  appear once that channel is connected. Teams channels and Scheduled reports have their own
+  pages.
+- **Backups** shows the schedule first and the latest 5 backups, with *Show all*.
+- **Settings that had no screen now have one:** Approvals, document numbering (with an example
+  of the next number), Renewals, Duplicates (including the free email domains), and General
+  (undo window, the coaching high-value amount, and product name).
+
 ### Fixed — a template filled in elsewhere could not be imported
 
 - Zeus's import template puts a note on every header. A template re-saved by a tool that writes

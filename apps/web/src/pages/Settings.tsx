@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Database, GitBranch, Globe, HardDrive, KeyRound, ListTree, LogOut, Mail, MonitorSmartphone, Plug, Plus, RefreshCw, RotateCcw, ScrollText, ShieldCheck, ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, X,
+  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Copy, Database, GitBranch, Globe, HardDrive, KeyRound, ListTree, Lock, LogOut, Mail, MessageSquare, MonitorSmartphone, Plug, Plus, RefreshCw, Repeat, RotateCcw, ScrollText, Settings2, ShieldCheck, ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, X,
 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -16,33 +16,132 @@ import { AccessDenied } from '../components/Layout';
 import { fileSize } from '../components/attachments';
 import { UtilizationChart } from '../components/charts';
 
+/** The menu, in the groups a person looks for them under. `group` is the heading it sits beneath. */
 const SECTIONS = [
-  { path: 'company', label: 'Company', icon: Building2, module: 'settings' },
-  { path: 'finance', label: 'Finance & VAT', icon: Database, module: 'settings' },
-  { path: 'lists', label: 'Dropdown lists', icon: ListTree, module: 'settings' },
-  { path: 'fields', label: 'Custom fields', icon: SlidersHorizontal, module: 'settings' },
-  { path: 'pipelines', label: 'Pipelines', icon: GitBranch, module: 'settings' },
-  { path: 'users', label: 'Users & teams', icon: UsersIcon, module: 'users' },
-  { path: 'roles', label: 'Roles & permissions', icon: ShieldHalf, module: 'roles' },
-  { path: 'targets', label: 'Targets', icon: TargetIcon, module: 'settings' },
-  { path: 'notifications', label: 'Notifications', icon: Bell, module: 'settings' },
+  { group: 'Business', path: 'company', label: 'Company', icon: Building2, module: 'settings' },
+  { group: 'Business', path: 'general', label: 'General', icon: Settings2, module: 'settings' },
+  { group: 'Business', path: 'finance', label: 'Finance & VAT', icon: Database, module: 'settings' },
+  { group: 'Business', path: 'approvals', label: 'Approvals', icon: ShieldCheck, module: 'settings' },
+  { group: 'Business', path: 'targets', label: 'Targets', icon: TargetIcon, module: 'settings' },
+  { group: 'Sales setup', path: 'pipelines', label: 'Pipelines', icon: GitBranch, module: 'settings' },
+  { group: 'Sales setup', path: 'renewals', label: 'Renewals', icon: Repeat, module: 'settings' },
+  { group: 'Sales setup', path: 'duplicates', label: 'Duplicates', icon: Copy, module: 'settings' },
+  { group: 'Sales setup', path: 'lists', label: 'Dropdown lists', icon: ListTree, module: 'settings' },
+  { group: 'Sales setup', path: 'fields', label: 'Custom fields', icon: SlidersHorizontal, module: 'settings' },
+  { group: 'People & security', path: 'users', label: 'Users & teams', icon: UsersIcon, module: 'users' },
+  { group: 'People & security', path: 'roles', label: 'Roles & permissions', icon: ShieldHalf, module: 'roles' },
+  { group: 'People & security', path: 'security', label: 'Sign-in & security', icon: Lock, module: 'integrations' },
+  { group: 'People & security', path: 'sessions', label: 'Active sessions', icon: MonitorSmartphone, module: 'users' },
   // Named for what the tab holds, not for one of the things in it — Microsoft 365,
-  // WhatsApp, backups and sign-in all live here.
-  { path: 'integrations', label: 'Integrations', icon: Plug, module: 'integrations' },
-  { path: 'portal', label: 'Portal access', icon: Globe, module: 'portal' },
-  { path: 'backups', label: 'Backups', icon: HardDrive, module: 'backups' },
-  { path: 'sessions', label: 'Active sessions', icon: MonitorSmartphone, module: 'users' },
-  { path: 'audit', label: 'Audit trail', icon: ScrollText, module: 'audit' },
-  { path: 'status', label: 'System status', icon: Activity, module: 'audit' },
-  { path: 'email-log', label: 'Email log', icon: Mail, module: 'audit' },
-  { path: 'logs', label: 'System log', icon: Terminal, module: 'audit' },
-  { path: 'profile', label: 'My account', icon: KeyRound, module: '*' },
+  // WhatsApp and outbound webhooks all live here.
+  { group: 'Connections', path: 'integrations', label: 'Integrations', icon: Plug, module: 'integrations' },
+  { group: 'Connections', path: 'portal', label: 'Portal access', icon: Globe, module: 'portal' },
+  { group: 'Alerts', path: 'notifications', label: 'Alert rules', icon: Bell, module: 'settings' },
+  { group: 'Alerts', path: 'teams', label: 'Teams channels', icon: MessageSquare, module: 'settings' },
+  { group: 'Alerts', path: 'reports', label: 'Scheduled reports', icon: CalendarClock, module: 'settings' },
+  { group: 'Data & health', path: 'backups', label: 'Backups', icon: HardDrive, module: 'backups' },
+  { group: 'Data & health', path: 'status', label: 'System status', icon: Activity, module: 'audit' },
+  { group: 'Data & health', path: 'audit', label: 'Audit trail', icon: ScrollText, module: 'audit' },
+  { group: 'Data & health', path: 'email-log', label: 'Email log', icon: Mail, module: 'audit' },
+  { group: 'Data & health', path: 'logs', label: 'System log', icon: Terminal, module: 'audit' },
+  { group: 'You', path: 'profile', label: 'My account', icon: KeyRound, module: '*' },
 ];
+
+// ── one save bar ──────────────────────────────────────────────────────────────
+
+/**
+ * Unsaved edits, page-wide.
+ *
+ * Every card used to carry its own Save button: top-right on one, bottom-left on the next,
+ * and none at all on the alert rules, which saved on every click. Now a card holds its
+ * edits as a draft and hands them to the page, and one bar says how many there are and
+ * saves or discards them together. A card registers with `useUnsaved`.
+ */
+interface Pending { count: number; save: () => Promise<unknown>; discard: () => void }
+const UnsavedContext = createContext<(id: string, pending: Pending | null) => void>(() => undefined);
+
+function useUnsaved(count: number, save: () => Promise<unknown>, discard: () => void) {
+  const register = useContext(UnsavedContext);
+  const id = useId();
+  const latest = useRef({ save, discard });
+  useEffect(() => { latest.current = { save, discard }; });
+  useEffect(() => {
+    register(id, count ? { count, save: () => latest.current.save(), discard: () => latest.current.discard() } : null);
+  }, [register, id, count]);
+  useEffect(() => () => register(id, null), [register, id]);
+}
+
+function SaveBar({ pending }: { pending: Record<string, Pending> }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  const count = Object.values(pending).reduce((n, p) => n + p.count, 0);
+
+  // Leaving with edits unsaved asks first: a link anywhere in Zeus, a reload, or closing the tab.
+  // ponytail: the browser's Back button is not caught; that needs a data router's useBlocker.
+  useEffect(() => {
+    if (!count) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    const leave = (e: MouseEvent) => {
+      const link = (e.target as Element | null)?.closest?.('a[href]');
+      if (!link || link.getAttribute('target') === '_blank') return;
+      const url = new URL(link.getAttribute('href')!, window.location.href);
+      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
+      if (!window.confirm(`You have ${count} unsaved change${count === 1 ? '' : 's'}. Leave without saving them?`)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('beforeunload', warn);
+    document.addEventListener('click', leave, true);
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+      document.removeEventListener('click', leave, true);
+    };
+  }, [count]);
+
+  if (!count) return null;
+
+  const saveAll = async () => {
+    setSaving(true);
+    try {
+      for (const p of Object.values(pending)) await p.save();
+      toast.push('Saved.');
+    } catch (err) {
+      toast.push(err instanceof Error ? err.message : 'Could not save.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div role="region" aria-label="Unsaved changes" className="sticky bottom-0 z-20 mt-3 flex flex-wrap items-center gap-3 border border-n900 bg-n950 px-4 py-2.5 text-white">
+      <span className="text-[13px] font-semibold">{count} unsaved change{count === 1 ? '' : 's'}</span>
+      <span className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => Object.values(pending).forEach((p) => p.discard())}
+          className="px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-n300 hover:text-white disabled:opacity-50"
+        >
+          Discard
+        </button>
+        <Button size="sm" variant="accent" loading={saving} onClick={() => void saveAll()}>Save</Button>
+      </span>
+    </div>
+  );
+}
 
 export default function Settings() {
   const location = useLocation();
   const navigate = useNavigate();
   const { can } = useAuth();
+  const [pending, setPending] = useState<Record<string, Pending>>({});
+  const register = useCallback((id: string, next: Pending | null) => setPending((all) => {
+    if (next) return { ...all, [id]: next };
+    if (!(id in all)) return all;
+    const { [id]: _gone, ...rest } = all;
+    return rest;
+  }), []);
 
   const available = SECTIONS.filter((section) => section.module === '*' || can(section.module, 'read'));
   const current = location.pathname.split('/settings/')[1]?.split('/')[0] ?? '';
@@ -56,26 +155,30 @@ export default function Settings() {
   const section = available.find((s) => s.path === current);
 
   return (
-    <>
+    <UnsavedContext.Provider value={register}>
       <PageHeader title="Settings" description="Everything Zeus does by default can be changed here — no redeploy needed." />
 
       <div className="grid gap-3 lg:grid-cols-[228px_1fr]">
-        <Card className="h-fit lg:sticky lg:top-4">
-          <nav>
-            {available.map((item) => (
-              <NavLink
-                key={item.path}
-                to={`/settings/${item.path}`}
-                className={({ isActive }) =>
-                  cx(
-                    'flex items-center gap-2.5 border-b border-line px-3.5 py-2.5 text-[13px] transition-colors last:border-0',
-                    isActive ? 'border-l-[3px] border-l-accent bg-accent-soft font-semibold' : 'text-muted hover:bg-sunken hover:text-ink',
-                  )
-                }
-              >
-                <item.icon size={15} />
-                {item.label}
-              </NavLink>
+        <Card className="h-fit lg:sticky lg:top-4 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+          <nav aria-label="Settings">
+            {available.map((item, index) => (
+              <div key={item.path}>
+                {item.group !== available[index - 1]?.group ? (
+                  <p className={cx('eyebrow bg-sunken px-3.5 pb-1 pt-2', index > 0 && 'border-t border-line')}>{item.group}</p>
+                ) : null}
+                <NavLink
+                  to={`/settings/${item.path}`}
+                  className={({ isActive }) =>
+                    cx(
+                      'flex items-center gap-2.5 border-t border-line px-3.5 py-1.5 text-[13px] transition-colors',
+                      isActive ? 'border-l-[3px] border-l-accent bg-accent-soft font-semibold' : 'text-muted hover:bg-sunken hover:text-ink',
+                    )
+                  }
+                >
+                  <item.icon size={15} />
+                  {item.label}
+                </NavLink>
+              </div>
             ))}
           </nav>
         </Card>
@@ -91,10 +194,26 @@ export default function Settings() {
                 <SettingsGroup prefix="company." title="Company details" description="Used on quote and invoice letterheads." />
               </div>
             ) :
+            section.path === 'general' ? (
+              <SettingsGroup prefix="undo." extraPrefixes={['coaching.', 'branding.']} title="General" description="How far undo reaches, when the coaching view calls a deal high value, and what Zeus calls itself." />
+            ) :
             section.path === 'finance' ? (
               <div className="flex flex-col gap-3">
-                <SettingsGroup prefix="finance." title="Finance & VAT" description="Currency, VAT rate and default terms." />
+                <SettingsGroup prefix="finance." title="Finance & VAT" description="VAT, currency and the default terms on each document." />
                 <ExchangeRatesSection />
+                <SettingsGroup prefix="numbering." title="Document numbers" description="The prefix and length of every reference Zeus issues. Numbers already issued keep theirs." />
+              </div>
+            ) :
+            section.path === 'approvals' ? (
+              <SettingsGroup prefix="approvals." title="Approvals" description="Which documents need a manager's sign-off before they go out, and above what value." />
+            ) :
+            section.path === 'renewals' ? (
+              <SettingsGroup prefix="renewals." title="Renewals" description="When an expiry becomes a renewal opportunity, who is reminded and when, and what the renewal is worth." />
+            ) :
+            section.path === 'duplicates' ? (
+              <div className="flex flex-col gap-3">
+                <SettingsGroup prefix="dedupe." title="Duplicate detection" description="Zeus checks a new lead, contact or account against what it already holds, by email domain and by company name." />
+                <ListsSection prefix="dedupe." title="Free email domains" subtitle="Addresses at these domains say nothing about which company someone works at, so they are never matched on." />
               </div>
             ) :
             section.path === 'lists' ? <ListsSection /> :
@@ -102,8 +221,11 @@ export default function Settings() {
             section.path === 'pipelines' ? <PipelinesSection /> :
             section.path === 'users' ? <UsersSection /> :
             section.path === 'roles' ? <RolesSection /> :
+            section.path === 'security' ? <SecuritySection /> :
             section.path === 'targets' ? <TargetsSection /> :
-            section.path === 'notifications' ? <NotificationsSection /> :
+            section.path === 'notifications' ? <AlertRulesSection /> :
+            section.path === 'teams' ? <TeamsChannelsSection /> :
+            section.path === 'reports' ? <ScheduledReportsCard /> :
             section.path === 'integrations' ? <IntegrationsSection /> :
             section.path === 'portal' ? <PortalAccessSection /> :
             section.path === 'backups' ? <BackupsSection /> :
@@ -113,82 +235,123 @@ export default function Settings() {
             section.path === 'email-log' ? <EmailLogSection /> :
             section.path === 'logs' ? <SystemLogSection /> :
             <ProfileSection />}
+          <SaveBar pending={pending} />
         </div>
       </div>
-    </>
+    </UnsavedContext.Provider>
   );
 }
 
 // ── generic key/value settings ────────────────────────────────────────────────
 
+/**
+ * What each setting is called, in the order it is shown. A group draws its keys in this
+ * order, not alphabetically: alphabetical put the bank between the two address lines and
+ * the end of a window before its start. A key missing here goes last, under its own key.
+ */
 const LABELS: Record<string, string> = {
+  'company.legalName': 'Legal name', 'company.name': 'Trading name', 'company.trn': 'TRN (tax registration number)',
+  'company.placeOfSupply': 'Place of supply (printed on the tax invoice)',
+  'company.addressLine1': 'Address line 1', 'company.addressLine2': 'Address line 2', 'company.city': 'City',
+  'company.emirate': 'Emirate', 'company.poBox': 'P.O. Box', 'company.country': 'Country',
+  'company.phone': 'Phone', 'company.email': 'Email', 'company.website': 'Website',
+  'company.bankName': 'Bank name', 'company.bankIban': 'IBAN', 'company.bankSwift': 'SWIFT',
+  'undo.windowHours': 'Undo reaches back (hours)',
+  'coaching.highValueAmount': 'A stalling deal is escalated at or above this value',
+  'branding.productName': 'Product name', 'branding.tagline': 'Tagline',
+  'finance.vatRate': 'VAT rate (%)', 'finance.vatLabel': 'VAT label on documents',
+  'finance.reverseChargeStatement': 'Reverse charge statement (printed on the tax invoice)',
+  'finance.currency': 'Currency', 'finance.exchangeRateApi': 'Exchange rate feed (URL)',
+  'finance.quoteValidDays': 'Quote validity (days)', 'finance.quoteTerms': 'Default quote terms',
+  'finance.paymentTermsDays': 'Payment terms (days)', 'finance.paymentReminderDays': 'Remind this many days before a payment is due',
+  'finance.invoiceTerms': 'Default invoice terms',
+  'finance.poPaymentTermsDays': 'Purchase order payment terms (days)', 'finance.poTerms': 'Default purchase order terms',
+  'numbering.quotePrefix': 'Quote prefix', 'numbering.invoicePrefix': 'Invoice prefix',
+  'numbering.creditNotePrefix': 'Credit note prefix', 'numbering.poPrefix': 'Purchase order prefix',
+  'numbering.dealPrefix': 'Deal prefix', 'numbering.subscriptionPrefix': 'Subscription prefix',
+  'numbering.padding': 'Digits in the number',
+  'approvals.dealsEnabled': 'Deals need a manager’s approval to close won',
+  'approvals.dealMinAmount': 'Deals above this value need approval (0 = all)',
+  'approvals.dealMinMarginPct': 'Deals under this margin % need approval (0 = off)',
+  'approvals.quotesEnabled': 'Quotes need approval before they are sent',
+  'approvals.quoteMinAmount': 'Quotes above this value need approval (0 = all)',
+  'approvals.purchaseOrdersEnabled': 'Purchase orders need approval before they are issued',
+  'approvals.purchaseOrderMinAmount': 'Orders above this value need approval (0 = all)',
+  'approvals.invoicesEnabled': 'Invoices need approval before they are sent',
+  'approvals.invoiceMinAmount': 'Invoices above this value need approval (0 = all)',
+  'approvals.allowSelfApproval': 'Let a manager approve their own submission',
+  'pipeline.staleAccountDays': 'Account is stale after (days)', 'pipeline.staleDealDays': 'Deal is stuck after (days)',
+  'pipeline.taskReminderHours': 'Task reminder lead time (hours)',
+  'pipeline.registrationValidDays': 'Registration runs for (days)',
+  'pipeline.registrationExpiryWarnDays': 'Warn before registration expiry (days)',
+  'pipeline.notifyPartnerOnExpiry': 'Email the partner before their registration lapses',
+  'pipeline.partnerReminderDays': 'Partner reminder lead time (days)',
+  'partners.contactCadenceDays': 'Contact every partner at least every (days)',
+  'renewals.leadDays': 'Open the renewal opportunity this many days before expiry',
+  'renewals.reminderDays': 'Remind this many days before expiry (e.g. 90, 30, 7)',
+  'renewals.upliftPct': 'Uplift on the renewal value (%)',
+  'renewals.dealSource': 'Source recorded on renewal deals',
+  'renewals.gapGraceDays': 'A won deal with nothing to renew is flagged after (days)',
+  'renewals.autoCreateFromInvoice': 'Create renewals from the termed lines of an issued invoice',
+  'dedupe.enabled': 'Duplicate detection on', 'dedupe.blockOnExactDomain': 'Block saves on an exact domain match',
+  'dedupe.freeEmailDomains': 'Free email domains',
+  'auth.allowEntraLogin': 'Allow Microsoft sign-in',
+  'auth.autoProvisionEntra': 'Create users automatically on first Microsoft sign-in',
+  'auth.defaultRoleName': 'Default role for new users',
+  'auth.allowLocalLogin': 'Allow password sign-in',
+  'auth.require2faForManagers': 'Require two-factor authentication for Administrators and Sales Managers',
+  'auth.sessionHours': 'Session length (hours)',
+  'auth.lockoutThreshold': 'Lock an account after this many failed sign-ins (in the lockout window)',
+  'auth.lockoutMinutes': 'Lockout window (minutes)',
+  'auth.loginAuditRetentionDays': 'Delete sign-in IP history after this many days (0 = keep forever)',
   'auth.turnstileOnLogin': 'Require the bot check to sign in to Zeus',
+  'notify.quietHoursEnabled': 'Hold non-critical emails during quiet hours, then send one digest',
+  'notify.quietHoursStart': 'Quiet hours start (Gulf time)',
+  'notify.quietHoursEnd': 'Quiet hours end (Gulf time)',
+  'backup.enabled': 'Run the physical backup on schedule', 'backup.encrypted': 'Encrypt backup files at rest (AES-256-GCM)',
+  'backup.cron': 'Physical backup runs', 'backup.windowStartHour': 'Maintenance window start (Gulf time)',
+  'backup.windowEndHour': 'Maintenance window end (Gulf time)',
+  'backup.retainDaily': 'Daily backups to keep', 'backup.retainWeekly': 'Weekly backups to keep', 'backup.retainMonthly': 'Monthly backups to keep',
+  'backup.nasPath': 'Second destination — a mounted local/NAS path (blank = off)',
+  'audit.logReads': 'Log record views (who opened each record — high volume)',
+  'retention.deletedLeadDays': 'Hard-delete an abandoned lead this many days after it was deleted (0 = never)',
+  'syslog.enabled': 'Forward system log to SIEM', 'syslog.host': 'Syslog server host', 'syslog.port': 'Syslog port',
+  'syslog.protocol': 'Protocol',
   'portal.enabled': 'Portal switched on (off = every visitor gets "not available")',
   'portal.partner.enabled': 'Partners can sign in', 'portal.customer.enabled': 'Customers can sign in',
-  'portal.session.idleMinutes': 'Session length (minutes — 1440 is a day)', 'portal.password.minLength': 'Minimum password length',
-  'portal.lockout.attempts': 'Wrong passwords before lockout', 'portal.lockout.minutes': 'Lockout length (minutes)',
-  'portal.link.expiryMinutes': 'Set-password link valid for (minutes)',
   'portal.partner.showStage': 'Partners see the opportunity stage',
   'portal.partner.showRegNumber': 'Partners see the vendor registration number', 'portal.partner.showDealValue': 'Partners see the deal value',
   'portal.partner.showQuotedValue': 'Partners see the quoted amount (latest quote)',
   'portal.branding.welcome.partner': 'Welcome line — partners', 'portal.branding.welcome.customer': 'Welcome line — customers',
   'portal.branding.banner.partner': 'Banner — partners (blank = none)', 'portal.branding.banner.customer': 'Banner — customers (blank = none)',
   'portal.branding.contact': 'Contact details shown to customers (e.g. support@… · +971 4 …)',
-  'company.name': 'Trading name', 'company.legalName': 'Legal name', 'company.trn': 'TRN (tax registration number)',
-  'company.addressLine1': 'Address line 1', 'company.addressLine2': 'Address line 2', 'company.city': 'City',
-  'company.emirate': 'Emirate', 'company.country': 'Country', 'company.poBox': 'P.O. Box', 'company.phone': 'Phone',
-  'company.email': 'Email', 'company.website': 'Website', 'company.bankName': 'Bank name',
-  'company.bankIban': 'IBAN', 'company.bankSwift': 'SWIFT',
-  'company.placeOfSupply': 'Place of supply (printed on the tax invoice)',
-  'finance.currency': 'Currency', 'finance.vatRate': 'VAT rate (%)', 'finance.vatLabel': 'VAT label on documents',
-  'finance.quoteValidDays': 'Quote validity (days)', 'finance.paymentTermsDays': 'Payment terms (days)',
-  'finance.quoteTerms': 'Default quote terms',
-  'finance.invoiceTerms': 'Default invoice terms', 'finance.poTerms': 'Default purchase order terms',
-  'finance.poPaymentTermsDays': 'Purchase order payment terms (days)',
-  'finance.paymentReminderDays': 'Remind this many days before a payment is due',
-  'finance.reverseChargeStatement': 'Reverse charge statement (printed on the tax invoice)',
-  'finance.exchangeRateApi': 'Exchange rate feed (URL)',
-  'finance.exchangeRatesUpdatedAt': 'Rates last fetched (set by the job, not by hand)',
-  'pipeline.staleAccountDays': 'Account is stale after (days)', 'pipeline.staleDealDays': 'Deal is stuck after (days)',
-  'pipeline.registrationExpiryWarnDays': 'Warn before registration expiry (days)',
-  'partners.contactCadenceDays': 'Contact every partner at least every (days)',
-  'pipeline.registrationValidDays': 'Registration runs for (days)',
-  'pipeline.notifyPartnerOnExpiry': 'Email the partner before their registration lapses',
-  'pipeline.partnerReminderDays': 'Partner reminder lead time (days)',
-  'pipeline.taskReminderHours': 'Task reminder lead time (hours)',
-  'approvals.dealsEnabled': 'Deals need a manager\u2019s approval to close won',
-  'approvals.dealMinAmount': 'Deals above this value need approval (0 = all)',
-  'approvals.dealMinMarginPct': 'Deals under this margin % need approval (0 = off)',
-  'approvals.purchaseOrdersEnabled': 'Purchase orders need approval before they are issued',
-  'approvals.purchaseOrderMinAmount': 'Orders above this value need approval (0 = all)',
-  'approvals.invoicesEnabled': 'Invoices need approval before they are sent',
-  'approvals.invoiceMinAmount': 'Invoices above this value need approval (0 = all)',
-  'approvals.allowSelfApproval': 'Let a manager approve their own submission',
-  'undo.windowHours': 'Undo reaches back (hours)',
-  'audit.logReads': 'Log record views (who opened each record — high volume)',
-  'numbering.dealPrefix': 'Deal reference prefix', 'numbering.quotePrefix': 'Quote number prefix',
-  'numbering.invoicePrefix': 'Invoice number prefix', 'numbering.padding': 'Number padding',
-  'backup.enabled': 'Nightly backup enabled', 'backup.cron': 'Backup schedule (cron)',
-  'backup.retainDaily': 'Daily backups to keep', 'backup.retainWeekly': 'Weekly backups to keep', 'backup.retainMonthly': 'Monthly backups to keep',
-  'backup.folder': 'OneDrive folder', 'backup.nasPath': 'Second destination — a mounted local/NAS path (blank = off)',
-  'backup.encrypted': 'Encrypt backup files at rest (AES-256-GCM)',
-  'backup.windowStartHour': 'Maintenance window start (Gulf hour, 0-23)', 'backup.windowEndHour': 'Maintenance window end (Gulf hour, 0-23)',
-  'syslog.enabled': 'Forward system log to SIEM', 'syslog.host': 'Syslog server host', 'syslog.port': 'Syslog port',
-  'syslog.protocol': 'Protocol (udp or tcp)',
-  'auth.allowLocalLogin': 'Allow password sign-in', 'auth.allowEntraLogin': 'Allow Microsoft sign-in',
-  'auth.autoProvisionEntra': 'Create users automatically on first Microsoft sign-in',
-  'auth.defaultRoleName': 'Default role for new users', 'auth.sessionHours': 'Session length (hours)',
-  'auth.lockoutThreshold': 'Lock an account after this many failed sign-ins (in the lockout window)',
-  'auth.lockoutMinutes': 'Lockout window (minutes)',
-  'auth.require2faForManagers': 'Require two-factor authentication for Administrators and Sales Managers',
-  'auth.loginAuditRetentionDays': 'Delete sign-in IP history after this many days (0 = keep forever)',
-  'retention.deletedLeadDays': 'Hard-delete an abandoned lead this many days after it was deleted (0 = never)',
-  'notify.quietHoursEnabled': 'Hold non-critical emails during quiet hours, then send one digest',
-  'notify.quietHoursStart': 'Quiet hours start (0-23, Gulf time)',
-  'notify.quietHoursEnd': 'Quiet hours end (0-23, Gulf time)',
-  'dedupe.enabled': 'Duplicate detection on', 'dedupe.blockOnExactDomain': 'Block saves on an exact domain match',
-  'branding.productName': 'Product name', 'branding.tagline': 'Tagline',
+  'portal.session.idleMinutes': 'Session length (minutes — 1440 is a day)', 'portal.password.minLength': 'Minimum password length',
+  'portal.lockout.attempts': 'Wrong passwords before lockout', 'portal.lockout.minutes': 'Lockout length (minutes)',
+  'portal.link.expiryMinutes': 'Set-password link valid for (minutes)',
 };
+const ORDER = Object.keys(LABELS);
+
+/** A sub-heading drawn above the key it names, so a long group reads in parts. */
+const HEADINGS: Record<string, string> = {
+  'company.legalName': 'Identity', 'company.addressLine1': 'Address', 'company.phone': 'Contact', 'company.bankName': 'Bank',
+  'undo.windowHours': 'Undo', 'coaching.highValueAmount': 'Coaching', 'branding.productName': 'Branding',
+  'finance.vatRate': 'VAT', 'finance.currency': 'Currency', 'finance.quoteValidDays': 'Quotes',
+  'finance.paymentTermsDays': 'Invoices', 'finance.poPaymentTermsDays': 'Purchase orders',
+  'approvals.dealsEnabled': 'Deals', 'approvals.quotesEnabled': 'Quotes', 'approvals.purchaseOrdersEnabled': 'Purchase orders',
+  'approvals.invoicesEnabled': 'Invoices', 'approvals.allowSelfApproval': 'Who can approve',
+  'pipeline.staleAccountDays': 'Accounts and deals', 'pipeline.taskReminderHours': 'Tasks',
+  'pipeline.registrationValidDays': 'Deal registrations', 'partners.contactCadenceDays': 'Partners',
+  'renewals.leadDays': 'Timing', 'renewals.upliftPct': 'The renewal deal',
+  'auth.allowEntraLogin': 'How people sign in', 'auth.require2faForManagers': 'Sessions and lockout', 'auth.loginAuditRetentionDays': 'History',
+  'backup.enabled': 'Schedule', 'backup.retainDaily': 'How many to keep', 'backup.nasPath': 'Second copy',
+};
+
+/** Settings kept elsewhere: shown read-only, or written by a job rather than a person. */
+const NEVER_EDITED = ['finance.exchangeRatesUpdatedAt'];
+
+const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: `${String(h).padStart(2, '0')}:00` }));
+const HOUR_KEYS = new Set(['backup.windowStartHour', 'backup.windowEndHour', 'notify.quietHoursStart', 'notify.quietHoursEnd']);
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 type SetupStatus = { complete: boolean; required: Array<{ key: string; label: string }>; missing: Array<{ key: string; label: string }> };
 
@@ -210,6 +373,43 @@ function SetupNotice() {
   );
 }
 
+/**
+ * "0 2 * * *" as a day and a time. Cron is how the job is stored, not how a person
+ * thinks about a backup; anything more involved than daily or weekly stays a cron string.
+ */
+function ScheduleFields({ label, value, disabled, onChange }: { label: string; value: string; disabled: boolean; onChange: (cron: string) => void }) {
+  const match = /^(\d{1,2}) (\d{1,2}) \* \* (\*|[0-6])$/.exec(value.trim());
+  if (!match) {
+    return (
+      <Field label={`${label} (cron)`} hint="Minute hour day month weekday.">
+        <Input value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />
+      </Field>
+    );
+  }
+  const [, minute, hour, weekday] = match;
+  const at = (h: number) => `${String(h).padStart(2, '0')}:${minute.padStart(2, '0')}`;
+  return (
+    <>
+      <Field label={label}>
+        <Select
+          value={weekday}
+          disabled={disabled}
+          onChange={(e) => onChange(`${minute} ${hour} * * ${e.target.value}`)}
+          options={[{ value: '*', label: 'Every day' }, ...WEEKDAY_NAMES.map((d, i) => ({ value: String(i), label: `Every ${d}` }))]}
+        />
+      </Field>
+      <Field label="At (Gulf time)">
+        <Select
+          value={String(Number(hour))}
+          disabled={disabled}
+          onChange={(e) => onChange(`${minute} ${e.target.value} * * ${weekday}`)}
+          options={HOURS.map((h) => ({ value: h.value, label: at(Number(h.value)) }))}
+        />
+      </Field>
+    </>
+  );
+}
+
 function SettingsGroup({ prefix, title, description, extraPrefixes = [], hide = [] }: {
   prefix: string;
   title: string;
@@ -218,9 +418,9 @@ function SettingsGroup({ prefix, title, description, extraPrefixes = [], hide = 
   /** Keys rendered elsewhere with a purpose-built control (a logo, say). */
   hide?: string[];
 }) {
-  const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
+  const editable = can('settings', 'update');
   const [draft, setDraft] = useState<Record<string, unknown>>({});
 
   const { data, isLoading } = useQuery({
@@ -237,79 +437,123 @@ function SettingsGroup({ prefix, title, description, extraPrefixes = [], hide = 
   });
   const requiredKeys = new Set((setup?.required ?? []).map((r) => r.key));
 
+  const prefixes = [prefix, ...extraPrefixes];
+  const values = data?.values ?? {};
+  /** A list of numbers ("90, 30, 7") is typed as text and read back when saved. */
+  const isNumberList = (key: string) => Array.isArray(values[key]) && (values[key] as unknown[]).every((n) => typeof n === 'number');
+  const keys = Object.keys(values)
+    .filter((key) => prefixes.some((p) => key.startsWith(p)))
+    // Lists of words and rate tables get their own editors; a text box would print [object Object].
+    .filter((key) => typeof values[key] !== 'object' || values[key] === null || isNumberList(key))
+    .filter((key) => !hide.includes(key) && !NEVER_EDITED.includes(key))
+    .sort((a, b) => {
+      const rank = (key: string) => (ORDER.includes(key) ? ORDER.indexOf(key) : ORDER.length);
+      return rank(a) - rank(b) || a.localeCompare(b);
+    });
+
+  const { data: roles } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get<{ roles: Array<{ id: string; name: string }> }>('/roles'),
+    enabled: keys.includes('auth.defaultRoleName'),
+  });
+
+  /** Settings with a closed set of answers, drawn as a dropdown instead of a text box. */
+  const choices = (key: string): string[] | null => {
+    if (key === 'auth.defaultRoleName') return (roles?.roles ?? []).map((r) => r.name);
+    if (key === 'syslog.protocol') return ['udp', 'tcp'];
+    if (key === 'renewals.dealSource') return (values['lists.leadSources'] as string[] | undefined) ?? null;
+    return null;
+  };
+
   const save = useMutation({
-    mutationFn: () => api.put('/settings', draft),
+    mutationFn: () => api.put('/settings', Object.fromEntries(Object.entries(draft).map(([key, value]) => [
+      key,
+      isNumberList(key) ? String(value).split(/[,\s]+/).filter(Boolean).map(Number).filter(Number.isFinite) : value,
+    ]))),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['settings'] });
       void queryClient.invalidateQueries({ queryKey: ['settings-public'] });
       void queryClient.invalidateQueries({ queryKey: ['setup'] });
       setDraft({});
-      toast.push('Settings saved.');
     },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
   });
+  useUnsaved(Object.keys(draft).length, () => save.mutateAsync(), () => setDraft({}));
 
   if (isLoading) return <Loading />;
 
-  const prefixes = [prefix, ...extraPrefixes];
-  const keys = Object.keys(data?.values ?? {})
-    .filter((key) => prefixes.some((p) => key.startsWith(p)))
-    // Lists and rate tables get their own editors; a text box would print [object Object].
-    .filter((key) => typeof data!.values[key] !== 'object' || data!.values[key] === null)
-    .filter((key) => !hide.includes(key))
-    .sort();
+  const value = (key: string) => (key in draft ? draft[key] : values[key]);
+  const set = (key: string, next: unknown) => setDraft((d) => {
+    // Typing a value back to what is stored is not a change.
+    if (JSON.stringify(next) === JSON.stringify(values[key]) || (isNumberList(key) && next === (values[key] as number[]).join(', '))) {
+      const { [key]: _same, ...rest } = d;
+      return rest;
+    }
+    return { ...d, [key]: next };
+  });
+  const padding = Number(value('numbering.padding') ?? 6);
 
-  const value = (key: string) => (key in draft ? draft[key] : data!.values[key]);
-  const dirty = Object.keys(draft).length > 0;
+  const control = (key: string) => {
+    const current = value(key);
+    const label = LABELS[key] ?? key.split('.').slice(1).join('.');
+    const stored = values[key];
+
+    if (typeof stored === 'boolean') {
+      return (
+        <div className="flex items-center sm:col-span-2">
+          <Checkbox label={label} checked={Boolean(current)} disabled={!editable} onChange={(checked) => set(key, checked)} />
+        </div>
+      );
+    }
+    if (key === 'backup.cron') {
+      return <ScheduleFields label={label} value={String(current ?? '')} disabled={!editable} onChange={(cron) => set(key, cron)} />;
+    }
+    if (HOUR_KEYS.has(key)) {
+      return (
+        <Field label={label}>
+          <Select value={String(current ?? 0)} disabled={!editable} onChange={(e) => set(key, Number(e.target.value))} options={HOURS} />
+        </Field>
+      );
+    }
+    const options = choices(key);
+    if (options) {
+      // A stored value no longer on the list stays selectable rather than silently changing.
+      const all = options.includes(String(current)) || !current ? options : [String(current), ...options];
+      return (
+        <Field label={label}>
+          <Select value={String(current ?? '')} disabled={!editable} onChange={(e) => set(key, e.target.value)} options={all.map((o) => ({ value: o, label: o }))} />
+        </Field>
+      );
+    }
+
+    const isLong = key.endsWith('Terms') || key.endsWith('Statement');
+    const isNumber = typeof stored === 'number';
+    const example = key.startsWith('numbering.') && key.endsWith('Prefix') ? `Next looks like ${String(current ?? '')}${'42'.padStart(padding, '0')}` : undefined;
+    return (
+      <Field label={label} hint={example} required={requiredKeys.has(key)} className={isLong ? 'sm:col-span-2' : undefined}>
+        {isLong ? (
+          <Textarea rows={3} value={String(current ?? '')} disabled={!editable} onChange={(e) => set(key, e.target.value)} />
+        ) : (
+          <Input
+            type={isNumber ? 'number' : 'text'}
+            value={isNumberList(key) && Array.isArray(current) ? current.join(', ') : String(current ?? '')}
+            disabled={!editable}
+            onChange={(e) => set(key, isNumber ? Number(e.target.value) : e.target.value)}
+          />
+        )}
+      </Field>
+    );
+  };
 
   return (
     <Card>
-      <CardHeader
-        title={title}
-        subtitle={description}
-        actions={can('settings', 'update') ? <Button variant="accent" size="sm" disabled={!dirty} loading={save.isPending} onClick={() => save.mutate()}>Save</Button> : undefined}
-      />
+      {title ? <CardHeader title={title} subtitle={description} /> : null}
       <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
-        {keys.map((key) => {
-          const current = value(key);
-          const label = LABELS[key] ?? key.split('.')[1];
-          const isBool = typeof data!.values[key] === 'boolean';
-          const isNumber = typeof data!.values[key] === 'number';
-          const isLong = key.endsWith('Terms');
-
-          if (isBool) {
-            return (
-              <div key={key} className="flex items-center sm:col-span-2">
-                <Checkbox
-                  label={label}
-                  checked={Boolean(current)}
-                  disabled={!can('settings', 'update')}
-                  onChange={(checked) => setDraft({ ...draft, [key]: checked })}
-                />
-              </div>
-            );
-          }
-
-          return (
-            <Field key={key} label={label} required={requiredKeys.has(key)} className={isLong ? 'sm:col-span-2' : undefined}>
-              {isLong ? (
-                <Textarea
-                  rows={3}
-                  value={String(current ?? '')}
-                  disabled={!can('settings', 'update')}
-                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-                />
-              ) : (
-                <Input
-                  type={isNumber ? 'number' : 'text'}
-                  value={String(current ?? '')}
-                  disabled={!can('settings', 'update')}
-                  onChange={(e) => setDraft({ ...draft, [key]: isNumber ? Number(e.target.value) : e.target.value })}
-                />
-              )}
-            </Field>
-          );
-        })}
+        {keys.map((key, index) => (
+          <div key={key} className="contents">
+            {HEADINGS[key] ? <p className={cx('eyebrow border-b border-line pb-1 sm:col-span-2', index > 0 && 'pt-3')}>{HEADINGS[key]}</p> : null}
+            {control(key)}
+          </div>
+        ))}
       </div>
       {prefix === 'finance.' ? (
         <div className="border-t border-line bg-sunken px-4 py-3 text-[12px] text-muted">
@@ -402,8 +646,9 @@ function ExchangeRatesSection() {
 
 // ── editable dropdown lists ───────────────────────────────────────────────────
 
-function ListsSection() {
-  const toast = useToast();
+function ListsSection({ prefix = 'lists.', title = 'Dropdown lists', subtitle = 'Every picklist in Zeus. Add or remove options and they change everywhere at once.' }: {
+  prefix?: string; title?: string; subtitle?: string;
+}) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const [draft, setDraft] = useState<Record<string, string[]>>({});
@@ -419,31 +664,29 @@ function ListsSection() {
       void queryClient.invalidateQueries({ queryKey: ['settings'] });
       void queryClient.invalidateQueries({ queryKey: ['settings-public'] });
       setDraft({});
-      toast.push('Lists saved.');
     },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
   });
+  useUnsaved(Object.keys(draft).length, () => save.mutateAsync(), () => setDraft({}));
 
   if (isLoading) return <Loading />;
 
-  const listKeys = Object.keys(data?.values ?? {}).filter((key) => key.startsWith('lists.') && Array.isArray(data!.values[key])).sort();
+  // Lists of words only; a list of numbers is a setting its group edits as text.
+  const listKeys = Object.keys(data?.values ?? {})
+    .filter((key) => key.startsWith(prefix) && Array.isArray(data!.values[key]) && (data!.values[key] as unknown[]).every((v) => typeof v === 'string'))
+    .sort();
   const items = (key: string): string[] => (key in draft ? draft[key] : (data!.values[key] as string[]));
   const setItems = (key: string, next: string[]) => setDraft({ ...draft, [key]: next });
 
   const pretty = (key: string) =>
-    key.replace('lists.', '').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+    LABELS[key] ?? key.replace(prefix, '').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 
   return (
     <Card>
-      <CardHeader
-        title="Dropdown lists"
-        subtitle="Every picklist in Zeus. Add or remove options and they change everywhere at once."
-        actions={can('settings', 'update') ? <Button variant="accent" size="sm" disabled={!Object.keys(draft).length} loading={save.isPending} onClick={() => save.mutate()}>Save</Button> : undefined}
-      />
-      <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
+      <CardHeader title={title} subtitle={subtitle} />
+      <div className={cx('grid gap-4 px-4 py-4', listKeys.length > 1 && 'sm:grid-cols-2')}>
         {listKeys.map((key) => (
           <div key={key}>
-            <span className="eyebrow">{pretty(key)}</span>
+            {listKeys.length > 1 ? <span className="eyebrow">{pretty(key)}</span> : null}
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {items(key).map((item) => (
                 <span key={item} className="flex items-center gap-1 rounded-sharp border border-line bg-card px-2 py-1 text-[12px]">
@@ -1357,10 +1600,10 @@ function ScopeSelect({ value, onChange }: { value: Scope; onChange: (value: Scop
 // ── targets ───────────────────────────────────────────────────────────────────
 
 function TargetsSection() {
-  const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const [year, setYear] = useState(new Date().getFullYear());
+  // Keyed year|owner|quarter, so switching year with edits open cannot save them to the wrong year.
   const [draft, setDraft] = useState<Record<string, number>>({});
 
   const { data: targets, isLoading } = useQuery({
@@ -1372,22 +1615,21 @@ function TargetsSection() {
   const save = useMutation({
     mutationFn: () =>
       api.put('/targets', Object.entries(draft).map(([key, amount]) => {
-        const [userId, quarter] = key.split('|');
-        return { userId: userId === 'company' ? null : userId, year, quarter: Number(quarter), amount };
+        const [draftYear, userId, quarter] = key.split('|');
+        return { userId: userId === 'company' ? null : userId, year: Number(draftYear), quarter: Number(quarter), amount };
       })),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['targets'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       setDraft({});
-      toast.push('Targets saved.');
     },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
   });
+  useUnsaved(Object.keys(draft).length, () => save.mutateAsync(), () => setDraft({}));
 
   if (isLoading) return <Loading />;
 
   const valueFor = (userId: string, quarter: number): number => {
-    const key = `${userId}|${quarter}`;
+    const key = `${year}|${userId}|${quarter}`;
     if (key in draft) return draft[key];
     const row = targets?.find((t) => (t.userId ?? 'company') === userId && t.quarter === quarter);
     return row ? Number(row.amount) : 0;
@@ -1409,9 +1651,6 @@ function TargetsSection() {
               options={[year - 1, year, year + 1].map((y) => ({ value: String(y), label: String(y) }))}
               className="w-[100px]"
             />
-            {can('settings', 'update') ? (
-              <Button variant="accent" size="sm" disabled={!Object.keys(draft).length} loading={save.isPending} onClick={() => save.mutate()}>Save</Button>
-            ) : null}
           </>
         }
       />
@@ -1444,7 +1683,7 @@ function TargetsSection() {
                         disabled={!can('settings', 'update')}
                         value={valueFor(row.id, quarter) || ''}
                         placeholder="0"
-                        onChange={(e) => setDraft({ ...draft, [`${row.id}|${quarter}`]: Number(e.target.value || 0) })}
+                        onChange={(e) => setDraft({ ...draft, [`${year}|${row.id}|${quarter}`]: Number(e.target.value || 0) })}
                       />
                     </td>
                   ))}
@@ -1476,7 +1715,166 @@ const AUDIENCES: Array<[string, string]> = [
 ];
 interface Webhook { id: string; name: string; url: string; isDefault: boolean; isActive: boolean }
 
-function NotificationsSection() {
+/** Every alert, under the part of the business it is about. An event not listed here lands in the last area. */
+const ALERT_AREAS: Array<{ area: string; events: string[] }> = [
+  { area: 'Sales', events: ['lead_assigned', 'deal_assigned', 'deal_stale', 'account_stale', 'deal_won', 'deal_lost', 'quote_accepted', 'approval_requested', 'approval_decided', 'target_at_risk', 'duplicate_found', 'task_due', 'task_overdue'] },
+  { area: 'Finance', events: ['invoice_overdue', 'invoice_paid', 'payment_due_soon', 'payable_due_soon', 'payable_overdue', 'renewal_due', 'renewal_lapsed', 'renewal_gap', 'entitlement_unused', 'fx_rate_suspect'] },
+  { area: 'Partners', events: ['registration_expiring', 'registration_expired', 'registration_approved', 'partners_overdue', 'partner_badly_overdue', 'portal_access_requested'] },
+  { area: 'Security & system', events: ['login_new_device', 'login_new_country', 'component_down', 'component_recovered', 'backup_failed', 'backup_missed', 'backup_verify_failed', 'data_integrity_failed'] },
+];
+
+type RuleEdit = Partial<Pick<Rule, 'enabled' | 'inApp' | 'email' | 'teams' | 'whatsapp' | 'thresholdDays' | 'audience'>>;
+
+function AlertRulesSection() {
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const editable = can('settings', 'update');
+  const [edits, setEdits] = useState<Record<string, RuleEdit>>({});
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['notification-rules'],
+    queryFn: () => api.get<{ rules: Rule[]; webhooks: Webhook[] }>('/notification-rules'),
+  });
+
+  // A channel that is not connected is not offered, so nobody switches on an alert that goes nowhere.
+  const { data: whatsapp } = useQuery({
+    queryKey: ['integration-whatsapp'],
+    queryFn: () => api.get<{ isConnected: boolean; recipients: number }>('/integrations/whatsapp'),
+    retry: false,
+  });
+
+  const save = useMutation({
+    mutationFn: () => Promise.all(Object.entries(edits).map(([id, patch]) => api.patch(`/notification-rules/${id}`, patch))),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['notification-rules'] });
+      setEdits({});
+    },
+  });
+  useUnsaved(Object.keys(edits).length, () => save.mutateAsync(), () => setEdits({}));
+
+  if (isLoading || !data) return <Loading />;
+
+  const showTeams = data.webhooks.length > 0;
+  const showWhatsapp = Boolean(whatsapp?.isConnected);
+  const rule = (r: Rule): Rule => ({ ...r, ...edits[r.id] });
+  const edit = (r: Rule, patch: RuleEdit) => setEdits((all) => {
+    const next = { ...all[r.id], ...patch };
+    // Only what differs from the stored rule is an edit.
+    const changed = Object.fromEntries(Object.entries(next).filter(([k, v]) => r[k as keyof Rule] !== v));
+    const { [r.id]: _old, ...rest } = all;
+    return Object.keys(changed).length ? { ...rest, [r.id]: changed } : rest;
+  });
+
+  const areas = ALERT_AREAS.map((a, index) => ({
+    area: a.area,
+    rules: data.rules.filter((r) => a.events.includes(r.event) || (index === ALERT_AREAS.length - 1 && !ALERT_AREAS.some((x) => x.events.includes(r.event)))),
+  })).filter((a) => a.rules.length > 0);
+
+  const channels: Array<[keyof RuleEdit & ('enabled' | 'inApp' | 'email' | 'teams' | 'whatsapp'), string]> = [
+    ['enabled', 'On'], ['inApp', 'In-app'], ['email', 'Email'],
+    ...(showTeams ? [['teams', 'Teams'] as ['teams', string]] : []),
+    ...(showWhatsapp ? [['whatsapp', 'WhatsApp'] as ['whatsapp', string]] : []),
+  ];
+
+  return (
+    <div className="flex flex-col gap-3">
+      {editable ? (
+        <SettingsGroup prefix="notify.quietHours" title="Quiet hours" description="Off by default. While on, non-critical emails are held and sent as one digest per person when the window ends — in-app and Teams alerts are unaffected, and a critical alert always sends immediately." />
+      ) : null}
+
+      {areas.map(({ area, rules }) => {
+        const on = rules.filter((r) => rule(r).enabled).length;
+        const audiences = new Set(rules.map((r) => rule(r).audience));
+        return (
+          <CollapsibleCard key={area} title={area} subtitle={`${rules.length} alerts · ${on} on`}>
+            {editable ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-sunken px-4 py-2">
+                <span className="text-[12px] text-muted">Who gets every {area.toLowerCase()} alert</span>
+                <select
+                  aria-label={`Who gets every ${area.toLowerCase()} alert`}
+                  value={audiences.size === 1 ? [...audiences][0] : ''}
+                  onChange={(e) => rules.forEach((r) => edit(r, { audience: e.target.value }))}
+                  className="rounded-sharp border border-line bg-card px-2 py-1 text-[12px]"
+                >
+                  {audiences.size > 1 ? <option value="" disabled>Mixed — pick one to set them all</option> : null}
+                  {AUDIENCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </div>
+            ) : null}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-[13px]">
+                <thead>
+                  <tr className="bg-n950 text-white">
+                    {['Event', ...channels.map(([, label]) => label), 'Threshold', 'Who gets it'].map((header) => (
+                      <th key={header} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.08em]">{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rules.map((stored, index) => {
+                    const r = rule(stored);
+                    return (
+                      <tr key={r.id} className={cx('border-b border-line', index % 2 === 1 && 'bg-sunken', !r.enabled && 'opacity-55', edits[r.id] && 'bg-accent-soft')}>
+                        <td className="px-3 py-2 font-semibold">{r.label}</td>
+                        {channels.map(([key, label]) => (
+                          <td key={key} className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              aria-label={`${r.label}: ${label}`}
+                              checked={Boolean(r[key])}
+                              disabled={!editable}
+                              title={key === 'whatsapp' ? 'Sends to each recipient who has a WhatsApp number on their user record' : undefined}
+                              onChange={(e) => edit(stored, { [key]: e.target.checked })}
+                              className="h-4 w-4 accent-[var(--red-500)]"
+                            />
+                          </td>
+                        ))}
+                        <td className="px-3 py-2">
+                          {r.thresholdDays === null ? (
+                            <span className="text-muted">—</span>
+                          ) : (
+                            <Input
+                              className="w-20 px-2 py-1"
+                              type="number"
+                              min="0"
+                              aria-label={`${r.label}: threshold in days`}
+                              value={r.thresholdDays}
+                              disabled={!editable}
+                              onChange={(e) => edit(stored, { thresholdDays: Number(e.target.value) })}
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            aria-label={`${r.label}: who gets it`}
+                            value={r.audience}
+                            disabled={!editable}
+                            onChange={(e) => edit(stored, { audience: e.target.value })}
+                            className="rounded-sharp border border-line bg-card px-2 py-1 text-[12px]"
+                          >
+                            {AUDIENCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CollapsibleCard>
+        );
+      })}
+
+      <p className="px-1 text-[11px] text-muted">
+        Stale-account and stuck-deal digests run at 08:30 Gulf time, Monday to Friday. Task reminders run every 15 minutes.
+        {!showTeams ? ' Teams appears as a channel once a Teams channel is added.' : ''}
+        {!showWhatsapp ? ' WhatsApp appears once it is connected in Integrations.' : ''}
+      </p>
+    </div>
+  );
+}
+
+function TeamsChannelsSection() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { can } = useAuth();
@@ -1486,15 +1884,6 @@ function NotificationsSection() {
   const { data, isLoading } = useQuery({
     queryKey: ['notification-rules'],
     queryFn: () => api.get<{ rules: Rule[]; webhooks: Webhook[] }>('/notification-rules'),
-  });
-
-  const update = useMutation({
-    mutationFn: (input: { id: string } & Partial<Rule>) => {
-      const { id, ...patch } = input;
-      return api.patch(`/notification-rules/${id}`, patch);
-    },
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notification-rules'] }),
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not update.', 'error'),
   });
 
   const test = useMutation({
@@ -1512,32 +1901,17 @@ function NotificationsSection() {
     },
   });
 
-  // The WhatsApp column stays disabled until the channel is actually connected, so
-  // nobody switches on an alert that silently goes nowhere.
-  const { data: whatsapp } = useQuery({
-    queryKey: ['integration-whatsapp'],
-    queryFn: () => api.get<{ isConnected: boolean; recipients: number }>('/integrations/whatsapp'),
-    retry: false,
-  });
-
   if (isLoading || !data) return <Loading />;
-
-  const noWebhook = data.webhooks.length === 0;
-  const whatsappReady = Boolean(whatsapp?.isConnected);
 
   return (
     <>
-      {can('settings', 'update') ? (
-        <SettingsGroup prefix="notify.quietHours" title="Quiet hours" description="Off by default. While on, non-critical emails are held and sent as one digest per person when the window ends — in-app and Teams alerts are unaffected, and a critical alert always sends immediately." />
-      ) : null}
-
-      <Card className="mt-3">
+      <Card>
         <CardHeader
           title="Teams channels"
-          subtitle="Paste an Incoming Webhook URL from the Teams channel you want alerts in."
+          subtitle="Paste an Incoming Webhook URL from the Teams channel you want alerts in. Choose which alerts go to Teams under Alert rules."
           actions={can('settings', 'create') ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setAddingHook(true)}>Add webhook</Button> : undefined}
         />
-        {noWebhook ? (
+        {data.webhooks.length === 0 ? (
           <EmptyState
             title="No Teams channel connected"
             message="In Teams: channel → ⋯ → Workflows → “Send webhook alerts to a channel”. Copy the URL it gives you here."
@@ -1561,93 +1935,6 @@ function NotificationsSection() {
           </div>
         )}
       </Card>
-
-      <Card className="mt-3">
-        <CardHeader title="Alert rules" subtitle="Switch each event on or off per channel, and set the thresholds." />
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-[13px]">
-            <thead>
-              <tr className="bg-n950 text-white">
-                {['Event', 'On', 'In-app', 'Email', 'Teams', 'WhatsApp', 'Threshold', 'Who gets it'].map((header) => (
-                  <th key={header} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.08em]">{header}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.rules.map((rule, index) => (
-                <tr key={rule.id} className={cx('border-b border-line', index % 2 === 1 && 'bg-sunken', !rule.enabled && 'opacity-55')}>
-                  <td className="px-3 py-2 font-semibold">{rule.label}</td>
-                  <td className="px-3 py-2">
-                    <input type="checkbox" checked={rule.enabled} disabled={!can('settings', 'update')} onChange={(e) => update.mutate({ id: rule.id, enabled: e.target.checked })} className="h-4 w-4 accent-[var(--red-500)]" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="checkbox" checked={rule.inApp} disabled={!can('settings', 'update')} onChange={(e) => update.mutate({ id: rule.id, inApp: e.target.checked })} className="h-4 w-4 accent-[var(--red-500)]" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="checkbox" checked={rule.email} disabled={!can('settings', 'update')} onChange={(e) => update.mutate({ id: rule.id, email: e.target.checked })} className="h-4 w-4 accent-[var(--red-500)]" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={rule.teams}
-                      disabled={!can('settings', 'update') || noWebhook}
-                      title={noWebhook ? 'Add a Teams webhook first' : undefined}
-                      onChange={(e) => update.mutate({ id: rule.id, teams: e.target.checked })}
-                      className="h-4 w-4 accent-[var(--red-500)]"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={rule.whatsapp}
-                      disabled={!can('settings', 'update') || !whatsappReady}
-                      title={whatsappReady
-                        ? 'Sends to each recipient who has a WhatsApp number on their user record'
-                        : 'Connect WhatsApp in Settings → Integrations first'}
-                      onChange={(e) => update.mutate({ id: rule.id, whatsapp: e.target.checked })}
-                      className="h-4 w-4 accent-[var(--red-500)]"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    {rule.thresholdDays === null ? (
-                      <span className="text-muted">—</span>
-                    ) : (
-                      <Input
-                        className="w-20 px-2 py-1"
-                        type="number"
-                        min="0"
-                        defaultValue={rule.thresholdDays}
-                        disabled={!can('settings', 'update')}
-                        onBlur={(e) => {
-                          const value = Number(e.target.value);
-                          if (value !== rule.thresholdDays) update.mutate({ id: rule.id, thresholdDays: value });
-                        }}
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <select
-                      value={rule.audience}
-                      disabled={!can('settings', 'update')}
-                      onChange={(e) => update.mutate({ id: rule.id, audience: e.target.value })}
-                      className="rounded-sharp border border-line bg-card px-2 py-1 text-[12px]"
-                    >
-                      {AUDIENCES.map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="border-t border-line bg-sunken px-4 py-2.5 text-[11px] text-muted">
-          Stale-account and stuck-deal digests run at 08:30 Gulf time, Monday to Friday. Task reminders run every 15 minutes.
-        </p>
-      </Card>
-
-      <ScheduledReportsCard />
 
       {addingHook ? <WebhookModal onClose={() => setAddingHook(false)} /> : null}
 
@@ -1704,10 +1991,10 @@ function ScheduledReportsCard() {
 
   return (
     <>
-      <Card className="mt-3">
+      <Card>
         <CardHeader
           title="Scheduled reports"
-          subtitle="Any report from the library, emailed on a cron instead of pulled by hand. Runs with the scheduling admin's own read scope."
+          subtitle="Any report from the library, emailed daily or weekly instead of pulled by hand. Runs with the scheduling admin's own read scope."
           actions={can('settings', 'create') ? <Button size="sm" icon={<Plus size={13} />} onClick={() => setAdding(true)}>New schedule</Button> : undefined}
         />
         {!data.schedules.length ? (
@@ -1962,6 +2249,7 @@ function BackupsSection() {
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const [restoring, setRestoring] = useState<BackupRunRow | null>(null);
+  const [allRuns, setAllRuns] = useState(false);
 
   const { data: backups } = useQuery({
     queryKey: ['backups'],
@@ -1997,8 +2285,16 @@ function BackupsSection() {
     onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Parity check failed.', 'error'),
   });
 
+  const runs = backups?.runs ?? [];
+
   return (
     <>
+      {can('settings', 'update') ? (
+        <div className="mb-3">
+          <SettingsGroup prefix="backup." title="Backup schedule & retention" description="The physical backup runs on the schedule below. Logical (daily) and config (weekly) run automatically inside the maintenance window and skip themselves if nothing changed. Each tier keeps its own count." />
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader
           title="Backups"
@@ -2020,12 +2316,13 @@ function BackupsSection() {
         <div className="border-b border-line bg-sunken px-4 py-2 text-[11px] text-muted">
           <strong>Validate</strong> and <strong>Verify (restore)</strong> operate on the latest <strong>physical</strong> backup — the whole-database dump they need to restore-check. <strong>Validate</strong> checks the file is a genuine gzip’d dump, no database touched. <strong>Verify (restore)</strong> restores it into a throwaway database to prove it is genuinely restorable, then drops it — needs the privileged Backups permission.
         </div>
-        {(backups?.runs ?? []).length === 0 ? (
-          <EmptyState title="No backups yet" message="Run one now, or enable the nightly schedule below." />
+        {runs.length === 0 ? (
+          <EmptyState title="No backups yet" message="Run one now, or enable the nightly schedule above." />
         ) : (
+          <>
           <DataTable
             dense
-            rows={backups!.runs}
+            rows={allRuns ? runs : runs.slice(0, 5)}
             rowKey={(row) => row.id}
             columns={[
               { key: 'startedAt', header: 'When', width: '160px', render: (row) => <span className="text-[12px]">{dateTime(row.startedAt)}</span> },
@@ -2070,14 +2367,14 @@ function BackupsSection() {
               },
             ]}
           />
+          {runs.length > 5 ? (
+            <button type="button" onClick={() => setAllRuns((v) => !v)} className="w-full border-t border-line px-4 py-2 text-left text-[12px] text-muted hover:bg-sunken hover:text-ink">
+              {allRuns ? 'Show the latest 5' : `Show all ${runs.length} backups`}
+            </button>
+          ) : null}
+          </>
         )}
       </Card>
-
-      {can('settings', 'update') ? (
-        <div className="mt-3">
-          <SettingsGroup prefix="backup." title="Backup schedule & retention" description="Physical runs nightly on the cron below. Logical (daily) and config (weekly) run automatically inside the maintenance window and skip themselves if nothing changed since the last run. Retention keeps a separate count per grandfather/father/son tier rather than one flat number." />
-        </div>
-      ) : null}
 
       {restoring ? <RestoreModal run={restoring} onClose={() => setRestoring(null)} /> : null}
     </>
@@ -2244,10 +2541,10 @@ function IntegrationsSection() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['m365'] });
       setSecret('');
-      toast.push('Saved. Grant admin consent next.');
     },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
   });
+  const m365Changes = (form && data ? (Object.keys(form) as Array<keyof M365State['config']>).filter((k) => (form[k] ?? '') !== (data.config[k] ?? '')).length : 0) + (secret ? 1 : 0);
+  useUnsaved(m365Changes, () => save.mutateAsync(), () => { setForm(data?.config ?? null); setSecret(''); });
 
   const test = useMutation({
     mutationFn: () => api.post<{ ok: boolean; token: boolean; mailbox: { ok: boolean; message: string } | null; drive: { ok: boolean; message: string } | null; error?: string }>('/integrations/microsoft365/test', {}),
@@ -2324,7 +2621,6 @@ function IntegrationsSection() {
 
         {editable ? (
           <div className="flex flex-wrap items-center gap-2 border-t border-line bg-sunken px-4 py-3">
-            <Button variant="accent" loading={save.isPending} onClick={() => save.mutate()}>Save</Button>
             <Button icon={<Check size={13} />} onClick={consent}>Grant admin consent</Button>
             <Button loading={test.isPending} onClick={() => test.mutate()}>Test connection</Button>
             <span className="ml-auto flex items-center gap-2">
@@ -2340,14 +2636,20 @@ function IntegrationsSection() {
       </div>
 
       <div className="mt-3">
-        <SettingsGroup prefix="auth." title="Sign-in" description="Control which sign-in methods are accepted." hide={['auth.turnstileOnLogin']} />
-      </div>
-
-      <div className="mt-3">
-        <TurnstilePanel />
         <WebhooksPanel />
       </div>
     </>
+  );
+}
+
+/** Who can get in and how: the sign-in rules, then the bot check on the public form and, optionally, the staff sign-in. */
+function SecuritySection() {
+  const { can } = useAuth();
+  return (
+    <div className="flex flex-col gap-3">
+      <SettingsGroup prefix="auth." title="Sign-in" description="Which sign-in methods are accepted, how long a session lasts, and when an account locks." hide={['auth.turnstileOnLogin']} />
+      <TurnstileCard editable={can('integrations', 'update')} />
+    </div>
   );
 }
 
@@ -2363,7 +2665,6 @@ interface WebhookRow {
  * The secret is shown once, at creation, because that is the only moment Zeus has it in
  * the clear — after that it is encrypted and there is nothing to display.
  */
-function TurnstilePanel() { const { can } = useAuth(); return <TurnstileCard editable={can('integrations', 'update')} />; }
 
 function WebhooksPanel() {
   const toast = useToast();
@@ -2574,14 +2875,18 @@ function WhatsappPanel() {
   const set = (patch: Partial<WhatsappState['config']>) => config && setForm({ ...config, ...patch });
 
   const save = useMutation({
-    mutationFn: () => api.put('/integrations/whatsapp', { ...config, accessToken: token || undefined }),
+    mutationFn: () => {
+      if (!config?.phoneNumberId.trim()) throw new Error('WhatsApp needs its phone number ID before it can be saved.');
+      return api.put('/integrations/whatsapp', { ...config, accessToken: token || undefined });
+    },
     onSuccess: () => {
       setToken('');
+      setForm(null);
       void queryClient.invalidateQueries({ queryKey: ['integration-whatsapp'] });
-      toast.push('WhatsApp settings saved.');
     },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
   });
+  const whatsappChanges = (form && data ? (Object.keys(form) as Array<keyof WhatsappState['config']>).filter((k) => form[k] !== data.config[k]).length : 0) + (token ? 1 : 0);
+  useUnsaved(whatsappChanges, () => save.mutateAsync(), () => { setForm(null); setToken(''); });
 
   const test = useMutation({
     mutationFn: () => api.post('/integrations/whatsapp/test', { to: testTo }),
@@ -2653,11 +2958,6 @@ function WhatsappPanel() {
             ? ` A test number only delivers to ${data.setup.freeTierRecipientLimit} of them.`
             : ''}
         </span>
-        {can('integrations', 'update') ? (
-          <Button variant="accent" className="ml-auto" loading={save.isPending} disabled={!config.phoneNumberId.trim()} onClick={() => save.mutate()}>
-            Save
-          </Button>
-        ) : null}
       </div>
     </CollapsibleCard>
   );
@@ -3557,7 +3857,7 @@ function PortalAccessSection() {
       </details>
 
       <AccessRequestsCard editable={editable} />
-      <p className="px-1 text-[12px] text-muted">The bot check on that form is configured in Settings → Integrations.</p>
+      <p className="px-1 text-[12px] text-muted">The bot check on that form is configured in Settings → Sign-in &amp; security.</p>
 
       <GrantAccessModal open={grantOpen} onClose={() => setGrantOpen(false)} onGranted={() => { setGrantOpen(false); refresh(); }} />
       {open ? (
@@ -3647,16 +3947,15 @@ function MatchRequestModal({ request, onClose, onMatched }: { request: AccessReq
 
 /** The bot check on the public form: a Cloudflare Turnstile site key + secret, or nothing. */
 function TurnstileCard({ editable }: { editable: boolean }) {
-  const toast = useToast();
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ['portal-turnstile'], queryFn: () => api.get<{ siteKey: string | null; configured: boolean }>('/portal-admin/turnstile') });
   const [siteKey, setSiteKey] = useState<string | null>(null);
   const [secret, setSecret] = useState('');
   const save = useMutation({
     mutationFn: () => api.put('/portal-admin/turnstile', { siteKey: siteKey ?? data?.siteKey ?? '', secret: secret || undefined }),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['portal-turnstile'] }); setSecret(''); setSiteKey(null); toast.push('Turnstile saved.'); },
-    onError: (err) => toast.push(err instanceof ApiError ? err.message : 'Could not save.', 'error'),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['portal-turnstile'] }); setSecret(''); setSiteKey(null); },
   });
+  useUnsaved((siteKey !== null && siteKey !== (data?.siteKey ?? '') ? 1 : 0) + (secret ? 1 : 0), () => save.mutateAsync(), () => { setSiteKey(null); setSecret(''); });
   if (!data) return null;
   const key = siteKey ?? data.siteKey ?? '';
   return (
@@ -3672,7 +3971,6 @@ function TurnstileCard({ editable }: { editable: boolean }) {
         <Field label={data.configured ? 'Secret (leave blank to keep)' : 'Secret'} hint="Stored encrypted. Never leaves the server.">
           <Input type="password" value={secret} disabled={!editable} onChange={(e) => setSecret(e.target.value)} placeholder="0x4AAAA…" />
         </Field>
-        {editable ? <div className="sm:col-span-2"><Button size="sm" variant="accent" loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div> : null}
       </div>
       {data.configured ? (
         <SettingsGroup
