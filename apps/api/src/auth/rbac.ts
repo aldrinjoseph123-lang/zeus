@@ -248,22 +248,37 @@ export async function ownerAllowed(
   return (await teamMemberIds(user)).includes(ownerId);
 }
 
-const hiddenCache = new WeakMap<object, Map<string, Set<string>>>();
+const hiddenCache = new WeakMap<object, Set<string>>();
 
-function hiddenFields(user: SessionUser, module: Module | string): Set<string> {
-  let perUser = hiddenCache.get(user as unknown as object);
-  if (!perUser) {
-    perUser = new Map();
-    hiddenCache.set(user as unknown as object, perUser);
-  }
-  let set = perUser.get(module);
+/**
+ * Fields computed from a hidden one, which hand it straight back: `lineCost` is quantity ×
+ * `unitCost`, printed beside the quantity, and `termCost` is the same on a subscription.
+ */
+const DERIVED_FROM: Record<string, string[]> = {
+  unitCost: ['lineCost', 'termCost'],
+};
+
+/**
+ * Every field this user may not see, whichever module the response belongs to.
+ *
+ * Records travel between modules. A deal arrives with its quotes, an account with its deals
+ * and quotes, and an invoice line is a copy of a quote line. Hiding a field only in the
+ * module it was configured on hid it on one screen: on 15 Sep 2026 a Sales Executive opening
+ * a deal received the unit cost of every line on every quote attached to it. So a field
+ * hidden anywhere is hidden everywhere, together with the fields derived from it.
+ */
+function hiddenFields(user: SessionUser): Set<string> {
+  let set = hiddenCache.get(user as unknown as object);
   if (!set) {
-    set = new Set(
-      Object.entries(permissionFor(user, module).fields ?? {})
-        .filter(([, access]) => access === 'hidden')
-        .map(([field]) => field),
-    );
-    perUser.set(module, set);
+    set = new Set<string>();
+    for (const perm of Object.values(user.permissions ?? {})) {
+      for (const [field, access] of Object.entries(perm.fields ?? {})) {
+        if (access !== 'hidden') continue;
+        set.add(field);
+        for (const derived of DERIVED_FROM[field] ?? []) set.add(derived);
+      }
+    }
+    hiddenCache.set(user as unknown as object, set);
   }
   return set;
 }
@@ -284,8 +299,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Strip field-level-hidden keys from a record or array of records before it leaves the API. */
-export function maskFields<T>(user: SessionUser, module: Module | string, data: T): T {
-  const hidden = hiddenFields(user, module);
+export function maskFields<T>(user: SessionUser, _module: Module | string, data: T): T {
+  // The module names the screen, not the scope of the mask — see hiddenFields.
+  const hidden = hiddenFields(user);
   if (hidden.size === 0) return data;
 
   const strip = (value: unknown): unknown => {

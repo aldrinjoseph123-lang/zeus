@@ -1074,7 +1074,8 @@ export async function buildContext(request: Pick<FastifyRequest, 'query' | 'user
    */
   const [dealScope, quoteScope] = await Promise.all([
     scopeWhere(request.user, 'deals', 'read'),
-    scopeWhere(request.user, 'quotes', 'read'),
+    // A quote has no `ownerId`; the person it belongs to is whoever prepared it.
+    scopeWhere(request.user, 'quotes', 'read', 'preparedById'),
   ]);
 
   const dealRead = permissionFor(request.user, 'deals').read;

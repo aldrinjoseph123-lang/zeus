@@ -14,7 +14,19 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
-### Fixed — alerts that reported a blip as an outage
+### Security — cost reached roles that are not meant to see it
+
+- **A Sales Executive or Read Only user could read buy prices.** Masking hid a field only
+  on its own module's screens, but records travel between modules: a deal arrives with its
+  quotes, an account with its deals and quotes. Opening a deal returned the unit cost and
+  margin of every quote on it. An account returned deal cost and quote margin. Quote lines
+  carried `lineCost` (quantity × unit cost), and invoice lines carried `unitCost` itself.
+  A field hidden on any module is now hidden on every response, together with the fields
+  worked out from it. Roles that see cost are unaffected.
+- **The quotes report crashed for every role scoped narrower than "all".** It filtered
+  quotes by an owner field quotes do not have. It now uses the person who prepared the quote.
+
+
 
 Found on 14 September, when the office router's DNS dropped lookups for an afternoon.
 
