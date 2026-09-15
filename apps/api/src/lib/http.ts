@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { visitorIp } from './whereFrom.js';
-import { can, type Module, type SessionUser } from '../auth/rbac.js';
+import { can, documentScope, type Module, type SessionUser } from '../auth/rbac.js';
+import { prisma } from '../db.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -21,6 +22,26 @@ export const notFound = (msg = 'Not found.') => new HttpError(404, msg);
 export const conflict = (msg: string, details?: unknown) => new HttpError(409, msg, details);
 
 /** Route-level guard. Attach as a preHandler. */
+/**
+ * A quote or invoice the reader may act on, or the reason not: 404 when there is no such
+ * document, 403 when there is and it lies outside their scope. It asks the same `where` the
+ * list uses, of one row, so a record can never be listed and then refused, or the reverse.
+ */
+export async function requireDocument(
+  user: SessionUser,
+  module: 'quotes' | 'invoices',
+  id: string,
+  action: 'read' | 'update' | 'delete',
+): Promise<void> {
+  const scope = await documentScope(user, module, action);
+  const count = (where: Record<string, unknown>) => (module === 'quotes'
+    ? prisma.quote.count({ where: where as never })
+    : prisma.invoice.count({ where: where as never }));
+  const [exists, reachable] = await Promise.all([count({ id }), count({ id, ...scope })]);
+  if (!exists) throw notFound(module === 'quotes' ? 'Quote not found.' : 'Invoice not found.');
+  if (!reachable) throw forbidden();
+}
+
 export function requirePermission(module: Module | string, action: 'read' | 'create' | 'update' | 'delete' | 'export' | 'approve') {
   return async (request: FastifyRequest) => {
     if (!request.user) throw new HttpError(401, 'Sign in required.');

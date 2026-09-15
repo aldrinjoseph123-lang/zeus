@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, auditRead, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
-import { maskFields } from '../auth/rbac.js';
+import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requireDocument, requirePermission } from '../lib/http.js';
+import { documentScope, maskFields } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
 import { formatAed, round2 } from '../lib/money.js';
 import { getSetting, vatRate } from '../lib/settings.js';
@@ -95,6 +95,9 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
       ];
     }
 
+    // Whose invoices these are: see documentScope. AND, because search already uses OR.
+    where.AND = [await documentScope(request.user, 'invoices', 'read')];
+
     const [data, total, sums] = await Promise.all([
       prisma.invoice.findMany({
         where,
@@ -125,6 +128,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/invoices/:id', { preHandler: requirePermission('invoices', 'read') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'invoices', id, 'read');
     const invoice = await prisma.invoice.findUnique({ where: { id }, include });
     if (!invoice) throw notFound('Invoice not found.');
     auditRead(request.user, 'Invoice', invoice.id, invoice.number, clientIp(request));
@@ -183,6 +187,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
 
   app.patch('/api/invoices/:id', { preHandler: requirePermission('invoices', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'invoices', id, 'update');
     const existing = await prisma.invoice.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!existing) throw notFound('Invoice not found.');
 
@@ -242,6 +247,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
   /** Issue, cancel, or move an invoice's status. Issuing freezes the party details. */
   app.post('/api/invoices/:id/status', { preHandler: requirePermission('invoices', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'invoices', id, 'update');
     const { status } = z.object({ status: z.enum(['DRAFT', 'SENT', 'PARTIAL', 'PAID', 'OVERDUE', 'CANCELLED']) }).parse(request.body);
 
     const existing = await prisma.invoice.findUnique({ where: { id }, include: { payments: true } });
@@ -291,6 +297,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
    */
   app.post('/api/invoices/:id/credit-note', { preHandler: requirePermission('invoices', 'create') }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'invoices', id, 'read');
     const schema = z.object({
       reason: z.string().min(1, 'A reason is required on a credit note.'),
       lines: z.array(lineSchema).optional(),
@@ -350,6 +357,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/invoices/:id/pdf', { preHandler: requirePermission('invoices', 'read') }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'invoices', id, 'read');
     const invoice = await prisma.invoice.findUnique({ where: { id }, include });
     if (!invoice) throw notFound('Invoice not found.');
 
@@ -362,6 +370,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
 
   app.post('/api/invoices/:id/send', { preHandler: requirePermission('invoices', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'invoices', id, 'update');
     const schema = z.object({
       to: z.array(z.string().email()).min(1, 'Add at least one recipient.'),
       cc: z.array(z.string().email()).optional(),
@@ -424,6 +433,7 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
 
   app.delete('/api/invoices/:id', { preHandler: requirePermission('invoices', 'delete') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'invoices', id, 'delete');
     const existing = await prisma.invoice.findUnique({ where: { id }, include: { payments: true, creditNotes: true, lines: true } });
     if (!existing) throw notFound('Invoice not found.');
     if (existing.status !== 'DRAFT') {
@@ -441,9 +451,9 @@ export default async function invoiceRoutes(app: FastifyInstance): Promise<void>
   });
 
   /** Receivables ageing straight off the ledger, for the dashboard. */
-  app.get('/api/invoices/ageing', { preHandler: requirePermission('invoices', 'read') }, async () => {
+  app.get('/api/invoices/ageing', { preHandler: requirePermission('invoices', 'read') }, async (request) => {
     const open = await prisma.invoice.findMany({
-      where: { type: 'TAX_INVOICE', status: { in: ['SENT', 'PARTIAL', 'OVERDUE'] } },
+      where: { type: 'TAX_INVOICE', status: { in: ['SENT', 'PARTIAL', 'OVERDUE'] }, ...(await documentScope(request.user, 'invoices', 'read')) },
       select: { id: true, number: true, total: true, amountPaid: true, dueDate: true, account: { select: { id: true, name: true } } },
       orderBy: { dueDate: 'asc' },
     });

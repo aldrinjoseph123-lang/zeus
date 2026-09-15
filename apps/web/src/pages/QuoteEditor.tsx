@@ -8,7 +8,7 @@ import { date, dateInput, money, percent } from '../lib/format';
 import { LineEditor, blankLine, previewTotals, type EditableLine } from '../components/lineEditor';
 import { QuoteWorksheet, priceWorksheet } from '../components/quoteWorksheet';
 import {
-  Button, Card, CardHeader, ErrorNote, Field, Input, Loading, Modal,
+  Button, EmptyState, Card, CardHeader, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Textarea, cx, useToast,
 } from '../components/ui';
 import { AccountPicker, ContactPicker, Lookup } from '../components/pickers';
@@ -60,7 +60,7 @@ export default function QuoteEditor() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  const { data: quote, isLoading } = useQuery({
+  const { data: quote, isLoading, error: loadError } = useQuery({
     queryKey: ['quote', id],
     enabled: !isNew,
     queryFn: () => api.get<QuoteFull>(`/quotes/${id}`),
@@ -202,6 +202,11 @@ export default function QuoteEditor() {
   });
 
   if (!isNew && isLoading) return <Loading />;
+  // A record outside this person's reach answers 403. Without this the editor rendered empty
+  // and editable, with a Save button that could only fail.
+  if (!isNew && (loadError || !quote)) {
+    return <EmptyState title="Quote unavailable" message={(loadError as Error | null)?.message ?? 'Quote not found.'} action={<Button to="/quotes">All quotes</Button>} />;
+  }
 
   return (
     <>

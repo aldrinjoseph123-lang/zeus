@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit, auditRead, diff, undoHardDelete, undoLineEdit, undoUpdate } from '../lib/audit.js';
-import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, listParams, notFound, orderBy, paged, patchOf, requireDocument, requirePermission } from '../lib/http.js';
 import { approvalRequired, blockedReason } from '../services/approvals.js';
-import { maskFields, permissionFor } from '../auth/rbac.js';
+import { documentScope, maskFields, permissionFor } from '../auth/rbac.js';
 import { nextReference } from '../lib/counters.js';
 import { formatAed, lineTotals } from '../lib/money.js';
 import { getSetting, vatRate } from '../lib/settings.js';
@@ -211,6 +211,9 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
       ];
     }
 
+    // Whose quotes these are: see documentScope. AND, because search already uses OR.
+    where.AND = [await documentScope(request.user, 'quotes', 'read')];
+
     const [data, total] = await Promise.all([
       prisma.quote.findMany({
         where,
@@ -230,6 +233,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/quotes/:id', { preHandler: requirePermission('quotes', 'read') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'read');
     const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
     if (!quote) throw notFound('Quote not found.');
     auditRead(request.user, 'Quote', quote.id, quote.number, clientIp(request));
@@ -281,6 +285,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/quotes/:id', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'update');
     const existing = await prisma.quote.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!existing) throw notFound('Quote not found.');
     if (existing.status === 'ACCEPTED') throw badRequest('An accepted quote is locked. Create a new version instead.');
@@ -332,6 +337,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
   /** New version of an existing quote — keeps the old one for the audit trail. */
   app.post('/api/quotes/:id/revise', { preHandler: requirePermission('quotes', 'create') }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'read');
     const source = await prisma.quote.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!source) throw notFound('Quote not found.');
 
@@ -386,6 +392,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/quotes/:id/status', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'update');
     const { status } = z.object({ status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']) }).parse(request.body);
 
     if (status === 'SENT') await ensureQuoteApproved(id);
@@ -420,6 +427,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/api/quotes/:id', { preHandler: requirePermission('quotes', 'delete') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'delete');
     const existing = await prisma.quote.findUnique({ where: { id }, include: { lines: true } });
     if (!existing) throw notFound('Quote not found.');
     if (existing.status === 'ACCEPTED') throw badRequest('An accepted quote cannot be deleted.');
@@ -435,6 +443,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/quotes/:id/pdf', { preHandler: requirePermission('quotes', 'read') }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'read');
     const quote = await prisma.quote.findUnique({ where: { id }, include: quoteInclude });
     if (!quote) throw notFound('Quote not found.');
 
@@ -448,6 +457,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
   /** Email the quote PDF from the shared mailbox and mark it sent. */
   app.post('/api/quotes/:id/send', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'update');
     const schema = z.object({
       to: z.array(z.string().email()).min(1, 'Add at least one recipient.'),
       cc: z.array(z.string().email()).optional(),
@@ -510,6 +520,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/api/quotes/:id/invoice', { preHandler: requirePermission('invoices', 'create') }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    await requireDocument(request.user, 'quotes', id, 'read');
     const quote = await prisma.quote.findUnique({ where: { id }, include: { lines: { orderBy: { order: 'asc' } } } });
     if (!quote) throw notFound('Quote not found.');
     if (quote.status !== 'ACCEPTED') throw badRequest('Only an accepted quote can be invoiced.');

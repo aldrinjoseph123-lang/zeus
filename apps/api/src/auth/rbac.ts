@@ -233,6 +233,36 @@ export async function scopeWhere(
   return { id: '__no_access__' };
 }
 
+/**
+ * The scope of a quote or an invoice, which has no owner of its own.
+ *
+ * It belongs to two people: the owner of the deal it sits on, and whoever made it. A rep
+ * opens every quote on their own deal, including one a manager prepared for them, and keeps
+ * the ones they prepared on somebody else's deal. A document with neither stays reachable,
+ * as an unowned record does in `ownerAllowed`, so nothing is orphaned.
+ *
+ * Returned as a `where`, used by the list and by the single-record check alike, so the two
+ * cannot disagree about what a person may see.
+ */
+export async function documentScope(
+  user: SessionUser,
+  module: 'quotes' | 'invoices',
+  action: 'read' | 'update' | 'delete',
+): Promise<Record<string, unknown>> {
+  const creatorField = module === 'quotes' ? 'preparedById' : 'createdById';
+  const scope = permissionFor(user, module)[action];
+  if (scope === 'all') return {};
+  if (scope === 'none') return { id: '__no_access__' };
+  const ids = scope === 'own' ? [user.id] : await teamMemberIds(user);
+  return {
+    OR: [
+      { deal: { ownerId: { in: ids } } },
+      { [creatorField]: { in: ids } },
+      { [creatorField]: null, OR: [{ dealId: null }, { deal: { ownerId: null } }] },
+    ],
+  };
+}
+
 /** True when this user may act on this specific record's owner. */
 export async function ownerAllowed(
   user: SessionUser,

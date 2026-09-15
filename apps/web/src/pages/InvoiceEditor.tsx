@@ -6,7 +6,7 @@ import { api, ApiError, download } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, dateInput, money, percent } from '../lib/format';
 import {
-  Button, Card, CardHeader, Checkbox, ConfirmDialog, ErrorNote, Field, Input, Loading,
+  Button, EmptyState, Card, CardHeader, Checkbox, ConfirmDialog, ErrorNote, Field, Input, Loading,
   Modal, PageHeader, Select, Textarea, cx, useToast,
 } from '../components/ui';
 import { AccountPicker, ContactPicker, ListSelect, Lookup } from '../components/pickers';
@@ -76,7 +76,7 @@ export default function InvoiceEditor() {
   const [crediting, setCrediting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const { data: invoice, isLoading } = useQuery({
+  const { data: invoice, isLoading, error: loadError } = useQuery({
     queryKey: ['invoice', id],
     enabled: !isNew,
     queryFn: () => api.get<InvoiceFull>(`/invoices/${id}`),
@@ -188,6 +188,11 @@ export default function InvoiceEditor() {
   });
 
   if (!isNew && isLoading) return <Loading />;
+  // A record outside this person's reach answers 403. Without this the editor rendered empty
+  // and editable, with a Save button that could only fail.
+  if (!isNew && (loadError || !invoice)) {
+    return <EmptyState title="Invoice unavailable" message={(loadError as Error | null)?.message ?? 'Invoice not found.'} action={<Button to="/invoices">All invoices</Button>} />;
+  }
 
   return (
     <>

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, clientIp, forbidden, listParams, notFound, requirePermission } from '../lib/http.js';
-import { permissionFor, scopeWhere, teamMemberIds, type SessionUser } from '../auth/rbac.js';
+import { documentScope, permissionFor, scopeWhere, teamMemberIds, type SessionUser } from '../auth/rbac.js';
 import { pipelineTrend, weeklyDealMovement } from '../services/snapshots.js';
 import { tablePdf, type TableColumn } from '../services/pdf.js';
 import { tableXlsx } from '../services/xlsx.js';
@@ -1072,10 +1072,11 @@ export async function buildContext(request: Pick<FastifyRequest, 'query' | 'user
    * answer it for the same audience. Every scope is resolved once here rather than
    * per report, because several reports query more than one module.
    */
-  const [dealScope, quoteScope] = await Promise.all([
+  // Quotes and invoices have no owner column; documentScope is the rule the screens use too.
+  const [dealScope, quoteScope, invoiceScope] = await Promise.all([
     scopeWhere(request.user, 'deals', 'read'),
-    // A quote has no `ownerId`; the person it belongs to is whoever prepared it.
-    scopeWhere(request.user, 'quotes', 'read', 'preparedById'),
+    documentScope(request.user, 'quotes', 'read'),
+    documentScope(request.user, 'invoices', 'read'),
   ]);
 
   const dealRead = permissionFor(request.user, 'deals').read;
@@ -1085,21 +1086,14 @@ export async function buildContext(request: Pick<FastifyRequest, 'query' | 'user
       : dealRead === 'team' ? await teamMemberIds(request.user)
       : [];
 
-  /**
-   * An invoice has no owner column — it belongs to whoever owns the deal behind it, and
-   * failing that to whoever raised it. `scopeWhere` cannot express that, and asking it to
-   * would produce a `where: { ownerId }` Prisma rejects on this model.
-   */
+  // documentScope again, for the raw-SQL reports: the deal's owner, whoever raised the
+  // invoice, or nobody at all.
   const invoiceRead = permissionFor(request.user, 'invoices').read;
   const invoiceOwners =
     invoiceRead === 'all' ? null
       : invoiceRead === 'own' ? [request.user.id]
       : invoiceRead === 'team' ? await teamMemberIds(request.user)
       : [];
-  const invoiceScope: Record<string, unknown> =
-    invoiceOwners === null ? {}
-      : invoiceOwners.length === 0 ? { id: '__no_access__' }
-      : { OR: [{ deal: { ownerId: { in: invoiceOwners } } }, { createdById: { in: invoiceOwners } }] };
 
   return {
     user: request.user,
@@ -1120,6 +1114,7 @@ export async function buildContext(request: Pick<FastifyRequest, 'query' | 'user
         : Prisma.sql`AND (
             i."createdById" IN (${Prisma.join(invoiceOwners)})
             OR EXISTS (SELECT 1 FROM "Deal" dd WHERE dd.id = i."dealId" AND dd."ownerId" IN (${Prisma.join(invoiceOwners)}))
+            OR (i."createdById" IS NULL AND NOT EXISTS (SELECT 1 FROM "Deal" dd WHERE dd.id = i."dealId" AND dd."ownerId" IS NOT NULL))
           )`,
     visibleOwnerIds,
   };

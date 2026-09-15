@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma, num } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { getSetting } from '../lib/settings.js';
-import { badRequest, clientIp, forbidden, notFound, requirePermission } from '../lib/http.js';
+import { badRequest, clientIp, forbidden, notFound, requireDocument, requirePermission } from '../lib/http.js';
 import { can, ownerAllowed } from '../auth/rbac.js';
 import {
   ENTITIES, approvalRequired, delegateFor, notifyDecided, notifyRequested, type Entity,
@@ -88,6 +88,7 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
     const record = await load(entity, id);
     const described = describe(entity, record);
     if (entity === 'deals' && !(await ownerAllowed(request.user, 'deals', 'update', described.ownerId))) throw forbidden();
+    if (entity === 'quotes' || entity === 'invoices') await requireDocument(request.user, entity, id, 'update');
     if (record.approvalStatus === 'PENDING') throw badRequest(`${described.reference} is already waiting on approval.`);
     if (record.approvalStatus === 'APPROVED') throw badRequest(`${described.reference} has already been approved.`);
 

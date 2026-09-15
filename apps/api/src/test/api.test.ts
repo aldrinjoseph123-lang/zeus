@@ -950,8 +950,18 @@ describe('quote cost', () => {
   });
 
   it('keeps the cost a manager set when a rep edits the same quote', async () => {
+    // The manager prices the rep's deal. On the rep's own deal, because a rep may only edit
+    // quotes that are theirs — before record scope existed this one sat on no deal at all.
+    const repDeal = await prisma.deal.create({
+      data: {
+        reference: 'ZEU-D-COSTKEEP', name: 'Consulting', accountId: fx.customer.id, pipelineId: fx.pipeline.id,
+        stageId: fx.pipeline.stages[0].id, amount: 1000, cost: 600, vatRate: 5, vatAmount: 50, totalAmount: 1050,
+        probability: 50, ownerId: fx.rep.id, closeDate: new Date(Date.now() + 30 * 86_400_000),
+      },
+    });
     const created = await request(app, fx.manager).post('/api/quotes', {
       accountId: fx.customer.id,
+      dealId: repDeal.id,
       lines: [{ description: 'Consulting', quantity: 1, unitPrice: 1000, unitCost: 600, discountPct: 0, taxable: true }],
     });
     assert.equal(created.status, 201);

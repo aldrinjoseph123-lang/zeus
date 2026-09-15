@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma, num } from '../db.js';
 import { listParams, requirePermission } from '../lib/http.js';
-import { scopeWhere, permissionFor, teamMemberIds, can } from '../auth/rbac.js';
+import { documentScope, scopeWhere, permissionFor, teamMemberIds, can } from '../auth/rbac.js';
 import { getSetting } from '../lib/settings.js';
 
 /**
@@ -354,7 +354,8 @@ export default async function dashboardRoutes(app: FastifyInstance): Promise<voi
         take: 25,
       }),
       prisma.invoice.findMany({
-        where: { status: { in: ['SENT', 'PARTIAL'] }, dueDate: { lt: new Date() } },
+        // The invoices this person could open from the invoices screen, and no others.
+        where: { status: { in: ['SENT', 'PARTIAL'] }, dueDate: { lt: new Date() }, ...(await documentScope(request.user, 'invoices', 'read')) },
         include: { account: { select: { id: true, name: true } } },
         orderBy: { dueDate: 'asc' },
         take: 25,

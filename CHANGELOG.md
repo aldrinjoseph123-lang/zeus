@@ -39,6 +39,20 @@ Still to come: pasting or uploading the vendor's quote (part 2) and the Excel ex
 
 **After the deploy:** nothing. The migration only adds columns; existing quotes are unchanged.
 
+### Security — a Sales Executive could open every quote and invoice in the company
+
+- **Quotes and invoices now follow the role's scope.** The routes never checked it, so a rep
+  scoped to their team listed, opened, printed and could edit any quote or invoice. Neither
+  has an owner column. The rule chosen: a document belongs to **the owner of its deal, and
+  whoever made it**. A rep opens every quote on their own deal, including one a manager
+  prepared, and keeps the ones they prepared on someone else's. A document with neither
+  stays reachable.
+- The same rule now covers invoice ageing, the dashboard's overdue invoices, an account's
+  quote and invoice lists, submitting for approval, and both reports.
+- **Behaviour change:** a rep whose role edits "own" records can read a teammate's quote but
+  no longer edit it. Opening a document out of reach shows "unavailable" instead of an empty
+  form.
+
 ### Security — cost reached roles that are not meant to see it
 
 - **A Sales Executive or Read Only user could read buy prices.** Masking hid a field only

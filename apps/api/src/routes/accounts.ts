@@ -4,7 +4,7 @@ import { prisma } from '../db.js';
 import { sanitizeCustomFields } from '../lib/customFields.js';
 import { audit, auditRead, diff, undoSoftDelete, undoUpdate } from '../lib/audit.js';
 import { badRequest, clientIp, conflict, forbidden, listParams, notFound, orderBy, paged, patchOf, requirePermission } from '../lib/http.js';
-import { maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
+import { documentScope, maskFields, ownerAllowed, scopeWhere, stripUnwritableFields } from '../auth/rbac.js';
 import { checkDuplicates, extractDomain } from '../services/dedupe.js';
 
 /**
@@ -119,8 +119,9 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
           take: 50,
           include: { stage: { select: { id: true, name: true, color: true, isWon: true, isLost: true } }, owner: { select: { name: true } } },
         },
-        quotes: { orderBy: { createdAt: 'desc' }, take: 20 },
-        invoices: { orderBy: { createdAt: 'desc' }, take: 20 },
+        // Only what the reader could open from the quotes and invoices screens themselves.
+        quotes: { where: await documentScope(request.user, 'quotes', 'read'), orderBy: { createdAt: 'desc' }, take: 20 },
+        invoices: { where: await documentScope(request.user, 'invoices', 'read'), orderBy: { createdAt: 'desc' }, take: 20 },
         activities: {
           orderBy: { createdAt: 'desc' },
           take: 50,
