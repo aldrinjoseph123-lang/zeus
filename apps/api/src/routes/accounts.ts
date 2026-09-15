@@ -95,7 +95,8 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     const [data, total] = await Promise.all([
       prisma.account.findMany({
         where,
-        select: listSelect,
+        // The deal count says what the reader could open, not what the account holds.
+        select: { ...listSelect, _count: { select: { contacts: { where: { deletedAt: null } }, deals: { where: { deletedAt: null, ...(await scopeWhere(request.user, 'deals', 'read')) } } } } },
         orderBy: orderBy(params, ['name', 'createdAt', 'updatedAt', 'lastActivityAt', 'type']),
         skip: params.skip,
         take: params.take,
@@ -113,8 +114,9 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
       include: {
         owner: { select: { id: true, name: true, avatarColor: true } },
         contacts: { where: { deletedAt: null }, orderBy: { isPrimary: 'desc' } },
+        // Only the deals the reader could open from the Deals screen, as with quotes and invoices below.
         deals: {
-          where: { deletedAt: null },
+          where: { deletedAt: null, ...(await scopeWhere(request.user, 'deals', 'read')) },
           orderBy: { updatedAt: 'desc' },
           take: 50,
           include: { stage: { select: { id: true, name: true, color: true, isWon: true, isLost: true } }, owner: { select: { name: true } } },

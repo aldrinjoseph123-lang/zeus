@@ -210,7 +210,7 @@ export function VendorQuoteImport({
                       </td>
                       <td className="px-2 py-1.5">
                         <Input className="w-28 px-1.5 py-1 text-right" type="number" step="0.01" value={row.unitPrice} aria-label="Unit price" onChange={(e) => set(i, { unitPrice: Number(e.target.value) })} />
-                        {!row.confident ? <span className="mt-0.5 block text-right text-[10px] text-watch">check this</span> : null}
+                        {!row.confident ? <span className="mt-0.5 block text-right text-[10px] text-watch-ink">check this</span> : null}
                       </td>
                       <td className="min-w-[200px] max-w-[260px] px-2 py-2 text-[12px]">
                         {existing ? (
@@ -243,7 +243,7 @@ function TotalCheck({ chosenTotal, documentTotal, difference, currency }: {
   if (documentTotal == null) {
     return (
       <p className="flex items-center gap-2 text-[12px] text-muted">
-        <AlertTriangle size={14} className="text-watch" />
+        <AlertTriangle size={14} className="text-watch-ink" />
         No total found on the document to check against. Ticked lines add up to {currency} {figure(chosenTotal)}.
       </p>
     );

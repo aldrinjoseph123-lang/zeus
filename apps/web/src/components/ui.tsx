@@ -1,5 +1,5 @@
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useState,
+  createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState,
   type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from 'react';
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Info, Loader2, Search, X } from 'lucide-react';
@@ -318,10 +318,10 @@ export function EmptyState({ title, message, action, icon }: { title: string; me
 export function ErrorNote({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : String(error ?? 'Something went wrong.');
   return (
-    <div className="flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--red-700)]">
+    <div className="flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--text-on-accent-soft)]">
       <AlertTriangle size={15} className="mt-px shrink-0" />
       <span className="min-w-0 flex-1 break-words">{message}</span>
-      <CopyButton value={message} label="" className="shrink-0 text-[var(--red-700)]" />
+      <CopyButton value={message} label="" className="shrink-0 text-[var(--text-on-accent-soft)]" />
     </div>
   );
 }
@@ -366,6 +366,9 @@ export function Modal({
   footer?: ReactNode;
   width?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
+  const titleId = useId();
+  const panel = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -377,15 +380,25 @@ export function Modal({
     };
   }, [open, onClose]);
 
+  // A screen reader is told a dialog opened, and the keyboard lands inside it: on the field a
+  // form already focused, or else on the dialog itself. Closing hands focus back to where it was.
+  // ponytail: Tab is not trapped inside; add a trap if keyboard users report tabbing out behind it.
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    if (!panel.current?.contains(document.activeElement)) panel.current?.focus();
+    return () => previous?.focus?.();
+  }, [open]);
+
   if (!open) return null;
   const maxWidth = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl' }[width];
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8" style={{ background: 'var(--surface-overlay)' }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={cx('w-full bg-card shadow-[var(--shadow-lg)]', maxWidth)} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={cx('w-full bg-card shadow-[var(--shadow-lg)] outline-none', maxWidth)} onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 border-b border-line bg-n950 px-5 py-3.5">
           <div className="min-w-0">
-            <h2 className="truncate text-[14px] font-bold uppercase tracking-[0.1em] text-white">{title}</h2>
+            <h2 id={titleId} className="truncate text-[14px] font-bold uppercase tracking-[0.1em] text-white">{title}</h2>
             {subtitle ? <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p> : null}
           </div>
           <button onClick={onClose} aria-label="Close" className="text-muted transition-colors hover:text-white">
@@ -462,7 +475,8 @@ export function DataTable<T>({
   const allChecked = selection ? ids.length > 0 && ids.every((id) => selection.selected.has(id)) : false;
 
   return (
-    <div className="overflow-x-auto">
+    // Focusable so a keyboard can scroll a table wider than the screen; rows alone may hold nothing to tab to.
+    <div className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent" tabIndex={0}>
       <table className="w-full min-w-[720px] border-collapse text-[13px]">
         <thead>
           <tr className="bg-n950 text-white">
@@ -608,7 +622,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={toast.id}
             className={cx(
               'pointer-events-auto flex items-start gap-2 border px-3 py-2.5 text-[13px] shadow-[var(--shadow-lg)]',
-              toast.tone === 'error' ? 'border-[var(--red-300)] bg-card text-[var(--red-700)]'
+              toast.tone === 'error' ? 'border-[var(--red-300)] bg-card text-[var(--text-on-accent-soft)]'
                 : toast.tone === 'info' ? 'border-line bg-card text-ink'
                 : 'border-[#b8dfc8] bg-card text-[#14653a]',
             )}

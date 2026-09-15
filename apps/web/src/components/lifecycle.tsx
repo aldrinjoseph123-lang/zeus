@@ -11,7 +11,7 @@ export * from '../lib/lifecycle';
 
 const TONE_BG: Record<NonNullable<Hint['tone']>, string> = {
   neutral: 'bg-sunken text-n700',
-  accent: 'bg-accent-soft text-[var(--red-700)]',
+  accent: 'bg-accent-soft text-[var(--text-on-accent-soft)]',
   watch: 'bg-[#fdf3e7] text-[#8a4d10]',
   secure: 'bg-[#e8f5ed] text-[#14653a]',
 };

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { dateTime, percent } from '../lib/format';
+import { dateTime, money, percent } from '../lib/format';
 import { Badge, Button, Field, Modal, Textarea, cx, useToast } from './ui';
 
 /**
@@ -39,7 +39,7 @@ export function ApprovalBar({ entity, id, record, module, onChanged, figures }: 
   module: 'deals' | 'invoices' | 'quotes';
   onChanged: () => void;
   /** What is being signed off, for a reader who may see cost. Omitted for everyone else. */
-  figures?: { marginPct: number; markupPct: number } | null;
+  figures?: { marginAmount: number; marginPct: number; markupPct: number } | null;
 }) {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -84,7 +84,7 @@ export function ApprovalBar({ entity, id, record, module, onChanged, figures }: 
 
   const tone =
     status === 'APPROVED' ? 'bg-[#e8f5ed] text-[#14653a]'
-    : status === 'REJECTED' ? 'bg-accent-soft text-[var(--red-700)]'
+    : status === 'REJECTED' ? 'bg-accent-soft text-[var(--text-on-accent-soft)]'
     : 'bg-[#fdf3e7] text-[#8a4d10]';
 
   const icon =
@@ -113,7 +113,7 @@ export function ApprovalBar({ entity, id, record, module, onChanged, figures }: 
             <>Rejected by {record.approvalDecidedBy?.name ?? 'a manager'}{record.approvalNote ? ` — ${record.approvalNote}` : ''}. Fix it and send it back.</>
           )}
           {figures ? (
-            <span className="tabular font-semibold"> Margin {percent(figures.marginPct, 1)} · markup {percent(figures.markupPct, 1)} on cost.</span>
+            <span className="tabular font-semibold"> Margin {money(figures.marginAmount, true)} ({percent(figures.marginPct, 1)}) · markup {percent(figures.markupPct, 1)} on cost.</span>
           ) : null}
         </span>
 

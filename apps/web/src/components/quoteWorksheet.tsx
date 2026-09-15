@@ -43,18 +43,20 @@ const blank = (value: string) => (value.trim() === '' ? null : Number(value));
 const COLUMNS: Array<{ key: string; label: string; width?: number | string; right?: boolean }> = [
   // The two text columns take a share of the width rather than a fixed amount, so a wide
   // screen gives the vendor's name room instead of handing it all to the description.
-  { key: 'vendor', label: 'Vendor', width: '13%' },
-  { key: 'code', label: 'Part no.', width: '9%' },
+  { key: 'vendor', label: 'Vendor', width: '12%' },
+  { key: 'code', label: 'Part no.', width: '8%' },
   { key: 'description', label: 'Description' },
   { key: 'qty', label: 'Qty', width: 60, right: true },
-  { key: 'price', label: 'Vendor price', width: 96, right: true },
+  { key: 'price', label: 'Vendor price', width: 88, right: true },
   { key: 'cur', label: 'Cur', width: 72 },
   { key: 'rate', label: 'Rate', width: 80, right: true },
-  { key: 'cost', label: 'Cost {cur}', width: 96, right: true },
-  { key: 'markup', label: 'Markup %', width: 72, right: true },
-  { key: 'sell', label: 'Unit sell {cur}', width: 100, right: true },
-  { key: 'total', label: 'Line total {cur}', width: 108, right: true },
-  { key: 'margin', label: 'Margin', width: 64, right: true },
+  { key: 'cost', label: 'Cost {cur}', width: 92, right: true },
+  { key: 'markup', label: 'Markup %', width: 64, right: true },
+  { key: 'sell', label: 'Unit sell {cur}', width: 96, right: true },
+  { key: 'total', label: 'Line total {cur}', width: 104, right: true },
+  // Markup and margin are one amount: the sell less the cost. The % beside it is on the sell price.
+  { key: 'markupAmount', label: 'Markup {cur}', width: 88, right: true },
+  { key: 'margin', label: 'Margin', width: 60, right: true },
   { key: 'remove', label: '', width: 28 },
 ];
 const CELL = 'px-1.5 py-1.5';
@@ -152,7 +154,7 @@ export function QuoteWorksheet({
                   <td className={CELL}>
                     <span className="flex items-center gap-1">
                       {line.isInternal ? (
-                        <span className="min-w-0 flex-1 truncate px-[7px] text-[10px] font-bold uppercase tracking-[0.08em] text-watch">Internal</span>
+                        <span className="min-w-0 flex-1 truncate px-[7px] text-[10px] font-bold uppercase tracking-[0.08em] text-watch-ink">Internal</span>
                       ) : (
                         <span className="min-w-0 flex-1">
                           <AccountPicker
@@ -247,6 +249,7 @@ export function QuoteWorksheet({
                     )}
                   </td>
                   <td className={cx(FIGURE, 'font-semibold')}>{figure(lineSell)}</td>
+                  <td className={FIGURE}>{lineCost > 0 ? figure(lineSell - lineCost) : '—'}</td>
                   <td className={cx(FIGURE, marginTone(margin))}>{margin == null ? '—' : percent(margin, 1)}</td>
                   <td className="px-1 py-1.5 text-center">
                     {!locked && lines.length > 1 ? (
@@ -266,6 +269,7 @@ export function QuoteWorksheet({
               <td className={FIGURE} title="Blended markup on cost">{percent(markupOf(totalCost, totalSell) ?? 0, 1)}</td>
               <td />
               <td className={FIGURE}>{figure(totalSell)}</td>
+              <td className={FIGURE}>{totalCost > 0 ? figure(totalSell - totalCost) : '—'}</td>
               <td className={cx(FIGURE, marginTone(totalMargin))}>{totalMargin == null ? '—' : percent(totalMargin, 1)}</td>
               <td />
             </tr>
@@ -313,5 +317,5 @@ export function QuoteWorksheet({
 /** The same thresholds as the totals card beside it, so the two never disagree about a colour. */
 function marginTone(margin: number | null) {
   if (margin == null) return 'text-muted';
-  return margin < 10 ? 'text-accent-ink' : margin < 20 ? 'text-watch' : 'text-secure';
+  return margin < 10 ? 'text-accent-ink' : margin < 20 ? 'text-watch-ink' : 'text-secure';
 }

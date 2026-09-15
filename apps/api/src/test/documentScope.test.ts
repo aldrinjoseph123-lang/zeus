@@ -179,3 +179,30 @@ describe('an account shows only the documents its reader can open', () => {
     assert.ok(!body.includes(i.someoneElses.number), 'the account page listed an invoice its own screen refuses');
   });
 });
+
+describe('an account shows only the deals its reader can open', () => {
+  it('lists and counts the rep\'s and their team\'s deals, not another rep\'s', async () => {
+    const mine = await deal(fx.rep);
+    const teammates = await deal(fx.manager);
+    const someoneElses = await deal(fx.otherRep);
+    const gone = await deal(fx.rep);
+    await prisma.deal.update({ where: { id: gone.id }, data: { deletedAt: new Date() } });
+
+    const detail = (await request(app, fx.rep).get(`/api/accounts/${fx.customer.id}`)).body as { deals: Array<{ id: string }> };
+    const listed = new Set(detail.deals.map((d) => d.id));
+    assert.ok(listed.has(mine.id) && listed.has(teammates.id));
+    assert.ok(!listed.has(someoneElses.id), 'the account page listed a deal the Deals screen refuses');
+
+    // The Deals screen is the yardstick: the account agrees with it exactly.
+    const onCustomer = new Set((await prisma.deal.findMany({ where: { accountId: fx.customer.id }, select: { id: true } })).map((d) => d.id));
+    const screen = ids((await request(app, fx.rep).get('/api/deals?pageSize=100')).body);
+    assert.deepEqual([...listed].sort(), [...screen].filter((id) => onCustomer.has(id)).sort());
+
+    const row = ((await request(app, fx.rep).get(`/api/accounts?search=${encodeURIComponent(fx.customer.name)}`)).body as { data: Array<{ id: string; _count: { deals: number } }> })
+      .data.find((a) => a.id === fx.customer.id)!;
+    assert.equal(row._count.deals, listed.size, 'the list counts only what the reader can open, and never a deleted deal');
+
+    const admin = (await request(app, fx.admin).get(`/api/accounts/${fx.customer.id}`)).body as { deals: Array<{ id: string }> };
+    assert.ok(admin.deals.some((d) => d.id === someoneElses.id), 'an administrator still sees every deal');
+  });
+});

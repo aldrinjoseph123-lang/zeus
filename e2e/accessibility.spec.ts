@@ -16,6 +16,7 @@ import AxeBuilder from '@axe-core/playwright';
 const PAGES = [
   '/dashboard', '/deals', '/leads', '/accounts', '/contacts',
   '/quotes', '/invoices', '/reports', '/settings/company', '/partners',
+  '/settings/notifications', '/settings/backups', '/imports',
 ];
 
 /**

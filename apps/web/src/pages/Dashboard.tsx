@@ -101,7 +101,7 @@ export default function Dashboard() {
     queryFn: () => api.get<Array<{
       entity: 'deals' | 'purchase-orders' | 'invoices' | 'quotes'; id: string; reference: string; title: string;
       account: string; value: number; requestedAt: string | null; requestedBy: string | null;
-      marginPct?: number; markupPct?: number; marginBelowFloor?: boolean;
+      marginAmount?: number; marginPct?: number; markupPct?: number; marginBelowFloor?: boolean;
     }>>('/approvals/pending'),
     enabled: can('deals', 'approve') || can('invoices', 'approve') || can('quotes', 'approve'),
   });
@@ -297,7 +297,7 @@ export default function Dashboard() {
             <ChartSlot height={220}><AgeingChart data={data.ageing} /></ChartSlot>
           </div>
           {k.overdueDeals > 0 ? (
-            <div className="border-t border-line bg-accent-soft px-4 py-2.5 text-[12px] text-[var(--red-700)]">
+            <div className="border-t border-line bg-accent-soft px-4 py-2.5 text-[12px] text-[var(--text-on-accent-soft)]">
               <strong>{k.overdueDeals}</strong> open deal{k.overdueDeals === 1 ? '' : 's'} worth <strong>{money(k.overdueDealValue)}</strong> are past their close date.
             </div>
           ) : null}
@@ -457,7 +457,7 @@ export default function Dashboard() {
                         </span>
                       ) : a.markupPct !== undefined ? (
                         <span className="tabular block text-[11px] text-muted">
-                          Margin {percent(a.marginPct ?? 0, 1)} · markup {percent(a.markupPct, 1)} on cost
+                          Margin {money(a.marginAmount ?? 0, true)} ({percent(a.marginPct ?? 0, 1)}) · markup {percent(a.markupPct, 1)} on cost
                         </span>
                       ) : null}
                     </span>

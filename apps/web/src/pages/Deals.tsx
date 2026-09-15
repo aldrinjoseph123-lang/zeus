@@ -164,7 +164,8 @@ function DealBoard() {
               </div>
             </div>
 
-            <div className="flex max-h-[calc(100vh-320px)] flex-1 flex-col gap-2 overflow-y-auto p-2">
+            {/* Focusable so a keyboard can scroll a long column; the cards are dragged, not tabbed to. */}
+            <div tabIndex={0} className="flex max-h-[calc(100vh-320px)] flex-1 flex-col gap-2 overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent">
               {column.deals.length === 0 ? (
                 <p className="px-2 py-6 text-center text-[11px] text-muted">Nothing here yet.</p>
               ) : (
@@ -208,7 +209,7 @@ function DealBoard() {
                       </div>
 
                       {stuck ? (
-                        <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--status-watch)]">
+                        <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-watch-ink">
                           {daysBetween(deal.stageChangedAt)}d in stage
                         </p>
                       ) : null}

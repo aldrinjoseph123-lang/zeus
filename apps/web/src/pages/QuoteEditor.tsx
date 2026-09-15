@@ -445,9 +445,9 @@ export default function QuoteEditor() {
                   <span className="tabular text-[16px] font-bold">{money(totals.total, true)}</span>
                 </div>
                 <Stat label="Cost" value={money(totals.totalCost, true)} />
-                <Stat label="Markup" value={markupPct == null ? '—' : `${percent(markupPct, 1)} on cost`} />
+                <Stat label="Markup" value={markupPct == null ? '—' : `${money(totals.marginAmount, true)} · ${percent(markupPct, 1)} on cost`} />
                 <Stat label="Margin">
-                  <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
+                  <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch-ink' : 'text-secure')}>
                     {money(totals.marginAmount, true)} · {percent(totals.marginPct, 1)}
                   </span>
                 </Stat>
@@ -530,10 +530,10 @@ export default function QuoteEditor() {
               {showCost ? (
                 <div className="mt-3 border-t border-line pt-3">
                   <Row label="Cost" value={money(totals.totalCost, true)} muted />
-                  <div className="mt-1"><Row label="Markup" value={markupPct == null ? '—' : `${percent(markupPct, 1)} on cost`} /></div>
+                  <div className="mt-1"><Row label="Markup" value={markupPct == null ? '—' : `${money(totals.marginAmount, true)} · ${percent(markupPct, 1)} on cost`} /></div>
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-muted">Margin</span>
-                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
+                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch-ink' : 'text-secure')}>
                       {money(totals.marginAmount, true)} · {percent(totals.marginPct, 1)}
                     </span>
                   </div>
@@ -589,11 +589,11 @@ export default function QuoteEditor() {
 }
 
 /** The saved quote's margin and markup — what an approval is actually on, not the unsaved preview. */
-function savedFigures(quote: QuoteFull): { marginPct: number; markupPct: number } | null {
+function savedFigures(quote: QuoteFull): { marginAmount: number; marginPct: number; markupPct: number } | null {
   const cost = Number(quote.totalCost ?? 0);
   const net = Number(quote.subtotal) - Number(quote.discountAmt);
   if (quote.totalCost === undefined || cost <= 0 || net <= 0) return null;
-  return { marginPct: ((net - cost) / net) * 100, markupPct: ((net - cost) / cost) * 100 };
+  return { marginAmount: net - cost, marginPct: ((net - cost) / net) * 100, markupPct: ((net - cost) / cost) * 100 };
 }
 
 /** One figure in the totals strip: its name over its value, or over the control that sets it. */

@@ -258,7 +258,7 @@ export default function Imports() {
                       title={field.required ? 'Required' : field.expected ? `Expected: a row with no ${field.expected.toLowerCase()} is flagged` : 'Optional'}
                       className={cx(
                         'border px-1.5 py-0.5 text-[11px]',
-                        field.required ? 'border-[var(--red-300)] bg-accent-soft font-semibold text-[var(--red-700)]'
+                        field.required ? 'border-[var(--red-300)] bg-accent-soft font-semibold text-[var(--text-on-accent-soft)]'
                           : field.expected ? 'border-[#e8c9a0] bg-[#fdf3e7] text-[#8a4d10]'
                           : 'border-line bg-card text-muted',
                       )}
@@ -415,15 +415,15 @@ export default function Imports() {
                   ].map(([label, value, tone]) => (
                     <div key={String(label)} className="bg-card px-3 py-2.5">
                       <span className="eyebrow">{String(label)}</span>
-                      <p className={cx('tabular mt-0.5 text-[18px] font-bold', tone === 'secure' && 'text-secure', tone === 'watch' && 'text-watch')}>{String(value)}</p>
+                      <p className={cx('tabular mt-0.5 text-[18px] font-bold', tone === 'secure' && 'text-secure', tone === 'watch' && 'text-watch-ink')}>{String(value)}</p>
                     </div>
                   ))}
                 </div>
 
                 {result.errors.length > 0 ? (
                   <div className="border-b border-line bg-accent-soft px-4 py-2.5">
-                    <p className="text-[12px] font-semibold text-[var(--red-700)]">{result.errors.length} row(s) had problems</p>
-                    <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto text-[11px] text-[var(--red-700)]">
+                    <p className="text-[12px] font-semibold text-[var(--text-on-accent-soft)]">{result.errors.length} row(s) had problems</p>
+                    <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto text-[11px] text-[var(--text-on-accent-soft)]">
                       {result.errors.slice(0, 20).map((issue) => (
                         <li key={issue.row}>Row {issue.row}: {issue.message}</li>
                       ))}

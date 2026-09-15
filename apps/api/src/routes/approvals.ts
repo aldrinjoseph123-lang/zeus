@@ -247,6 +247,8 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
           account: q.account.name, value: num(q.total), requestedAt: q.approvalRequestedAt, requestedBy: q.approvalRequestedBy?.name ?? null,
           // What the manager is signing, in both of the numbers people use for it.
           ...(seesQuoteCost && cost > 0 ? {
+            // Markup and margin are the same amount, read against cost or against the sell price.
+            marginAmount: Math.round((net - cost) * 100) / 100,
             marginPct,
             markupPct: ((net - cost) / cost) * 100,
             marginBelowFloor: marginPct < 0 || (floor > 0 && marginPct < floor),

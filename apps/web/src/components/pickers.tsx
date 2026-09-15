@@ -248,8 +248,8 @@ export function DuplicateWarning({ matches, domain, onProceed, onCancel, busy }:
       <div className="flex items-start gap-2 border-b border-[var(--red-300)] px-3 py-2.5">
         <AlertTriangle size={16} className="mt-px shrink-0 text-accent-ink" />
         <div>
-          <p className="text-[13px] font-semibold text-[var(--red-700)]">Possible duplicate</p>
-          <p className="text-xs text-[var(--red-700)]">
+          <p className="text-[13px] font-semibold text-[var(--text-on-accent-soft)]">Possible duplicate</p>
+          <p className="text-xs text-[var(--text-on-accent-soft)]">
             {domain ? <>Domain <strong>{domain}</strong> already exists in Zeus.</> : 'A matching record already exists.'} Check before creating another.
           </p>
         </div>
@@ -262,7 +262,7 @@ export function DuplicateWarning({ matches, domain, onProceed, onCancel, busy }:
               <Link to={path(match)} target="_blank" className="block truncate text-[13px] font-semibold underline decoration-dotted underline-offset-2">
                 {match.label}
               </Link>
-              <span className="block text-[11px] text-[var(--red-700)]">
+              <span className="block text-[11px] text-[var(--text-on-accent-soft)]">
                 {match.reason}
                 {match.ownerName ? ` · owned by ${match.ownerName}` : ''}
               </span>

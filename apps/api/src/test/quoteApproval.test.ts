@@ -56,10 +56,11 @@ describe('quote approval', () => {
     const id = (created.body as { id: string }).id;
     await request(app, fx.admin).post(`/api/approvals/quotes/${id}/submit`, {});
 
-    const queue = (await request(app, fx.manager).get('/api/approvals/pending')).body as Array<{ id: string; marginPct?: number; markupPct?: number }>;
+    const queue = (await request(app, fx.manager).get('/api/approvals/pending')).body as Array<{ id: string; marginAmount?: number; marginPct?: number; markupPct?: number }>;
     const row = queue.find((r) => r.id === id)!;
     assert.equal(row.markupPct!.toFixed(1), '20.0', '100 sold at 120 is 20% on cost');
     assert.equal(row.marginPct!.toFixed(1), '16.7', 'and 16.7% on sell');
+    assert.equal(row.marginAmount, 20, 'the same 20 either way');
   });
 
   it('shows a pending quote in the approvals queue', async () => {

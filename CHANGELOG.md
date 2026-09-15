@@ -24,6 +24,10 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   stays reachable.
 - The same rule now covers invoice ageing, the dashboard's overdue invoices, an account's
   quote and invoice lists, submitting for approval, and both reports.
+- **An account's deals follow the Deals screen's rule too.** The account page listed every deal
+  on the account, whoever owned it, to anyone who could open the account. It now lists only the
+  deals the reader could open, and the Deals column on the accounts list counts the same
+  deals. That column also stops counting deleted deals.
 - **Behaviour change:** a rep whose role edits "own" records can read a teammate's quote but
   no longer edit it. Opening a document out of reach shows "unavailable" instead of an empty
   form.
@@ -68,6 +72,10 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   totals as a strip under the sheet (subtotal, discount, net, VAT, total, cost, markup, margin).
 - **Markup is shown wherever margin is:** in the Totals card, on the approval bar, and in the
   approvals queue, so a manager sees both numbers they are signing off.
+- **Markup is shown as an amount as well as a percentage:** in the Totals card, the totals strip,
+  the approval bar and queue, and in a *Markup* column on every worksheet line. Markup and margin
+  are the same amount (the sell less the cost); only the percentage differs, because markup is
+  measured on the cost and margin on the sell price.
 - A vendor part number that matches a catalogue SKU links the line to that product.
 - The server prices worksheet lines itself; a price sent from a browser is not trusted.
   A new version of a quote carries the worksheet, and so does undo.
@@ -186,8 +194,27 @@ Found on 14 September, when the office router's DNS dropped lookups for an after
   Teams host answers *now*. Before, one failed card held Teams down until another alert
   happened to post, and that failure raised a "Teams alerts is down" alert of its own.
   An error Teams itself sends back, such as a deleted channel, still counts as down.
+- **Infrastructure alerts go to Administrators only on existing installs too.** A component
+  down or recovered, a backup failed, missed or unverified, or a data-integrity finding went to
+  Sales Managers as well on any install whose rules were created before that default. The deploy
+  moves those six rules to *Administrators only* if they still have the old audience. A rule set
+  to anything else is left as it is.
 
-**After the deploy:** nothing. The three migrations only add columns; existing records are unchanged.
+### Fixed — accessibility
+
+- **Warning text is readable.** Amber used as small text, such as "48d in stage" on the deals
+  board, measured 3.1:1 against white. It now has its own darker text colour (6.6:1), and a
+  lighter one in dark mode.
+- **Error text is readable in dark mode.** Sixteen warning and error messages, including the
+  dashboard's overdue-deals line, used a light-mode red that measured 2.1:1 on the dark
+  background.
+- **A keyboard can scroll** a table wider than the screen and a long column on the deals board.
+- **Pop-ups are announced as dialogs.** Keyboard focus moves into them when they open and returns
+  to where it was when they close.
+- The accessibility check now also covers Alert rules, Backups and Import.
+
+**After the deploy:** nothing to do. Three migrations only add columns; the fourth moves the six
+infrastructure alert rules described above.
 
 ---
 

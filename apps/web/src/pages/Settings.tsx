@@ -385,7 +385,7 @@ function SetupNotice() {
   const { data } = useQuery({ queryKey: ['setup'], queryFn: () => api.get<SetupStatus>('/setup/status'), staleTime: 60_000 });
   if (!data || data.complete) return null;
   return (
-    <div className="flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--red-700)]">
+    <div className="flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--text-on-accent-soft)]">
       <AlertTriangle size={15} className="mt-px shrink-0" />
       <span className="min-w-0 flex-1">
         <b>Finish setting up Zeus.</b> A tax invoice cannot be issued until these are filled in:{' '}
@@ -2960,7 +2960,7 @@ function WhatsappPanel() {
       </div>
 
       {data.lastError ? (
-        <div className="border-t border-line bg-accent-soft px-4 py-2.5 text-[12px] text-[var(--red-700)]">
+        <div className="border-t border-line bg-accent-soft px-4 py-2.5 text-[12px] text-[var(--text-on-accent-soft)]">
           Last error from Meta: {data.lastError}
         </div>
       ) : null}

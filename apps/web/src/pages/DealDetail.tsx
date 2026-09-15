@@ -233,7 +233,7 @@ export default function DealDetail() {
             })}
           </div>
           {deal.status === 'OPEN' && inStage > deal.stage.rotDays ? (
-            <p className="mt-2 text-[11px] font-semibold text-[var(--status-watch)]">
+            <p className="mt-2 text-[11px] font-semibold text-watch-ink">
               This deal has sat in {deal.stage.name} for {inStage} days — the threshold is {deal.stage.rotDays}.
             </p>
           ) : null}

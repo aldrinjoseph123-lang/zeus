@@ -240,8 +240,8 @@ export default function InvoiceEditor() {
           <div className="flex items-start gap-2 px-4 py-3">
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-accent-ink" />
             <div>
-              <p className="text-[13px] font-semibold text-[var(--red-700)]">Before you send this</p>
-              <ul className="mt-1 space-y-0.5 text-[12px] text-[var(--red-700)]">
+              <p className="text-[13px] font-semibold text-[var(--text-on-accent-soft)]">Before you send this</p>
+              <ul className="mt-1 space-y-0.5 text-[12px] text-[var(--text-on-accent-soft)]">
                 {invoice.complianceGaps.map((gap) => <li key={gap.message}>· {gap.message}{gap.blocking ? ' (must be fixed before issuing)' : ''}</li>)}
               </ul>
             </div>
@@ -449,7 +449,7 @@ export default function InvoiceEditor() {
                   <Row label="Cost" value={money(totals.totalCost, true)} />
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-muted">Margin</span>
-                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
+                    <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch-ink' : 'text-secure')}>
                       {money(totals.marginAmount, true)} · {percent(totals.marginPct, 1)}
                     </span>
                   </div>
