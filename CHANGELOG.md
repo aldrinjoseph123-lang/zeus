@@ -142,8 +142,10 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   Data & health, and You.
 - **One save bar.** Each card no longer has its own Save button. When anything changes, a bar
   at the bottom shows how many changes there are and saves or discards them together.
-  Following a link or closing the tab with changes unsaved asks first. Alert rules used to save
-  on every click; they now wait for the bar too.
+  Leaving with changes unsaved asks first, whether by a link, the browser's Back button, a reload
+  or closing the tab. Alert rules used to save on every click; they now wait for the bar too.
+  Buttons that act on saved values (Test connection, Grant admin consent, Send test email, the
+  WhatsApp test) wait until pending changes are saved, instead of quietly testing the old values.
 - **Fields are in the order a person reads them**, under sub-headings: Company is identity,
   address, contact, bank; Finance & VAT is VAT, currency, then quotes, invoices and purchase
   orders. Every window reads start before end.
@@ -158,6 +160,9 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   appear once that channel is connected. Teams channels and Scheduled reports have their own
   pages.
 - **Backups** shows the schedule first and the latest 5 backups, with *Show all*.
+- **Data & privacy** is its own page: read logging, data retention and SIEM forwarding. They used
+  to sit above the audit trail and under the system log. The log pages now hold only logs.
+- **On a phone** the Settings menu is a single dropdown, so the page is not below 26 links.
 - **Settings that had no screen now have one:** Approvals, document numbering (with an example
   of the next number), Renewals, Duplicates (including the free email domains), and General
   (undo window, the coaching high-value amount, and product name).

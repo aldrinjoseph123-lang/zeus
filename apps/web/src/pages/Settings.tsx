@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useBlocker, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, Bell, Building2, CalendarClock, Check, ChevronDown, Copy, Database, GitBranch, Globe, HardDrive, KeyRound, ListTree, Lock, LogOut, Mail, MessageSquare, MonitorSmartphone, Plug, Plus, RefreshCw, Repeat, RotateCcw, ScrollText, Settings2, ShieldCheck, ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, X,
+  Activity, AlertTriangle, Bell, EyeOff, Building2, CalendarClock, Check, ChevronDown, Copy, Database, GitBranch, Globe, HardDrive, KeyRound, ListTree, Lock, LogOut, Mail, MessageSquare, MonitorSmartphone, Plug, Plus, RefreshCw, Repeat, RotateCcw, ScrollText, Settings2, ShieldCheck, ShieldHalf, SlidersHorizontal, Target as TargetIcon, Terminal, Trash2, Users as UsersIcon, X,
 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -40,6 +40,7 @@ const SECTIONS = [
   { group: 'Alerts', path: 'teams', label: 'Teams channels', icon: MessageSquare, module: 'settings' },
   { group: 'Alerts', path: 'reports', label: 'Scheduled reports', icon: CalendarClock, module: 'settings' },
   { group: 'Data & health', path: 'backups', label: 'Backups', icon: HardDrive, module: 'backups' },
+  { group: 'Data & health', path: 'privacy', label: 'Data & privacy', icon: EyeOff, module: 'settings' },
   { group: 'Data & health', path: 'status', label: 'System status', icon: Activity, module: 'audit' },
   { group: 'Data & health', path: 'audit', label: 'Audit trail', icon: ScrollText, module: 'audit' },
   { group: 'Data & health', path: 'email-log', label: 'Email log', icon: Mail, module: 'audit' },
@@ -76,30 +77,28 @@ function SaveBar({ pending }: { pending: Record<string, Pending> }) {
   const [saving, setSaving] = useState(false);
   const count = Object.values(pending).reduce((n, p) => n + p.count, 0);
 
-  // Leaving with edits unsaved asks first: a link anywhere in Zeus, a reload, or closing the tab.
-  // ponytail: the browser's Back button is not caught; that needs a data router's useBlocker.
+  // Leaving with edits unsaved asks first: any move to another page (a link, Back, a redirect)
+  // is held by the router; a reload or closing the tab by the browser's own prompt.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => count > 0 && currentLocation.pathname !== nextLocation.pathname);
   useEffect(() => {
     if (!count) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-    const leave = (e: MouseEvent) => {
-      const link = (e.target as Element | null)?.closest?.('a[href]');
-      if (!link || link.getAttribute('target') === '_blank') return;
-      const url = new URL(link.getAttribute('href')!, window.location.href);
-      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
-      if (!window.confirm(`You have ${count} unsaved change${count === 1 ? '' : 's'}. Leave without saving them?`)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
     window.addEventListener('beforeunload', warn);
-    document.addEventListener('click', leave, true);
-    return () => {
-      window.removeEventListener('beforeunload', warn);
-      document.removeEventListener('click', leave, true);
-    };
+    return () => window.removeEventListener('beforeunload', warn);
   }, [count]);
 
-  if (!count) return null;
+  const leaving = (
+    <ConfirmDialog
+      open={blocker.state === 'blocked'}
+      onClose={() => blocker.reset?.()}
+      onConfirm={() => blocker.proceed?.()}
+      title="Leave without saving?"
+      confirmLabel="Leave"
+      message={`You have ${count} unsaved change${count === 1 ? '' : 's'} on this page. Leaving throws ${count === 1 ? 'it' : 'them'} away.`}
+    />
+  );
+
+  if (!count) return leaving;
 
   const saveAll = async () => {
     setSaving(true);
@@ -114,6 +113,8 @@ function SaveBar({ pending }: { pending: Record<string, Pending> }) {
   };
 
   return (
+    <>
+    {leaving}
     <div role="region" aria-label="Unsaved changes" className="sticky bottom-0 z-20 mt-3 flex flex-wrap items-center gap-3 border border-n900 bg-n950 px-4 py-2.5 text-white">
       <span className="text-[13px] font-semibold">{count} unsaved change{count === 1 ? '' : 's'}</span>
       <span className="ml-auto flex items-center gap-2">
@@ -128,6 +129,7 @@ function SaveBar({ pending }: { pending: Record<string, Pending> }) {
         <Button size="sm" variant="accent" loading={saving} onClick={() => void saveAll()}>Save</Button>
       </span>
     </div>
+    </>
   );
 }
 
@@ -159,7 +161,20 @@ export default function Settings() {
       <PageHeader title="Settings" description="Everything Zeus does by default can be changed here — no redeploy needed." />
 
       <div className="grid gap-3 lg:grid-cols-[228px_1fr]">
-        <Card className="h-fit lg:sticky lg:top-4 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+        {/* On a phone the menu is one dropdown, so the page is not below 25 links. */}
+        <select
+          aria-label="Settings page"
+          value={section?.path ?? ''}
+          onChange={(e) => navigate(`/settings/${e.target.value}`)}
+          className="w-full rounded-sharp border border-line bg-card px-3 py-2.5 text-[13px] font-semibold lg:hidden"
+        >
+          {[...new Set(available.map((item) => item.group))].map((group) => (
+            <optgroup key={group} label={group}>
+              {available.filter((item) => item.group === group).map((item) => <option key={item.path} value={item.path}>{item.label}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        <Card className="hidden h-fit lg:sticky lg:top-4 lg:block lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
           <nav aria-label="Settings">
             {available.map((item, index) => (
               <div key={item.path}>
@@ -229,6 +244,13 @@ export default function Settings() {
             section.path === 'integrations' ? <IntegrationsSection /> :
             section.path === 'portal' ? <PortalAccessSection /> :
             section.path === 'backups' ? <BackupsSection /> :
+            section.path === 'privacy' ? (
+              <div className="flex flex-col gap-3">
+                <SettingsGroup prefix="audit." title="Read logging" description="Off by default. When on, opening a deal, account, contact, lead, quote or invoice is recorded as a 'read' entry in the audit trail — useful for compliance, but high volume." />
+                <SettingsGroup prefix="retention." title="Data retention" description="What Zeus purges on its own. Erasing one person's data lives on their contact or lead record (Erase data). Sign-in history has its own setting under Sign-in & security." />
+                <SettingsGroup prefix="syslog." title="Forward to SIEM" description="Stream every system-log event to a syslog server (RFC 5424) for central monitoring." />
+              </div>
+            ) :
             section.path === 'audit' ? <AuditSection /> :
             section.path === 'status' ? <StatusSection /> :
             section.path === 'sessions' ? <SessionsSection /> :
@@ -2621,11 +2643,13 @@ function IntegrationsSection() {
 
         {editable ? (
           <div className="flex flex-wrap items-center gap-2 border-t border-line bg-sunken px-4 py-3">
-            <Button icon={<Check size={13} />} onClick={consent}>Grant admin consent</Button>
-            <Button loading={test.isPending} onClick={() => test.mutate()}>Test connection</Button>
+            {/* These act on what is saved. Pressed with edits pending, they would test the old values. */}
+            <Button icon={<Check size={13} />} disabled={m365Changes > 0} onClick={consent}>Grant admin consent</Button>
+            <Button disabled={m365Changes > 0} loading={test.isPending} onClick={() => test.mutate()}>Test connection</Button>
+            {m365Changes > 0 ? <span className="text-[12px] text-muted">Save your changes first.</span> : null}
             <span className="ml-auto flex items-center gap-2">
-              <Input className="w-56" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="you@protect24x7.ae" />
-              <Button size="sm" disabled={!testEmail} loading={sendTest.isPending} onClick={() => sendTest.mutate()}>Send test email</Button>
+              <Input className="w-56" aria-label="Send a test email to" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="you@protect24x7.ae" />
+              <Button size="sm" disabled={!testEmail || m365Changes > 0} loading={sendTest.isPending} onClick={() => sendTest.mutate()}>Send test email</Button>
             </span>
           </div>
         ) : null}
@@ -2946,13 +2970,14 @@ function WhatsappPanel() {
           <Input value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="+971 50 123 4567" />
         </Field>
         <Button
-          disabled={!can('integrations', 'update') || !testTo.trim() || !data.hasToken}
+          disabled={!can('integrations', 'update') || !testTo.trim() || !data.hasToken || whatsappChanges > 0}
           loading={test.isPending}
           onClick={() => test.mutate()}
         >
           Test
         </Button>
         <span className="text-[11px] text-muted">
+          {whatsappChanges > 0 ? 'Save your changes first. ' : ''}
           {data.recipients} user{data.recipients === 1 ? '' : 's'} have a WhatsApp number on file.
           {config.isTestNumber && data.recipients > data.setup.freeTierRecipientLimit
             ? ` A test number only delivers to ${data.setup.freeTierRecipientLimit} of them.`
@@ -2966,7 +2991,6 @@ function WhatsappPanel() {
 // ── audit ─────────────────────────────────────────────────────────────────────
 
 function AuditSection() {
-  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [entity, setEntity] = useState('');
   const [action, setAction] = useState('');
@@ -2981,12 +3005,6 @@ function AuditSection() {
 
   return (
     <div className="flex flex-col gap-3">
-    {can('settings', 'update') ? (
-      <SettingsGroup prefix="audit." title="Read logging" description="Off by default. When on, opening a deal, account, contact, lead, quote or invoice is recorded as a 'read' entry below — useful for compliance, but high volume." />
-    ) : null}
-    {can('settings', 'update') ? (
-      <SettingsGroup prefix="retention." title="Data retention" description="Right to erasure lives on each contact/lead record itself (Erase data). These control what gets purged automatically." />
-    ) : null}
     <Card>
       <CardHeader title="Audit trail" subtitle="Every create, update, delete, export, sign-in and integration change." />
       <Toolbar>
@@ -3509,7 +3527,6 @@ function EmailLogSection() {
 const LOG_TONE: Record<string, 'accent' | 'watch' | 'neutral'> = { error: 'accent', warn: 'watch', info: 'neutral' };
 
 function SystemLogSection() {
-  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [level, setLevel] = useState('');
   const [source, setSource] = useState('');
@@ -3570,13 +3587,6 @@ function SystemLogSection() {
       )}
     </Card>
 
-    {can('settings', 'update') ? (
-      <SettingsGroup
-        prefix="syslog."
-        title="Forward to SIEM"
-        description="Stream every system-log event to a syslog server (RFC5424 over UDP or TCP) for central monitoring. Protocol accepts udp or tcp."
-      />
-    ) : null}
     </div>
   );
 }

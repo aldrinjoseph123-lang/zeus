@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
  */
 const SECTIONS = [
   'company', 'general', 'finance', 'approvals', 'targets', 'pipelines', 'renewals', 'duplicates', 'lists', 'fields',
-  'users', 'roles', 'security', 'integrations', 'portal', 'notifications', 'teams', 'reports', 'backups',
+  'users', 'roles', 'security', 'integrations', 'portal', 'notifications', 'teams', 'reports', 'backups', 'privacy',
 ];
 
 /**
