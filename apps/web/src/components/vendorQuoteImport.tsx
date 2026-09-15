@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, AlertTriangle, Upload } from 'lucide-react';
-import { api, ApiError } from '../lib/api';
+import { ApiError } from '../lib/api';
 import { percent } from '../lib/format';
 import { AccountPicker } from './pickers';
 import { Button, ErrorNote, Field, Input, Modal, Select, Textarea, cx } from './ui';
@@ -41,16 +40,15 @@ const figures = new Intl.NumberFormat('en-AE', { minimumFractionDigits: 2, maxim
 const figure = (v: number) => figures.format(v);
 
 export function VendorQuoteImport({
-  quoteId, lines, rates, baseCurrency, onApply, onClose,
+  lines, rates, baseCurrency, onApply, onClose,
 }: {
-  quoteId: string;
   lines: EditableLine[];
   rates: Record<string, number>;
   baseCurrency: string;
-  onApply: (lines: EditableLine[], summary: string) => void;
+  /** `original` is the very file that was read, for the editor to keep with the quote. */
+  onApply: (lines: EditableLine[], summary: string, original: File) => void;
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,22 +62,22 @@ export function VendorQuoteImport({
 
   const byCode = new Map(lines.filter((l) => l.vendorCode).map((l) => [l.vendorCode!.toLowerCase(), l]));
 
-  /** Keep the original with the quote first, then ask the server to read that copy. */
+  // What was read is what gets kept: the editor attaches this same File, pasted text included.
+  const [original, setOriginal] = useState<File | null>(null);
+
+  /** Ask the server what the file says. Nothing is stored until the quote keeps the file. */
   const readIt = async () => {
     setError(null);
     setBusy(true);
     try {
       const upload = file ?? new File([text], 'vendor-quote.txt', { type: 'text/plain' });
       const body = new FormData();
-      body.append('parent', 'quote');
-      body.append('parentId', quoteId);
       body.append('file', upload);
-      const res = await fetch('/api/attachments', { method: 'POST', credentials: 'include', body });
-      const stored = await res.json().catch(() => ({}));
-      if (!res.ok) throw new ApiError(res.status, (stored as { error?: string }).error ?? `Upload failed (${res.status})`);
-      void queryClient.invalidateQueries({ queryKey: ['attachments', 'quote', quoteId] });
-
-      const result = await api.post<Read>(`/quotes/${quoteId}/vendor-quote`, { attachmentId: (stored as { id: string }).id });
+      const res = await fetch('/api/quotes/vendor-quote/read', { method: 'POST', credentials: 'include', body });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new ApiError(res.status, (json as { error?: string }).error ?? `Could not read that (${res.status})`);
+      const result = json as Read;
+      setOriginal(upload);
       if (result.lines.length === 0) throw new Error('No priced lines were found in that. Try pasting just the table, or upload the Excel version if the vendor has one.');
       const cur = result.currency ?? baseCurrency;
       setRead(result);
@@ -120,7 +118,7 @@ export function VendorQuoteImport({
     }));
     // A worksheet that was only the empty starter line should not keep it.
     const kept = next.filter((l) => l.description.trim() || l.vendorUnitCost != null);
-    onApply([...kept, ...added], `${added.length} line${added.length === 1 ? '' : 's'} added${updated ? `, ${updated} re-costed` : ''}.`);
+    onApply([...kept, ...added], `${added.length} line${added.length === 1 ? '' : 's'} added${updated ? `, ${updated} re-costed` : ''}.`, original!);
   };
 
   return (
@@ -129,7 +127,7 @@ export function VendorQuoteImport({
       onClose={onClose}
       width="xl"
       title="Bring in the vendor's quote"
-      subtitle={read ? 'Check what was read. Nothing goes onto the worksheet until you apply it.' : 'Paste the table from the email, or upload the file. The original is kept with this quote.'}
+      subtitle={read ? 'Check what was read. Nothing goes onto the worksheet until you apply it.' : 'Paste the table from the email, or upload the file. The original is kept with the quote.'}
       footer={read ? (
         <>
           <Button variant="ghost" onClick={() => setRead(null)}>Back</Button>

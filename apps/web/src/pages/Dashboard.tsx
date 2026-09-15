@@ -101,7 +101,7 @@ export default function Dashboard() {
     queryFn: () => api.get<Array<{
       entity: 'deals' | 'purchase-orders' | 'invoices' | 'quotes'; id: string; reference: string; title: string;
       account: string; value: number; requestedAt: string | null; requestedBy: string | null;
-      marginPct?: number; marginBelowFloor?: boolean;
+      marginPct?: number; markupPct?: number; marginBelowFloor?: boolean;
     }>>('/approvals/pending'),
     enabled: can('deals', 'approve') || can('invoices', 'approve') || can('quotes', 'approve'),
   });
@@ -453,6 +453,11 @@ export default function Dashboard() {
                           {(a.marginPct ?? 0) < 0
                             ? `Sells below cost · ${percent(a.marginPct ?? 0, 1)} margin`
                             : `Thin margin · ${percent(a.marginPct ?? 0, 1)}`}
+                          {a.markupPct !== undefined ? ` · ${percent(a.markupPct, 1)} markup` : ''}
+                        </span>
+                      ) : a.markupPct !== undefined ? (
+                        <span className="tabular block text-[11px] text-muted">
+                          Margin {percent(a.marginPct ?? 0, 1)} · markup {percent(a.markupPct, 1)} on cost
                         </span>
                       ) : null}
                     </span>

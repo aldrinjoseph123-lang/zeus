@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { dateTime } from '../lib/format';
+import { dateTime, percent } from '../lib/format';
 import { Badge, Button, Field, Modal, Textarea, cx, useToast } from './ui';
 
 /**
@@ -31,13 +31,15 @@ const BLOCKED_STEP: Record<ApprovalEntity, string> = {
   quotes: 'sending this quote to the customer',
 };
 
-export function ApprovalBar({ entity, id, record, module, onChanged }: {
+export function ApprovalBar({ entity, id, record, module, onChanged, figures }: {
   entity: ApprovalEntity;
   id: string;
   record: ApprovalState;
   /** RBAC module the approve right lives on — deals for deals, invoices/quotes for the rest. */
   module: 'deals' | 'invoices' | 'quotes';
   onChanged: () => void;
+  /** What is being signed off, for a reader who may see cost. Omitted for everyone else. */
+  figures?: { marginPct: number; markupPct: number } | null;
 }) {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -110,6 +112,9 @@ export function ApprovalBar({ entity, id, record, module, onChanged }: {
           ) : (
             <>Rejected by {record.approvalDecidedBy?.name ?? 'a manager'}{record.approvalNote ? ` — ${record.approvalNote}` : ''}. Fix it and send it back.</>
           )}
+          {figures ? (
+            <span className="tabular font-semibold"> Margin {percent(figures.marginPct, 1)} · markup {percent(figures.markupPct, 1)} on cost.</span>
+          ) : null}
         </span>
 
         <span className="ml-auto flex shrink-0 gap-1.5">

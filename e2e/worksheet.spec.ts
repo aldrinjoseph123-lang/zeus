@@ -134,4 +134,28 @@ test.describe('quote worksheet', () => {
     // The pasted text is kept with the quote.
     await expect(page.getByText('vendor-quote.txt')).toBeVisible();
   });
+
+  test('on a new quote, a vendor quote is read at once and kept when the quote is created', async ({ page, request }) => {
+    const accounts = await (await request.get(`/api/accounts?search=${encodeURIComponent(E2E_ACCOUNT)}`)).json();
+    await page.goto(`/quotes/new?accountId=${accounts.data[0].id}`);
+    await page.getByRole('button', { name: 'Worksheet' }).click();
+    await page.getByRole('button', { name: 'Vendor quote' }).click();
+
+    await page.getByLabel('Paste').fill([
+      'Part Number\tDescription\tQty\tUnit Price\tTotal',
+      'LIC-EDR-100\tEDR licence, per endpoint\t100\t42.00\t4,200.00',
+      '\tTotal\t\t\t4,200.00',
+    ].join('\n'));
+    await page.getByRole('button', { name: 'Read it' }).click();
+    await expect(page.getByText(/Nothing was missed/)).toBeVisible();
+    await page.getByRole('button', { name: /apply 1 line/i }).click();
+
+    await expect(page.getByText('Kept with the quote when you create it.')).toBeVisible();
+    await page.getByRole('button', { name: /create quote/i }).click();
+    await expect(page).toHaveURL(/\/quotes\/(?!new)[a-z0-9]+$/);
+
+    const id = page.url().split('/').pop()!;
+    const documents = await (await request.get(`/api/attachments?parent=quote&parentId=${id}`)).json();
+    expect(documents.map((d: { filename: string }) => d.filename)).toEqual(['vendor-quote.txt']);
+  });
 });

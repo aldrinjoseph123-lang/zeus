@@ -39,6 +39,31 @@ export function priceWorksheet(lines: EditableLine[], defaultMarkupPct: number |
 
 const blank = (value: string) => (value.trim() === '' ? null : Number(value));
 
+/** One definition of the sheet's columns, so a heading can never drift from the cells under it. */
+const COLUMNS: Array<{ key: string; label: string; width?: number | string; right?: boolean }> = [
+  // The two text columns take a share of the width rather than a fixed amount, so a wide
+  // screen gives the vendor's name room instead of handing it all to the description.
+  { key: 'vendor', label: 'Vendor', width: '13%' },
+  { key: 'code', label: 'Part no.', width: '9%' },
+  { key: 'description', label: 'Description' },
+  { key: 'qty', label: 'Qty', width: 60, right: true },
+  { key: 'price', label: 'Vendor price', width: 96, right: true },
+  { key: 'cur', label: 'Cur', width: 72 },
+  { key: 'rate', label: 'Rate', width: 80, right: true },
+  { key: 'cost', label: 'Cost {cur}', width: 96, right: true },
+  { key: 'markup', label: 'Markup %', width: 72, right: true },
+  { key: 'sell', label: 'Unit sell {cur}', width: 100, right: true },
+  { key: 'total', label: 'Line total {cur}', width: 108, right: true },
+  { key: 'margin', label: 'Margin', width: 64, right: true },
+  { key: 'remove', label: '', width: 28 },
+];
+const CELL = 'px-1.5 py-1.5';
+const INSET = 'px-[13px]';
+// Browsers reserve room for number spinners even when hidden, which in a 60px quantity cell
+// cuts "100" to "10". Arrow keys still step the value.
+const BOX = 'px-1.5 py-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+const FIGURE = `tabular whitespace-nowrap py-1.5 text-right ${INSET}`;
+
 export function QuoteWorksheet({
   lines, onChange, defaultMarkupPct, onDefaultMarkupChange, rates, baseCurrency, locked,
 }: {
@@ -96,12 +121,21 @@ export function QuoteWorksheet({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] border-collapse text-[13px]">
+        {/*
+          A fixed layout, so each heading sits exactly over its figures and one long vendor name
+          cannot widen its column. Text in a heading or a read-only cell is inset by the same 13px
+          as text inside an input (6px cell padding, 1px border, 6px input padding), so a typed
+          figure and a worked-out one end at the same edge.
+        */}
+        <table className="w-full min-w-[1200px] table-fixed border-collapse text-[13px]">
+          <colgroup>
+            {COLUMNS.map((c) => <col key={c.key} style={c.width ? { width: c.width } : undefined} />)}
+          </colgroup>
           <thead>
             <tr className="bg-n950 text-white">
-              {['Vendor / code', 'Description', 'Qty', 'Vendor price', 'Cur / rate', `Cost ${baseCurrency}`, 'Markup %', `Unit sell ${baseCurrency}`, `Line total ${baseCurrency}`, 'Margin', ''].map((h, i) => (
-                <th key={h || i} className={cx('whitespace-nowrap px-1.5 py-2 text-[10px] font-bold uppercase tracking-[0.08em]', i >= 2 && i !== 4 ? 'text-right' : 'text-left')}>
-                  {h}
+              {COLUMNS.map((c) => (
+                <th key={c.key} className={cx('py-2 align-bottom text-[10px] font-bold uppercase leading-tight tracking-[0.08em]', INSET, c.right ? 'text-right' : 'text-left')}>
+                  {c.label.replace('{cur}', baseCurrency)}
                 </th>
               ))}
             </tr>
@@ -111,52 +145,58 @@ export function QuoteWorksheet({
               const lineCost = cost(line);
               const lineSell = sell(line);
               const margin = marginOf(lineCost, lineSell);
-              const typedMarkup = line.markupPct ?? defaultMarkupPct;
               const realised = markupOf(lineCost, lineSell);
+              const home = (line.vendorCurrency ?? baseCurrency) === baseCurrency;
               return (
-                <tr key={line.key} className={cx('border-b border-line align-top', index % 2 === 1 && 'bg-sunken')}>
-                  {/* Vendor over its part number: two facts about where the line came from, one column. */}
-                  <td className="w-44 max-w-44 px-1.5 py-1.5">
-                    {line.isInternal ? (
-                      <span className="block py-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-watch">Internal</span>
-                    ) : (
-                      // Pinned: a table column grows to its longest vendor name otherwise.
-                      <div className="w-40 overflow-hidden">
-                        <AccountPicker
-                          type="VENDOR"
-                          value={line.vendorId ?? null}
-                          selectedLabel={line.vendorName ?? null}
-                          placeholder="Vendor…"
-                          onChange={(id, row) => update(line.key, { vendorId: id, vendorName: row?.name ?? null })}
-                        />
-                      </div>
-                    )}
-                    <span className="mt-1 flex w-40 items-center gap-1.5">
-                      <Input className="min-w-0 flex-1 px-1.5 py-0.5 text-[12px]" value={line.vendorCode ?? ''} disabled={locked} aria-label="Vendor code" placeholder="Part no."
-                        onChange={(e) => update(line.key, { vendorCode: e.target.value || null })} />
+                <tr key={line.key} className={cx('border-b border-line align-middle', index % 2 === 1 && 'bg-sunken')}>
+                  <td className={CELL}>
+                    <span className="flex items-center gap-1">
+                      {line.isInternal ? (
+                        <span className="min-w-0 flex-1 truncate px-[7px] text-[10px] font-bold uppercase tracking-[0.08em] text-watch">Internal</span>
+                      ) : (
+                        <span className="min-w-0 flex-1">
+                          <AccountPicker
+                            type="VENDOR"
+                            value={line.vendorId ?? null}
+                            selectedLabel={line.vendorName ?? null}
+                            placeholder="Vendor…"
+                            onChange={(id, row) => update(line.key, { vendorId: id, vendorName: row?.name ?? null })}
+                          />
+                        </span>
+                      )}
                       {!locked ? (
+                        // The same small square as SKU on the line editor: a switch, not a field.
                         <button
-                          className="shrink-0 text-[11px] text-muted underline decoration-dotted underline-offset-2 hover:text-ink"
+                          aria-pressed={Boolean(line.isInternal)}
+                          title="Internal cost — bought from nobody: installation, freight, our own engineers."
                           onClick={() => update(line.key, line.isInternal
                             ? { isInternal: false }
                             : { isInternal: true, vendorId: null, vendorName: null, vendorCurrency: baseCurrency, fxRate: 1 })}
+                          className={cx(
+                            'shrink-0 rounded-sharp border px-1.5 py-1 text-[10px] font-semibold uppercase',
+                            line.isInternal ? 'border-n900 bg-n950 text-white' : 'border-line text-muted hover:border-n900 hover:text-ink',
+                          )}
                         >
-                          {line.isInternal ? 'Vendor' : 'Internal'}
+                          Int
                         </button>
                       ) : null}
                     </span>
                   </td>
-                  <td className="min-w-[180px] px-1.5 py-1.5">
-                    <Input className="px-1.5 py-1" value={line.description} disabled={locked} aria-label="Description"
+                  <td className={CELL}>
+                    <Input className={BOX} value={line.vendorCode ?? ''} disabled={locked} aria-label="Vendor code" placeholder="Part no."
+                      onChange={(e) => update(line.key, { vendorCode: e.target.value || null })} />
+                  </td>
+                  <td className={CELL}>
+                    <Input className={BOX} value={line.description} title={line.description} disabled={locked} aria-label="Description"
                       onChange={(e) => update(line.key, { description: e.target.value })} />
                   </td>
-                  <td className="px-1.5 py-1.5">
-                    <Input className="w-16 px-1.5 py-1 text-right" type="number" min="0" step="1" value={line.quantity} disabled={locked} aria-label="Quantity"
+                  <td className={CELL}>
+                    <Input className={cx(BOX, 'text-right')} type="number" min="0" step="1" value={line.quantity} disabled={locked} aria-label="Quantity"
                       onChange={(e) => update(line.key, { quantity: Number(e.target.value) })} />
                   </td>
-                  <td className="px-1.5 py-1.5">
+                  <td className={CELL}>
                     <Input
-                      className="w-24 px-1.5 py-1 text-right" type="number" min="0" step="0.01" aria-label="Vendor unit price"
+                      className={cx(BOX, 'text-right')} type="number" min="0" step="0.01" aria-label="Vendor unit price"
                       value={line.vendorUnitCost ?? ''}
                       placeholder={line.unitCost ? String(line.unitCost) : '0.00'}
                       disabled={locked}
@@ -168,10 +208,10 @@ export function QuoteWorksheet({
                       })}
                     />
                   </td>
-                  {/* Currency over the rate it converts at. */}
-                  <td className="px-1.5 py-1.5">
+                  <td className={CELL}>
                     <Select
-                      className="w-20 px-1.5 py-1" aria-label="Vendor currency"
+                      // The select's own arrow padding would leave no room for "USD" in this column.
+                      className={cx(BOX, 'pr-5! bg-[right_4px_center]!')} aria-label="Vendor currency"
                       value={line.vendorCurrency ?? baseCurrency}
                       disabled={locked || line.isInternal}
                       options={currencies.map((c) => ({ value: c, label: c }))}
@@ -179,44 +219,38 @@ export function QuoteWorksheet({
                       // next month shows the arithmetic that was used, not today's rate.
                       onChange={(e) => update(line.key, { vendorCurrency: e.target.value, fxRate: e.target.value === baseCurrency ? 1 : rates[e.target.value] ?? 1 })}
                     />
-                    <Input className="mt-1 w-20 px-1.5 py-0.5 text-right text-[12px]" type="number" min="0" step="0.0001" aria-label="Exchange rate"
+                  </td>
+                  <td className={CELL}>
+                    <Input className={cx(BOX, 'text-right')} type="number" min="0" step="0.0001" aria-label="Exchange rate"
                       value={line.fxRate ?? 1}
-                      disabled={locked || (line.vendorCurrency ?? baseCurrency) === baseCurrency}
+                      disabled={locked || home}
                       onChange={(e) => update(line.key, { fxRate: Number(e.target.value) || 1 })} />
                   </td>
-                  <td className="tabular whitespace-nowrap px-1.5 py-2 text-right">{figure(line.unitCost ?? 0)}</td>
-                  <td className="px-1.5 py-1.5">
+                  <td className={FIGURE}>{figure(line.unitCost ?? 0)}</td>
+                  <td className={CELL}>
                     <Input
-                      className="w-16 px-1.5 py-1 text-right" type="number" step="0.5" aria-label="Markup on cost, percent"
+                      className={cx(BOX, 'text-right')} type="number" step="0.5" aria-label="Markup on cost, percent"
                       value={line.markupPct ?? ''}
-                      placeholder={defaultMarkupPct != null ? String(defaultMarkupPct) : '—'}
+                      // An empty cell on a priced line means the quote's default; the placeholder shows it.
+                      placeholder={defaultMarkupPct != null && line.vendorUnitCost != null ? String(defaultMarkupPct) : '—'}
                       disabled={locked || line.vendorUnitCost == null}
-                      title={line.vendorUnitCost == null ? 'Enter the vendor price first.' : undefined}
+                      title={line.vendorUnitCost == null ? 'Enter the vendor price first.' : line.markupPct == null && defaultMarkupPct != null ? `The quote's default of ${defaultMarkupPct}%.` : undefined}
                       onChange={(e) => update(line.key, { markupPct: blank(e.target.value) })}
                     />
-                    {line.markupPct == null && defaultMarkupPct != null && line.vendorUnitCost != null ? (
-                      <span className="mt-0.5 block text-right text-[10px] text-muted">default</span>
-                    ) : null}
                   </td>
-                  <td className="px-1.5 py-1.5 text-right">
-                    {line.priceFromWorksheet ? (
-                      <span className="tabular block py-0.5 font-semibold">{figure(line.unitPrice)}</span>
-                    ) : (
-                      <Input className="w-24 px-1.5 py-1 text-right" type="number" step="0.01" aria-label="Unit sell price" value={line.unitPrice} disabled={locked}
+                  <td className={line.priceFromWorksheet ? cx(FIGURE, 'font-semibold') : CELL}
+                    // Rounding to the fil moves a markup by a hair; the real figure is one hover away.
+                    title={realised != null ? `${percent(realised, 2)} markup after rounding` : undefined}>
+                    {line.priceFromWorksheet ? figure(line.unitPrice) : (
+                      <Input className={cx(BOX, 'text-right')} type="number" step="0.01" aria-label="Unit sell price" value={line.unitPrice} disabled={locked}
                         onChange={(e) => update(line.key, { unitPrice: Number(e.target.value) })} />
                     )}
-                    {/* Rounding to the fil moves markup a hair; show the real figure when it has moved. */}
-                    {typedMarkup != null && realised != null && Math.abs(realised - typedMarkup) >= 0.05 ? (
-                      <span className="mt-0.5 block text-[10px] text-muted">{percent(realised, 1)} realised</span>
-                    ) : null}
                   </td>
-                  <td className="tabular whitespace-nowrap px-1.5 py-2 text-right font-semibold">{figure(lineSell)}</td>
-                  <td className={cx('tabular whitespace-nowrap px-1.5 py-2 text-right', marginTone(margin))}>
-                    {margin == null ? '—' : percent(margin, 1)}
-                  </td>
-                  <td className="px-1.5 py-2">
+                  <td className={cx(FIGURE, 'font-semibold')}>{figure(lineSell)}</td>
+                  <td className={cx(FIGURE, marginTone(margin))}>{margin == null ? '—' : percent(margin, 1)}</td>
+                  <td className="px-1 py-1.5 text-center">
                     {!locked && lines.length > 1 ? (
-                      <button onClick={() => onChange(lines.filter((l) => l.key !== line.key))} aria-label="Remove line" className="text-n300 transition-colors hover:text-accent-ink">
+                      <button onClick={() => onChange(lines.filter((l) => l.key !== line.key))} aria-label="Remove line" className="align-middle text-n300 transition-colors hover:text-accent-ink">
                         <Trash2 size={14} />
                       </button>
                     ) : null}
@@ -227,14 +261,12 @@ export function QuoteWorksheet({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-line bg-sunken font-semibold">
-              <td className="px-1.5 py-2 text-[10px] uppercase tracking-[0.08em]" colSpan={5}>Total</td>
-              <td className="tabular whitespace-nowrap px-1.5 py-2 text-right">{figure(totalCost)}</td>
-              <td className="tabular whitespace-nowrap px-1.5 py-2 text-right">{percent(markupOf(totalCost, totalSell) ?? 0, 1)}</td>
+              <td className={cx(INSET, 'py-2 text-[10px] uppercase tracking-[0.08em]')} colSpan={7}>Total</td>
+              <td className={FIGURE}>{figure(totalCost)}</td>
+              <td className={FIGURE} title="Blended markup on cost">{percent(markupOf(totalCost, totalSell) ?? 0, 1)}</td>
               <td />
-              <td className="tabular whitespace-nowrap px-1.5 py-2 text-right">{figure(totalSell)}</td>
-              <td className={cx('tabular whitespace-nowrap px-1.5 py-2 text-right', marginTone(totalMargin))}>
-                {totalMargin == null ? '—' : percent(totalMargin, 1)}
-              </td>
+              <td className={FIGURE}>{figure(totalSell)}</td>
+              <td className={cx(FIGURE, marginTone(totalMargin))}>{totalMargin == null ? '—' : percent(totalMargin, 1)}</td>
               <td />
             </tr>
           </tfoot>

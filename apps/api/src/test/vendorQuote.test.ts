@@ -85,6 +85,13 @@ async function attach(user: { cookie: string }, quoteId: string, name: string, c
   return { status: res.statusCode, body: JSON.parse(res.body) as { id: string; error?: string } };
 }
 
+/** Read a file as the review screen does: nothing stored, nothing attached. */
+async function readIt(user: { cookie: string }, name: string, content: Buffer) {
+  const { payload, boundary } = multipart({}, name, content);
+  const res = await app.inject({ method: 'POST', url: '/api/quotes/vendor-quote/read', headers: { cookie: user.cookie, 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+  return { status: res.statusCode, body: JSON.parse(res.body) as unknown };
+}
+
 async function quote(preparedBy = fx.admin) {
   return prisma.quote.create({ data: { number: `ZEU-Q-VQ${Math.random().toString(36).slice(2, 7)}`, accountId: fx.customer.id, preparedById: preparedBy.id } });
 }
@@ -94,11 +101,7 @@ interface Read { currency: string | null; documentTotal: number | null; lines: A
 describe('every format gives the same three lines', () => {
   for (const [ext, build] of Object.entries(formats)) {
     it(`.${ext}`, async () => {
-      const q = await quote();
-      const stored = await attach(fx.admin, q.id, `westcon-quote.${ext}`, await build());
-      assert.equal(stored.status, 201, JSON.stringify(stored.body));
-
-      const res = await request(app, fx.admin).post(`/api/quotes/${q.id}/vendor-quote`, { attachmentId: stored.body.id });
+      const res = await readIt(fx.admin, `westcon-quote.${ext}`, await build());
       assert.equal(res.status, 200, JSON.stringify(res.body));
       const read = res.body as Read;
 
@@ -115,7 +118,6 @@ describe('every format gives the same three lines', () => {
 
 describe('what cannot be read says so', () => {
   it('a PDF with no text in it — a scan', async () => {
-    const q = await quote();
     const scan = await new Promise<Buffer>((resolve) => {
       const doc = new PDFDocument();
       const chunks: Buffer[] = [];
@@ -124,29 +126,26 @@ describe('what cannot be read says so', () => {
       doc.rect(50, 50, 200, 100).fill('#999999');
       doc.end();
     });
-    const stored = await attach(fx.admin, q.id, 'scanned.pdf', scan);
-    const res = await request(app, fx.admin).post(`/api/quotes/${q.id}/vendor-quote`, { attachmentId: stored.body.id });
+    const res = await readIt(fx.admin, 'scanned.pdf', scan);
     assert.equal(res.status, 400);
     assert.match((res.body as { error: string }).error, /scan/);
   });
 
   it('a format Zeus does not read', async () => {
-    const q = await quote();
-    const stored = await attach(fx.admin, q.id, 'photo.png', Buffer.from('not really a png'));
-    const res = await request(app, fx.admin).post(`/api/quotes/${q.id}/vendor-quote`, { attachmentId: stored.body.id });
+    const res = await readIt(fx.admin, 'photo.png', Buffer.from('not really a png'));
     assert.equal(res.status, 400);
     assert.match((res.body as { error: string }).error, /Excel, CSV, Word, PDF or text/);
   });
 });
 
 describe('a vendor document carries buy prices', () => {
-  it('a rep can neither attach one, list them, open one, nor have one read', async () => {
+  it('a rep can neither attach one, list them, open one, nor read one in', async () => {
     const q = await quote(fx.rep);
     const stored = await attach(fx.admin, q.id, 'westcon.txt', await formats.txt());
     assert.equal((await attach(fx.rep, q.id, 'mine.txt', Buffer.from('x'))).status, 403);
     assert.equal((await request(app, fx.rep).get(`/api/attachments?parent=quote&parentId=${q.id}`)).status, 403);
     assert.equal((await request(app, fx.rep).get(`/api/attachments/${stored.body.id}/download`)).status, 403);
-    assert.equal((await request(app, fx.rep).post(`/api/quotes/${q.id}/vendor-quote`, { attachmentId: stored.body.id })).status, 403);
+    assert.equal((await readIt(fx.rep, 'westcon.txt', await formats.txt())).status, 403);
   });
 
   it('and it never lands on the account, where anyone on the account would see it', async () => {
@@ -156,10 +155,9 @@ describe('a vendor document carries buy prices', () => {
     assert.equal(onAccount.length, 0);
   });
 
-  it('only a file attached to this quote can be read into it', async () => {
-    const [mine, other] = [await quote(), await quote()];
-    const stored = await attach(fx.admin, other.id, 'westcon.txt', await formats.txt());
-    assert.equal((await request(app, fx.admin).post(`/api/quotes/${mine.id}/vendor-quote`, { attachmentId: stored.body.id })).status, 404);
+  it('reading one stores nothing — keeping it is the attachment\'s job', async () => {
+    await readIt(fx.admin, 'westcon.txt', await formats.txt());
+    assert.equal(await prisma.attachment.count(), 0);
   });
 });
 

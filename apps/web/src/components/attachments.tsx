@@ -39,6 +39,18 @@ export function fileSize(bytes: number): string {
   return `${(bytes / 1_048_576).toFixed(1)} MB`;
 }
 
+/** Store one file against a record. Fields go before the file: the server reads them off the same stream. */
+export async function uploadAttachment(parent: AttachmentParent, parentId: string, file: File): Promise<Attachment> {
+  const body = new FormData();
+  body.append('parent', parent);
+  body.append('parentId', parentId);
+  body.append('file', file);
+  const res = await fetch('/api/attachments', { method: 'POST', credentials: 'include', body });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, (json as { error?: string }).error ?? `Upload failed (${res.status})`);
+  return json as Attachment;
+}
+
 /**
  * Attachment list plus drag-and-drop upload, used on every record detail page.
  * Files download through the API rather than a public URL, so record permissions
@@ -69,15 +81,7 @@ export function AttachmentPanel({ parent, parentId }: { parent: AttachmentParent
     let uploaded = 0;
     try {
       for (const file of Array.from(files)) {
-        const body = new FormData();
-        // Fields must precede the file part — the server reads them off the same stream.
-        body.append('parent', parent);
-        body.append('parentId', parentId);
-        body.append('file', file);
-
-        const res = await fetch('/api/attachments', { method: 'POST', credentials: 'include', body });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new ApiError(res.status, (json as { error?: string }).error ?? `Upload failed (${res.status})`);
+        await uploadAttachment(parent, parentId, file);
         uploaded += 1;
       }
       void queryClient.invalidateQueries({ queryKey: ['attachments', parent, parentId] });

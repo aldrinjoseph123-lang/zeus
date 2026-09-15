@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Copy, FileDown, Mail, Plus, Save, Upload } from 'lucide-react';
@@ -8,7 +8,7 @@ import { date, dateInput, money, percent } from '../lib/format';
 import { LineEditor, blankLine, previewTotals, type EditableLine } from '../components/lineEditor';
 import { QuoteWorksheet, priceWorksheet } from '../components/quoteWorksheet';
 import { VendorQuoteImport } from '../components/vendorQuoteImport';
-import { AttachmentPanel } from '../components/attachments';
+import { AttachmentPanel, uploadAttachment } from '../components/attachments';
 import {
   Button, EmptyState, Card, CardHeader, ErrorNote, Field, Input, Loading, Modal,
   PageHeader, Textarea, cx, useToast,
@@ -22,6 +22,7 @@ interface QuoteFull extends ApprovalState {
   discountPct: string | number; vatRate: string | number; terms: string | null; notes: string | null;
   /** Absent for roles that cannot see cost. */
   defaultMarkupPct?: string | number | null;
+  subtotal: string | number; discountAmt: string | number; totalCost?: string | number;
   account: { id: string; name: string }; contact: { id: string; firstName: string; lastName: string; email: string | null } | null;
   deal: { id: string; reference: string; name: string } | null;
   preparedBy: { id: string; name: string } | null;
@@ -56,6 +57,8 @@ export default function QuoteEditor() {
   const [defaultMarkupPct, setDefaultMarkupPct] = useState<number | null>(null);
   const [view, setView] = useState<'lines' | 'worksheet'>('lines');
   const [importing, setImporting] = useState(false);
+  // Vendor documents read into a quote that does not exist yet, kept until Create.
+  const [pendingDocuments, setPendingDocuments] = useState<File[]>([]);
   const [vatRate, setVatRate] = useState(5);
   const [terms, setTerms] = useState('');
   const [notes, setNotes] = useState('');
@@ -131,6 +134,9 @@ export default function QuoteEditor() {
   }, [quote, isNew, settings]);
 
   const totals = useMemo(() => previewTotals(lines, discountPct), [lines, discountPct]);
+  // Markup is on cost, margin on the sell price; both are shown because people price in one
+  // and Zeus's rules measure the other.
+  const markupPct = totals.totalCost > 0 ? ((totals.netAfterDiscount - totals.totalCost) / totals.totalCost) * 100 : null;
   const locked = quote?.status === 'ACCEPTED';
 
   const payload = () => ({
@@ -173,7 +179,16 @@ export default function QuoteEditor() {
 
   const save = useMutation({
     mutationFn: () => (isNew ? api.post<QuoteFull>('/quotes', payload()) : api.patch<QuoteFull>(`/quotes/${id}`, payload())),
-    onSuccess: (saved) => {
+    onSuccess: async (saved) => {
+      if (isNew && pendingDocuments.length > 0) {
+        try {
+          for (const original of pendingDocuments) await uploadAttachment('quote', saved.id, original);
+          setPendingDocuments([]);
+        } catch (err) {
+          // The quote exists; say plainly which part did not happen rather than lose it silently.
+          toast.push(`Quote created, but the vendor document was not kept: ${err instanceof Error ? err.message : 'upload failed'}.`, 'error');
+        }
+      }
       void queryClient.invalidateQueries({ queryKey: ['quotes'] });
       void queryClient.invalidateQueries({ queryKey: ['quote', saved.id] });
       void queryClient.invalidateQueries({ queryKey: ['deal'] });
@@ -281,6 +296,7 @@ export default function QuoteEditor() {
               id={quote.id}
               module="quotes"
               record={quote}
+              figures={savedFigures(quote)}
               onChanged={() => void queryClient.invalidateQueries({ queryKey: ['quote', id] })}
             />
           ) : null}
@@ -355,11 +371,11 @@ export default function QuoteEditor() {
                       ))}
                     </span>
                   ) : null}
+                  {view === 'worksheet' && !locked ? (
+                    <Button size="sm" variant="accent" icon={<Upload size={13} />} onClick={() => setImporting(true)}>Vendor quote</Button>
+                  ) : null}
                   {view === 'worksheet' && !isNew ? (
                     <>
-                      {!locked ? (
-                        <Button size="sm" variant="accent" icon={<Upload size={13} />} onClick={() => setImporting(true)}>Vendor quote</Button>
-                      ) : null}
                       {/* The saved quote, and only once it is approved — the server says so if not. */}
                       <Button size="sm" icon={<FileDown size={13} />} title="The saved, approved worksheet as figures."
                         onClick={() => download(`/quotes/${id}/worksheet.xlsx`, `${quote?.number}-worksheet.xlsx`).catch((err) => toast.push(err.message, 'error'))}>
@@ -403,10 +419,54 @@ export default function QuoteEditor() {
             )}
           </Card>
 
+          {view === 'worksheet' ? (
+            <Card>
+              <div className="grid grid-cols-2 divide-line sm:grid-cols-4 2xl:grid-cols-8 2xl:divide-x">
+                <Stat label="Subtotal" value={money(totals.subtotal, true)} />
+                <Stat label="Discount">
+                  <span className="flex items-center gap-1">
+                    <Input className="w-14 px-1.5 py-0.5 text-right text-[12px]" type="number" min="0" max="100" step="0.5" aria-label="Discount percent"
+                      value={discountPct} disabled={locked} onChange={(e) => setDiscountPct(Number(e.target.value))} />
+                    <span className="text-muted">%</span>
+                    <span className="tabular ml-auto text-muted">− {money(totals.discountAmt, true)}</span>
+                  </span>
+                </Stat>
+                <Stat label="Net" value={money(totals.netAfterDiscount, true)} strong />
+                <Stat label="VAT">
+                  <span className="flex items-center gap-1">
+                    <Input className="w-14 px-1.5 py-0.5 text-right text-[12px]" type="number" min="0" max="100" step="0.5" aria-label="VAT percent"
+                      value={vatRate} disabled={locked} onChange={(e) => setVatRate(Number(e.target.value))} />
+                    <span className="text-muted">%</span>
+                    <span className="tabular ml-auto">{money(totals.vatAmount, true)}</span>
+                  </span>
+                </Stat>
+                <div className="flex flex-col justify-center bg-n950 px-4 py-3 text-white">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.12em]">Total</span>
+                  <span className="tabular text-[16px] font-bold">{money(totals.total, true)}</span>
+                </div>
+                <Stat label="Cost" value={money(totals.totalCost, true)} />
+                <Stat label="Markup" value={markupPct == null ? '—' : `${percent(markupPct, 1)} on cost`} />
+                <Stat label="Margin">
+                  <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
+                    {money(totals.marginAmount, true)} · {percent(totals.marginPct, 1)}
+                  </span>
+                </Stat>
+              </div>
+            </Card>
+          ) : null}
+
           {view === 'worksheet' && showCost && !isNew && id ? (
             <Card>
               <CardHeader title="Vendor documents" subtitle="The quotes vendors sent, kept with this quote. They show buy prices, so only roles that see cost can open them." />
               <AttachmentPanel parent="quote" parentId={id} />
+            </Card>
+          ) : null}
+          {isNew && pendingDocuments.length > 0 ? (
+            <Card>
+              <CardHeader title="Vendor documents" subtitle="Kept with the quote when you create it." />
+              <ul className="px-4 py-3 text-[13px]">
+                {pendingDocuments.map((d, i) => <li key={`${d.name}-${i}`} className="py-0.5">{d.name}</li>)}
+              </ul>
             </Card>
           ) : null}
 
@@ -423,8 +483,8 @@ export default function QuoteEditor() {
           </Card>
         </div>
 
-        {/* sticky totals */}
-        <div className={cx(view === 'lines' && 'xl:sticky xl:top-4 xl:self-start')}>
+        {/* sticky totals beside the lines; in worksheet view they sit as a strip under the sheet instead */}
+        <div className={cx(view === 'lines' ? 'xl:sticky xl:top-4 xl:self-start' : 'hidden')}>
           <Card>
             <CardHeader title="Totals" subtitle="AED" />
             <div className="space-y-2 px-4 py-4 text-[13px]">
@@ -470,6 +530,7 @@ export default function QuoteEditor() {
               {showCost ? (
                 <div className="mt-3 border-t border-line pt-3">
                   <Row label="Cost" value={money(totals.totalCost, true)} muted />
+                  <div className="mt-1"><Row label="Markup" value={markupPct == null ? '—' : `${percent(markupPct, 1)} on cost`} /></div>
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-muted">Margin</span>
                     <span className={cx('tabular font-semibold', totals.marginPct < 10 ? 'text-accent-ink' : totals.marginPct < 20 ? 'text-watch' : 'text-secure')}>
@@ -503,21 +564,45 @@ export default function QuoteEditor() {
       </div>
 
       {sending && quote ? <SendModal quote={quote} onClose={() => setSending(false)} /> : null}
-      {importing && id ? (
+      {importing ? (
         <VendorQuoteImport
-          quoteId={id}
           lines={lines}
           rates={(settings?.['finance.exchangeRates'] ?? {}) as Record<string, number>}
           baseCurrency={String(settings?.['finance.currency'] ?? 'AED')}
           onClose={() => setImporting(false)}
-          onApply={(next, summary) => {
+          onApply={(next, summary, original) => {
             setLines(priceWorksheet(next, defaultMarkupPct));
             setImporting(false);
-            toast.push(`${summary} Save the quote to keep them.`);
+            if (id) {
+              uploadAttachment('quote', id, original)
+                .then(() => queryClient.invalidateQueries({ queryKey: ['attachments', 'quote', id] }))
+                .catch((err) => toast.push(`The vendor document was not kept: ${err instanceof Error ? err.message : 'upload failed'}.`, 'error'));
+            } else {
+              setPendingDocuments((docs) => [...docs, original]);
+            }
+            toast.push(`${summary} ${isNew ? 'Create the quote to keep them.' : 'Save the quote to keep them.'}`);
           }}
         />
       ) : null}
     </>
+  );
+}
+
+/** The saved quote's margin and markup — what an approval is actually on, not the unsaved preview. */
+function savedFigures(quote: QuoteFull): { marginPct: number; markupPct: number } | null {
+  const cost = Number(quote.totalCost ?? 0);
+  const net = Number(quote.subtotal) - Number(quote.discountAmt);
+  if (quote.totalCost === undefined || cost <= 0 || net <= 0) return null;
+  return { marginPct: ((net - cost) / net) * 100, markupPct: ((net - cost) / cost) * 100 };
+}
+
+/** One figure in the totals strip: its name over its value, or over the control that sets it. */
+function Stat({ label, value, strong, children }: { label: string; value?: string; strong?: boolean; children?: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col justify-center gap-1 border-b border-line px-4 py-3 text-[13px] 2xl:border-b-0">
+      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted">{label}</span>
+      {children ?? <span className={cx('tabular truncate', strong && 'font-semibold')}>{value}</span>}
+    </div>
   );
 }
 

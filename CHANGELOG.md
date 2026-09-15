@@ -64,6 +64,10 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   later shows the arithmetic that was actually used.
 - **Internal lines** for costs bought from nobody, such as installation or freight.
 - **Subtotals per vendor**, to check each block against the quote that vendor sent.
+- **Laid out like a spreadsheet:** one row per line, every heading over its figures, and the
+  totals as a strip under the sheet (subtotal, discount, net, VAT, total, cost, markup, margin).
+- **Markup is shown wherever margin is:** in the Totals card, on the approval bar, and in the
+  approvals queue, so a manager sees both numbers they are signing off.
 - A vendor part number that matches a catalogue SKU links the line to that product.
 - The server prices worksheet lines itself; a price sent from a browser is not trusted.
   A new version of a quote carries the worksheet, and so does undo.
@@ -74,16 +78,17 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 ### Added — reading the vendor's quote in (part 2 of 3)
 
 - **Vendor quote** on the Worksheet view: paste the table from the email, or upload the
-  vendor's Excel, CSV, Word or PDF. Zeus reads it on its own server; the document is never sent
-  to an outside service.
+  vendor's Excel, CSV, Word or PDF. It works on a new quote too. Zeus reads it on its own server;
+  the document is never sent to an outside service.
 - **Nothing goes onto the worksheet unchecked.** Each line found is shown beside the row it was
   read from. Lines whose quantity × price matches their own total are ticked; the rest are
   marked *check this*. The ticked lines are added up against **the vendor's printed total**,
   and the screen says plainly whether anything was missed.
 - **Re-quotes:** a part number already on the worksheet updates that line's cost in place and
   shows the change (1,180.00 → 1,250.00, +5.9%) rather than adding it twice. Markups stay as set.
-- **The original is kept with the quote** under *Vendor documents*. These carry buy prices, so
-  they are visible only to roles that see cost, and never appear on the account.
+- **The original is kept with the quote** under *Vendor documents*: straight away on a saved
+  quote, or when you click Create on a new one. These carry buy prices, so they are visible only
+  to roles that see cost, and never appear on the account.
 - A scanned PDF has no text to read; Zeus says so and asks for the table or the Excel version.
 
 **After the deploy:** nothing to do. The server image now includes `pdftotext`, which reads PDFs.

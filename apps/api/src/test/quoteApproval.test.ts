@@ -49,6 +49,19 @@ describe('quote approval', () => {
     assert.equal((await request(app, fx.admin).post(`/api/quotes/${q.id}/status`, { status: 'SENT' })).status, 200);
   });
 
+  it('tells the approver the margin and the markup they are signing', async () => {
+    const created = await request(app, fx.admin).post('/api/quotes', {
+      accountId: fx.customer.id, lines: [{ description: 'FortiGate', quantity: 1, vendorUnitCost: 100, markupPct: 20 }],
+    });
+    const id = (created.body as { id: string }).id;
+    await request(app, fx.admin).post(`/api/approvals/quotes/${id}/submit`, {});
+
+    const queue = (await request(app, fx.manager).get('/api/approvals/pending')).body as Array<{ id: string; marginPct?: number; markupPct?: number }>;
+    const row = queue.find((r) => r.id === id)!;
+    assert.equal(row.markupPct!.toFixed(1), '20.0', '100 sold at 120 is 20% on cost');
+    assert.equal(row.marginPct!.toFixed(1), '16.7', 'and 16.7% on sell');
+  });
+
   it('shows a pending quote in the approvals queue', async () => {
     const q = await draftQuote();
     await request(app, fx.rep).post(`/api/approvals/quotes/${q.id}/submit`, {});

@@ -4,7 +4,7 @@ import { prisma, num } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { getSetting } from '../lib/settings.js';
 import { badRequest, clientIp, forbidden, notFound, requireDocument, requirePermission } from '../lib/http.js';
-import { can, ownerAllowed } from '../auth/rbac.js';
+import { can, ownerAllowed, permissionFor } from '../auth/rbac.js';
 import {
   ENTITIES, approvalRequired, delegateFor, notifyDecided, notifyRequested, type Entity,
 } from '../services/approvals.js';
@@ -203,12 +203,14 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
       mayQuotes
         ? prisma.quote.findMany({
             where: { approvalStatus: 'PENDING' },
-            select: { id: true, number: true, total: true, approvalRequestedAt: true, account: { select: { name: true } }, approvalRequestedBy: { select: { name: true } } },
+            select: { id: true, number: true, total: true, subtotal: true, discountAmt: true, totalCost: true, approvalRequestedAt: true, account: { select: { name: true } }, approvalRequestedBy: { select: { name: true } } },
             orderBy: { approvalRequestedAt: 'asc' },
             take: 25,
           })
         : [],
     ]);
+    // Margin and markup describe cost, so they reach only an approver who may see cost.
+    const seesQuoteCost = (permissionFor(request.user, 'quotes').fields ?? {}).unitCost !== 'hidden';
 
     /**
      * The margin the approver is signing off, called out when it is below the floor or
@@ -236,10 +238,21 @@ export default async function approvalRoutes(app: FastifyInstance): Promise<void
         entity: 'invoices' as const, id: i.id, reference: i.number, title: 'Invoice',
         account: i.account.name, value: num(i.total), requestedAt: i.approvalRequestedAt, requestedBy: i.approvalRequestedBy?.name ?? null,
       })),
-      ...quotes.map((q) => ({
-        entity: 'quotes' as const, id: q.id, reference: q.number, title: 'Quote',
-        account: q.account.name, value: num(q.total), requestedAt: q.approvalRequestedAt, requestedBy: q.approvalRequestedBy?.name ?? null,
-      })),
+      ...quotes.map((q) => {
+        const net = num(q.subtotal) - num(q.discountAmt);
+        const cost = num(q.totalCost);
+        const marginPct = net > 0 ? ((net - cost) / net) * 100 : 0;
+        return {
+          entity: 'quotes' as const, id: q.id, reference: q.number, title: 'Quote',
+          account: q.account.name, value: num(q.total), requestedAt: q.approvalRequestedAt, requestedBy: q.approvalRequestedBy?.name ?? null,
+          // What the manager is signing, in both of the numbers people use for it.
+          ...(seesQuoteCost && cost > 0 ? {
+            marginPct,
+            markupPct: ((net - cost) / cost) * 100,
+            marginBelowFloor: marginPct < 0 || (floor > 0 && marginPct < floor),
+          } : {}),
+        };
+      }),
     ].sort((a, b) => (a.requestedAt?.getTime() ?? 0) - (b.requestedAt?.getTime() ?? 0));
   });
 }

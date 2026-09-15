@@ -13,7 +13,10 @@ import { quotePdf, type QuotePdfData } from '../services/pdf.js';
 import { quoteWorksheetXlsx } from '../services/xlsx.js';
 import { readVendorQuote, rowsFromFile, UnreadableVendorFile } from '../services/vendorQuote.js';
 import path from 'node:path';
-import { env } from '../env.js';
+import { tmpdir } from 'node:os';
+import { createWriteStream } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import { sendMail } from '../services/graph.js';
 import { notify, emailTemplate } from '../services/notify.js';
 import { touch } from '../lib/touch.js';
@@ -523,25 +526,30 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * Read a vendor's quote already uploaded to this quote, and say what it contains.
+   * Read a vendor's quote and say what it contains. Stores nothing and touches no quote.
    *
-   * Reads, never writes: the lines come back for a person to check and apply on the worksheet.
-   * The file is read from the quote's own attachments, so what was read is always what is kept.
+   * Stateless on purpose, so it works on a quote that has not been created yet. The editor
+   * keeps the very file that was read and attaches it to the quote: at once on a saved quote,
+   * on Create for a new one. What was read is what gets kept, without this route owning either.
    */
-  app.post('/api/quotes/:id/vendor-quote', { preHandler: requirePermission('quotes', 'update') }, async (request) => {
-    const { id } = request.params as { id: string };
-    await requireDocument(request.user, 'quotes', id, 'update');
+  app.post('/api/quotes/vendor-quote/read', { preHandler: requirePermission('quotes', 'read') }, async (request) => {
     if (!mayWriteCost(request.user)) throw forbidden('A vendor quote sets buy prices, which your role cannot see.');
-    const parsed = z.object({ attachmentId: z.string().min(1) }).safeParse(request.body);
-    if (!parsed.success) throw badRequest('attachmentId is required.');
+    const upload = await request.file();
+    if (!upload) throw badRequest('No file was uploaded.');
 
-    const file = await prisma.attachment.findFirst({ where: { id: parsed.data.attachmentId, quoteId: id } });
-    if (!file) throw notFound('That file is not attached to this quote.');
+    // pdftotext needs a path, so every format goes through a private temporary copy.
+    const dir = await mkdtemp(path.join(tmpdir(), 'zeus-vendor-quote-'));
+    const filename = path.basename(upload.filename || 'vendor-quote.txt');
+    const fullPath = path.join(dir, `upload${path.extname(filename).toLowerCase()}`);
     try {
-      return readVendorQuote(await rowsFromFile(path.join(env.UPLOAD_DIR, path.basename(file.storedName)), file.filename));
+      await pipeline(upload.file, createWriteStream(fullPath));
+      if (upload.file.truncated) throw badRequest('That file is larger than 20 MB.');
+      return readVendorQuote(await rowsFromFile(fullPath, filename));
     } catch (err) {
       if (err instanceof UnreadableVendorFile) throw badRequest(err.message);
       throw err;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
