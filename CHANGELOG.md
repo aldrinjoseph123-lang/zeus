@@ -12,7 +12,9 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ---
 
-## Unreleased
+## v1.6.0 — 16 September 2026
+
+Quotes are priced from the vendor's own quote, imports check every account before they write and can be undone, and Settings saves through one bar.
 
 ### Security — a Sales Executive could open every quote and invoice in the company
 
