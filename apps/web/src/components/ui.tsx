@@ -1,6 +1,6 @@
 import {
   createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState,
-  type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
+  type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from 'react';
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Info, Loader2, Search, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -65,7 +65,9 @@ export function Button({
 }) {
   const classes = cx(
     'inline-flex items-center justify-center gap-2 rounded-sharp font-semibold uppercase tracking-[0.08em] transition-colors',
-    'disabled:cursor-not-allowed disabled:opacity-45',
+    // A button that does not move under the press reads as ignored. 0.97 is felt, not seen.
+    'transition-[transform,background-color,color,border-color] active:scale-[0.97] active:duration-100',
+    'disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100',
     size === 'sm' ? 'px-2.5 py-1.5 text-[10px]' : 'px-4 py-2.5 text-[11px]',
     BUTTON_STYLES[variant],
     className,
@@ -319,7 +321,7 @@ export function EmptyState({ title, message, action, icon }: { title: string; me
 export function ErrorNote({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : String(error ?? 'Something went wrong.');
   return (
-    <div className="flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--text-on-accent-soft)]">
+    <div className="rise-in flex items-start gap-2 border border-[var(--red-300)] bg-accent-soft px-3 py-2.5 text-[13px] text-[var(--text-on-accent-soft)]" style={{ '--dur-rise': '160ms' } as CSSProperties}>
       <AlertTriangle size={15} className="mt-px shrink-0" />
       <span className="min-w-0 flex-1 break-words">{message}</span>
       <CopyButton value={message} label="" className="shrink-0 text-[var(--text-on-accent-soft)]" />

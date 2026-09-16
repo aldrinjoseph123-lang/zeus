@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 declare global {
   interface Window {
     turnstile?: {
-      render: (el: HTMLElement, opts: { sitekey: string; theme?: string; callback: (token: string) => void; 'expired-callback'?: () => void }) => string;
+      render: (el: HTMLElement, opts: { sitekey: string; theme?: string; size?: 'normal' | 'flexible' | 'compact'; callback: (token: string) => void; 'expired-callback'?: () => void }) => string;
       reset: (id?: string) => void;
     };
   }
@@ -12,7 +12,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
-import { Button, ErrorNote, Field, Input, Loading } from '../components/ui';
+import { Button, cx, ErrorNote, Field, Input, Loading } from '../components/ui';
 
 export default function Login() {
   const [params] = useSearchParams();
@@ -46,11 +46,13 @@ export default function Login() {
    * was before.
    */
   const siteKey = config?.turnstileSiteKey ?? null;
+  const wantsBotCheck = Boolean(siteKey) && email.includes('@');
   useEffect(() => {
-    if (!siteKey || !widget.current || challenge) return;
+    if (!siteKey || !wantsBotCheck || !widget.current || challenge) return;
     const mount = () => {
       if (window.turnstile && widget.current && !widget.current.hasChildNodes()) {
-        window.turnstile.render(widget.current, { sitekey: siteKey, theme: 'auto', callback: setBotToken, 'expired-callback': () => setBotToken(null) });
+        // 'flexible' fills the column; an older widget ignores it and draws its usual 300px.
+        window.turnstile.render(widget.current, { sitekey: siteKey, theme: 'auto', size: 'flexible', callback: setBotToken, 'expired-callback': () => setBotToken(null) });
       }
     };
     if (window.turnstile) { mount(); return; }
@@ -59,7 +61,7 @@ export default function Login() {
     script.async = true;
     script.onload = mount;
     document.head.appendChild(script);
-  }, [siteKey, challenge]);
+  }, [siteKey, wantsBotCheck, challenge]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -105,7 +107,8 @@ export default function Login() {
   return (
     <div className="grid h-full lg:grid-cols-2">
       {/* Brand panel — the hero treatment from the Protect24x7 site. */}
-      <div className="hatch relative hidden flex-col justify-between bg-n950 p-10 text-white lg:flex">
+      {/* In dark mode the canvas is nearly this black too, so the two halves need a seam. */}
+      <div className="hatch relative hidden flex-col justify-between border-line bg-n950 p-10 text-white lg:flex lg:border-r">
         <div className="flex items-center gap-2">
           <span className="text-[22px] font-bold tracking-[0.22em]">ZEUS</span>
           <span className="text-[22px] font-bold leading-none text-accent-ink">.</span>
@@ -141,7 +144,8 @@ export default function Login() {
 
       {/* Form panel */}
       <div className="flex items-center justify-center bg-canvas p-6">
-        <div className="w-full max-w-sm">
+        {/* Centred by maths sits low to the eye; lift it a little. */}
+        <div className="rise-in w-full max-w-[400px] lg:-translate-y-[4%]">
           <div className="mb-6 lg:hidden">
             <span className="text-[22px] font-bold tracking-[0.22em]">ZEUS</span>
             <span className="text-[22px] font-bold text-accent-ink">.</span>
@@ -160,7 +164,8 @@ export default function Login() {
                 <>
                   <a
                     href={`/api/auth/microsoft/start?next=${encodeURIComponent(next)}`}
-                    className="flex w-full items-center justify-center gap-2.5 rounded-sharp border border-n900 bg-card px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors hover:bg-n50"
+                    // bg-ink/text-canvas inverts with the theme: black on white, white on black — never black on black.
+                    className="flex w-full items-center justify-center gap-2.5 rounded-sharp border border-ink bg-ink px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-canvas transition-[transform,opacity] duration-[var(--dur-fast)] ease-[var(--ease-mechanical)] hover:opacity-90 active:scale-[0.97]"
                   >
                     <svg width="15" height="15" viewBox="0 0 23 23" aria-hidden="true">
                       <path fill="#f35325" d="M1 1h10v10H1z" />
@@ -219,8 +224,18 @@ export default function Login() {
                   <Field label="Password">
                     <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
                   </Field>
-                  {siteKey ? <div ref={widget} className="min-h-[65px]" /> : null}
-                  <Button type="submit" variant="accent" loading={busy} disabled={Boolean(siteKey) && !botToken} className="w-full">
+                  {/*
+                    * The bot check is 65px of Cloudflare's own furniture. Held back until there is
+                    * an email in the box, it stops being the loudest thing under the fields, and it
+                    * has fetched its token by the time the password is typed — so the button is
+                    * already live rather than disabled while Cloudflare thinks.
+                    */}
+                  {siteKey ? (
+                    <div className={cx('grid transition-[grid-template-rows,opacity] duration-200 ease-out', email.includes('@') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
+                      <div className="overflow-hidden"><div ref={widget} /></div>
+                    </div>
+                  ) : null}
+                  <Button type="submit" variant="outline" loading={busy} disabled={Boolean(siteKey) && !botToken} className="w-full">
                     Sign in
                   </Button>
                 </form>

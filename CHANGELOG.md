@@ -14,6 +14,20 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Changed — the sign-in screen
+
+- **Microsoft is the loud button now**, because that is how the team signs in. The password form
+  sits under it, quieter. The button inverts with the theme instead of being black on black.
+- **The bot check waits for an email address.** Cloudflare's 65px widget used to be the loudest
+  thing under the fields, and it left Sign in disabled while it thought. It now appears once an
+  address is typed, so it has its answer before the password is, and the button never moves under
+  a click.
+- **A focused field is no longer red.** Red is how Zeus says "wrong"; a focused input now takes an
+  ink-coloured ring, and a light one in dark mode. Everywhere, not only on sign-in.
+- **Every button gives under the press** (`scale(0.97)`, 100ms), the form arrives with an 8px
+  rise, and an error slides in rather than appearing. All of it off under *reduced motion*.
+- In dark mode the two halves of the screen were the same black; there is a seam between them now.
+
 ### Added — hover
 
 - **Hovering a record's name previews it.** After a short pause, a small card shows an account,
