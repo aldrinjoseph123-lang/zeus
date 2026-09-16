@@ -87,8 +87,6 @@
   --shadow-md: 0 6px 16px rgba(10, 10, 10, 0.08);
   --shadow-lg: 0 8px 20px rgba(10, 10, 10, 0.1);
   --shadow-focus: 0 0 0 3px rgba(225, 29, 46, 0.25);
-  /* A field is not an error. Red is what Zeus says "wrong" with, so a focused input gets ink. */
-  --shadow-focus-field: 0 0 0 3px rgba(10, 10, 10, 0.16);
 
   --ease-mechanical: cubic-bezier(0.2, 0, 0, 1);
   --dur-fast: 150ms;
@@ -141,8 +139,6 @@
   --text-accent: var(--red-300);
   --text-on-accent-soft: var(--red-300);
   --text-watch: #f0a35c;
-  /* Ink is invisible on a dark field; the ring lifts instead. */
-  --shadow-focus-field: 0 0 0 3px rgba(255, 255, 255, 0.22);
 
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.6);
@@ -247,24 +243,6 @@ button {
 :focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
-}
-
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  box-shadow: var(--shadow-focus-field);
-}
-
-/* Sign-in is seen a few times a week, so it can afford an entrance. */
-@keyframes rise-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.rise-in {
-  animation: rise-in var(--dur-rise, 200ms) cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .rise-in { animation: none; opacity: 1; transform: none; }
 }
 
 ::-webkit-scrollbar {
