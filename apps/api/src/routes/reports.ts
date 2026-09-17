@@ -1134,6 +1134,10 @@ export default async function reportRoutes(app: FastifyInstance): Promise<void> 
   app.get('/api/reports', { preHandler: requirePermission('reports', 'read') }, async (request) =>
     REPORTS
       .filter((r) => {
+        // The report itself refuses a module the role cannot read; offering it anyway put twenty
+        // reports in front of a role that could open fourteen, and the other six answered with an
+        // error. Offer what opens.
+        if (permissionFor(request.user, r.module).read === 'none') return false;
         const gate = REQUIRED_FIELD[r.key];
         return !gate || (permissionFor(request.user, gate.module).fields ?? {})[gate.field] !== 'hidden';
       })

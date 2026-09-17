@@ -14,6 +14,14 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Fixed — reports a role was offered but could not open
+
+- **The report catalogue now offers what the role can actually open.** It listed every report
+  there is, so a role with the reports permission but no access to leads, quotes, invoices or the
+  catalogue saw twenty reports, opened one, and was told "Your role cannot see leads". The refusal
+  was right; offering it was not. Found by a new sweep that walks every report a role is offered
+  and insists each one opens.
+
 ### Added — hover
 
 - **Hovering a record's name previews it.** After a short pause, a small card shows an account,

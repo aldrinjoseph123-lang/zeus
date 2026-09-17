@@ -50,3 +50,38 @@ describe('loss-reasons report', () => {
     assert.equal(lostDeals?.[1], '4');
   });
 });
+
+/**
+ * A report a role is offered has to open for it.
+ *
+ * The catalogue listed every report there is. A role with the reports permission but no access
+ * to leads, quotes, invoices or the catalogue was shown twenty reports, opened one, and was told
+ * "Your role cannot see leads." The refusal was right; offering it was not.
+ */
+describe('the report catalogue offers what the role can open', () => {
+  it('drops the ones the role has no module for, and every one it keeps opens', async () => {
+    const role = await prisma.role.create({
+      data: {
+        name: 'Pipeline Watcher',
+        permissions: {
+          deals: { read: 'all', create: false, update: 'none', delete: 'none', export: false },
+          accounts: { read: 'all', create: false, update: 'none', delete: 'none', export: false },
+          reports: { read: 'all', create: false, update: 'none', delete: 'none', export: true },
+        } as never,
+      },
+    });
+    const user = await prisma.user.create({ data: { email: 'watcher@test.local', name: 'watcher', passwordHash: 'x', roleId: role.id } });
+    const { SESSION_COOKIE, signSessionToken } = await import('../auth/session.js');
+    const watcher = { id: user.id, email: user.email, name: user.name, roleName: role.name, cookie: `${SESSION_COOKIE}=${await signSessionToken(user.id, 12)}` };
+
+    const offered = (await request(app, watcher).get('/api/reports')).body as Array<{ key: string }>;
+    const all = (await request(app, fx.admin).get('/api/reports')).body as Array<{ key: string }>;
+    assert.ok(offered.length < all.length, 'a role with two modules is not offered every report there is');
+    assert.ok(!offered.some((r) => ['leads', 'quotes', 'receivables', 'price-book', 'activities'].includes(r.key)), 'nor the ones it has no module for');
+
+    for (const { key } of offered) {
+      const res = await request(app, watcher).get(`/api/reports/${key}`);
+      assert.equal(res.status, 200, `the ${key} report is offered to this role and must open`);
+    }
+  });
+});

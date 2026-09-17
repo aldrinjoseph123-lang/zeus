@@ -120,3 +120,59 @@ describe('a Sales Executive cannot see or derive cost', () => {
     assert.ok(quote.some((p) => p.endsWith('markupPct')) && quote.some((p) => p.endsWith('vendorUnitCost')), 'and the worksheet');
   });
 });
+
+/**
+ * The other half of the same rule: a figure worked out from a hidden field is that field.
+ *
+ * Masking hides by name, so a number carrying a hidden figure under a different name walks
+ * straight past it — `lineCost` was quantity × a hidden unit cost, and the account preview's
+ * `openValue` is a sum of deal amounts. Names are a list somebody has to keep; digits are not.
+ * This plants costs nobody would arrive at by accident and looks for those digits anywhere a
+ * Sales Executive is served, screens, previews, dashboard and every report they are offered.
+ *
+ * Only the fields the Roles editor can actually hide are swept (PROTECTED_FIELDS): a role that
+ * hides something else is not a thing an administrator can make.
+ */
+describe('a figure worked out from a hidden field is hidden with it', () => {
+  const UNIT_COST = 4590.63;
+  const LINE_COST = 9181.26;      // quantity 2 × the unit cost, and the deal's cost
+  const VENDOR_COST = 42;         // the worksheet line's vendor price
+
+  it('on every screen, preview and report a Sales Executive is offered', async () => {
+    const { deal, quoteId, invoiceId, product } = await costedPaperwork(fx.rep);
+    const offered = (await request(app, fx.rep).get('/api/reports')).body as Array<{ key: string }>;
+
+    const screens = [
+      '/api/deals', `/api/deals/${deal.id}`,
+      '/api/quotes', `/api/quotes/${quoteId}`,
+      '/api/invoices', `/api/invoices/${invoiceId}`,
+      '/api/products', `/api/products/${product.id}`,
+      '/api/accounts', `/api/accounts/${fx.customer.id}`,
+      `/api/previews/account/${fx.customer.id}`, `/api/previews/deal/${deal.id}`,
+      '/api/dashboard/overview',
+      ...offered.map((r) => `/api/reports/${r.key}`),
+    ];
+
+    const found: string[] = [];
+    for (const url of screens) {
+      const res = await request(app, fx.rep).get(url);
+      // A report offered to a role has to open for it: the list used to hand over every report
+      // there is, and six of them answered "your role cannot see leads".
+      assert.equal(res.status, 200, `${url} is offered to this role and must open`);
+      const body = JSON.stringify(res.body);
+      for (const [what, figure] of [['unit cost', UNIT_COST], ['line cost', LINE_COST], ['the vendor price', VENDOR_COST]] as const) {
+        // The vendor price is small enough to turn up as a quantity or a percentage; only count
+        // it where it is money, with a decimal part.
+        const digits = figure === VENDOR_COST ? `${figure}.` : String(figure);
+        if (body.includes(digits)) found.push(`${url} → ${what} (${figure})`);
+      }
+    }
+    assert.deepEqual(found, [], 'a hidden cost came back under another name');
+  });
+
+  it('and an administrator is served those same figures, so the sweep is looking where it should', async () => {
+    const { quoteId } = await costedPaperwork(fx.rep);
+    const quote = JSON.stringify((await request(app, fx.admin).get(`/api/quotes/${quoteId}`)).body);
+    assert.ok(quote.includes(String(UNIT_COST)) && quote.includes(String(LINE_COST)), 'the admin reads unit cost and line cost');
+  });
+});
