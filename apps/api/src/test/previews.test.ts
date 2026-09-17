@@ -67,12 +67,15 @@ describe('record previews', () => {
     assert.equal((await preview(fx.admin, 'deal', teammates.id)).status, 404);
   });
 
-  it('counts only the open deals the reader could open on an account', async () => {
+  it('counts only the open deals and contacts the reader could open on an account', async () => {
     await deal(fx.rep, 10_000);
     await deal(fx.otherRep, 900_000);
     await deal(fx.rep, 5_000, 'WON');
-    const card = (await preview(fx.rep, 'account', fx.customer.id)).body as { openDeals: number; openValue: number };
+    await prisma.contact.create({ data: { firstName: 'Mine', lastName: 'Contact', accountId: fx.customer.id, ownerId: fx.rep.id } });
+    await prisma.contact.create({ data: { firstName: 'Theirs', lastName: 'Contact', accountId: fx.customer.id, ownerId: fx.otherRep.id } });
+    const card = (await preview(fx.rep, 'account', fx.customer.id)).body as { openDeals: number; openValue: number; contacts: number };
     assert.deepEqual([card.openDeals, card.openValue], [1, 10_000]);
+    assert.equal(card.contacts, 1, 'the contact figure follows the same scope as the deals beside it');
   });
 
   it('hides a field the reader\'s role hides', async () => {

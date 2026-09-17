@@ -44,17 +44,20 @@ async function load(type: PreviewType, id: string, user: Parameters<typeof scope
       select: {
         id: true, name: true, type: true, industry: true, city: true, emirate: true, phone: true, email: true, domain: true,
         ownerId: true, owner, lastActivityAt: true,
-        _count: { select: { contacts: { where: { deletedAt: null } } } },
       },
     });
     if (!account) return null;
+    // Both figures on the card count what this reader could open, or they answer different questions.
+    const contacts = await prisma.contact.count({
+      where: { accountId: id, deletedAt: null, ...(await scopeWhere(user, 'contacts', 'read')) },
+    });
     // Open pipeline counts only the deals the reader could open, as the account page does.
     const open = await prisma.deal.aggregate({
       where: { accountId: id, deletedAt: null, status: 'OPEN', ...(await scopeWhere(user, 'deals', 'read')) },
       _count: true,
       _sum: { amount: true },
     });
-    return { ...account, openDeals: open._count, openValue: num(open._sum.amount) };
+    return { ...account, contacts, openDeals: open._count, openValue: num(open._sum.amount) };
   }
   if (type === 'deal') {
     const deal = await prisma.deal.findFirst({

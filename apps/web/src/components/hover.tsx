@@ -44,14 +44,24 @@ function previewTarget(from: EventTarget | null): Target | null {
 }
 
 function tipTarget(from: EventTarget | null): { el: HTMLElement; text: string } | null {
-  const el = (from as Element | null)?.closest?.<HTMLElement>('[title], [data-tip]');
+  const el = (from as Element | null)?.closest?.<HTMLElement>('[title], [data-tip], [data-tip-owned]');
   if (!el) return null;
   const title = el.getAttribute('title');
   if (title !== null) {
     // The browser shows `title` itself after a second; moved, it shows only ours.
     el.removeAttribute('title');
     el.dataset.tip = title;
+    // React diffs its own props, not the DOM: a render that withdraws the title removes an
+    // attribute that is already gone and leaves data-tip saying something no longer true.
+    // data-tip-owned marks the ones we moved, so a withdrawn title clears the copy as well.
+    el.dataset.tipOwned = '';
     if (!el.getAttribute('aria-label') && !el.textContent?.trim()) el.setAttribute('aria-label', title);
+  } else if (el.dataset.tipOwned !== undefined && !el.hasAttribute('title')) {
+    const owned = el.dataset.tip;
+    delete el.dataset.tip;
+    delete el.dataset.tipOwned;
+    if (owned && el.getAttribute('aria-label') === owned) el.removeAttribute('aria-label');
+    return null;
   }
   const text = el.dataset.tip ?? '';
   return text.trim() ? { el, text } : null;
@@ -141,6 +151,8 @@ export function HoverLayer() {
     const click = (e: MouseEvent) => {
       if (pressed.current?.opened) { e.preventDefault(); e.stopPropagation(); }
       pressed.current = null;
+      // Following the card's own link leaves the page it belongs to; the card must go with it.
+      if (inCard(e.target) && (e.target as Element).closest?.('a[href]')) closeCard();
     };
     const menu = (e: Event) => { if (pressed.current) e.preventDefault(); };
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { closeTip(); closeCard(); } };
@@ -225,7 +237,7 @@ interface PreviewData {
   lastActivityAt?: string | null;
   // account
   name?: string; industry?: string | null; city?: string | null; emirate?: string | null; phone?: string | null; email?: string | null;
-  domain?: string | null; openDeals?: number; openValue?: number; _count?: { contacts: number };
+  domain?: string | null; openDeals?: number; openValue?: number; contacts?: number;
   // deal
   reference?: string; status?: string; amount?: number | null; probability?: number; closeDate?: string; stageChangedAt?: string;
   account?: Named; partnerAccount?: Named; stage?: { name: string; color: string };
@@ -266,7 +278,7 @@ function PreviewCard({ type, id }: { type: PreviewType; id: string }) {
   if (type === 'account') {
     add('Where', [data.industry, data.city ?? data.emirate].filter(Boolean).join(' · '));
     add('Open deals', data.openDeals ? `${data.openDeals} · ${money(data.openValue)}` : 'None');
-    add('Contacts', data._count?.contacts);
+    add('Contacts', data.contacts);
     add('Phone', data.phone);
     add('Email', data.email ?? data.domain);
   } else if (type === 'deal') {

@@ -83,7 +83,9 @@ export function auditPreview(user: SessionUser, entity: string, entityId: string
   void (async () => {
     if (!(await getSetting<boolean>('audit.logReads', false))) return;
     const since = new Date(Date.now() - 3_600_000);
-    if (await prisma.auditLog.count({ where: { action: 'preview', userId: user.id, entityId, at: { gt: since } } })) return;
+    // entity is in the where so the [entity, entityId] index carries this; read logging makes
+    // AuditLog the busiest table there is, and this runs on every hovered name.
+    if (await prisma.auditLog.count({ where: { entity, entityId, action: 'preview', userId: user.id, at: { gt: since } } })) return;
     await audit({ user, action: 'preview', entity, entityId, summary, ip });
   })().catch(() => undefined);
 }
