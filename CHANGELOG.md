@@ -32,7 +32,13 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
   account's contacts shows Call, Email, Log activity and Open at its end. Log activity opens the
   composer over the list. On a touch screen the actions are always shown.
 - **Figures behind the bars.** Hovering a progress bar gives its percentage, and hovering a
-  funnel stage gives its count, value and weighted value.
+  funnel stage gives its count, value and weighted value. A stage that cannot be clicked is no
+  longer drawn as a disabled button, and a worksheet tooltip sits on the cell rather than the
+  input inside it: Safari and Firefox send no pointer events to a disabled control, so those
+  hints would never have opened there.
+- The card follows its name if the list redraws underneath it, a tooltip says which control it
+  describes (`aria-describedby`), and a figure worked out from a hidden field — an account's open
+  pipeline is deal amounts summed — is hidden with it.
 
 ## v1.6.0 — 16 September 2026
 

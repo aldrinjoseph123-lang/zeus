@@ -34,3 +34,42 @@ test('hovering previews a record, shows a styled tooltip, and reveals row action
   await expect(page.getByRole('dialog', { name: 'Log activity' })).toBeVisible();
   await expect(page).toHaveURL(/\/accounts$/);
 });
+
+/**
+ * The long press. Three things have to hold at once and none of them is visible in the mouse
+ * path: a finger lifting fires pointerout (which must not close the card), the tap that ends
+ * the press must not follow the link, and a 10px slide must cancel the press instead. The
+ * pointerout half was already wrong once during the build.
+ */
+test('a long press previews on a touch screen, and a tap still opens the record', async ({ browser }) => {
+  const ctx = await browser.newContext({
+    storageState: 'e2e/.auth/admin.json',
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await ctx.newPage();
+  const cdp = await ctx.newCDPSession(page);
+  const card = page.locator('[data-hover-card]');
+
+  await page.goto('/leads');
+  const name = page.locator('tbody tr [data-preview^="lead:"]').first();
+  await expect(name).toBeVisible();
+  const box = (await name.boundingBox())!;
+  const x = box.x + 8;
+  const y = box.y + box.height / 2;
+
+  // Press and hold: the card opens and the tap that ends the press is swallowed.
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await page.waitForTimeout(700);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(card).toBeVisible();
+  await expect(page).toHaveURL(/\/leads$/);
+
+  // A tap elsewhere puts it away; a plain tap on the name opens the record.
+  await page.touchscreen.tap(20, 800);
+  await expect(card).toBeHidden();
+  await page.touchscreen.tap(x, y);
+  await expect(page).toHaveURL(/\/leads\/.+/);
+  await ctx.close();
+});

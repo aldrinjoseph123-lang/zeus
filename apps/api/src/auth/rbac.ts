@@ -288,6 +288,9 @@ const hiddenCache = new WeakMap<object, Set<string>>();
  */
 const DERIVED_FROM: Record<string, string[]> = {
   unitCost: ['lineCost', 'termCost', 'vendorUnitCost', 'markupPct', 'defaultMarkupPct'],
+  // A total is the field it sums: the account preview's open pipeline is deal amounts added up,
+  // so a role that cannot see an amount cannot see them summed either.
+  amount: ['openValue'],
 };
 
 /**

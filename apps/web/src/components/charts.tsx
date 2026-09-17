@@ -94,13 +94,16 @@ export function FunnelChart({ data, onStageClick }: {
 
   return (
     <div className="flex flex-col gap-2 px-4 py-3">
-      {data.map((stage) => (
-        <button
+      {data.map((stage) => {
+        // Not a button when nothing happens on click: a disabled control dispatches no pointer
+        // events in Safari or Firefox, so its tooltip would never open there.
+        const Row = onStageClick ? 'button' : 'div';
+        return (
+        <Row
           key={stage.name}
           onClick={onStageClick ? () => onStageClick(stage.name) : undefined}
           title={`${stage.name}: ${stage.count} deal${stage.count === 1 ? '' : 's'} worth ${money(stage.value)}, ${money((stage.value * stage.probability) / 100)} weighted at ${stage.probability}%`}
           className="group w-full text-left"
-          disabled={!onStageClick}
         >
           <div className="mb-1 flex items-baseline justify-between gap-3">
             <span className="flex items-center gap-1.5 text-[12px] font-semibold">
@@ -118,8 +121,9 @@ export function FunnelChart({ data, onStageClick }: {
               style={{ width: `${Math.max(2, (stage.value / max) * 100)}%`, background: stage.color, transitionDuration: 'var(--dur-slow)' }}
             />
           </div>
-        </button>
-      ))}
+        </Row>
+        );
+      })}
     </div>
   );
 }

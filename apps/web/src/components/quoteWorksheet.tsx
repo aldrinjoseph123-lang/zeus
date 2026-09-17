@@ -188,8 +188,10 @@ export function QuoteWorksheet({
                     <Input className={BOX} value={line.vendorCode ?? ''} disabled={locked} aria-label="Vendor code" placeholder="Part no."
                       onChange={(e) => update(line.key, { vendorCode: e.target.value || null })} />
                   </td>
-                  <td className={CELL}>
-                    <Input className={BOX} value={line.description} title={line.description} disabled={locked} aria-label="Description"
+                  {/* The tooltip sits on the cell, not the input: a disabled input dispatches no
+                    * pointer events in Safari or Firefox, so a locked quote would lose its hints. */}
+                  <td className={CELL} title={line.description}>
+                    <Input className={BOX} value={line.description} disabled={locked} aria-label="Description"
                       onChange={(e) => update(line.key, { description: e.target.value })} />
                   </td>
                   <td className={CELL}>
@@ -229,14 +231,16 @@ export function QuoteWorksheet({
                       onChange={(e) => update(line.key, { fxRate: Number(e.target.value) || 1 })} />
                   </td>
                   <td className={FIGURE}>{figure(line.unitCost ?? 0)}</td>
-                  <td className={CELL}>
+                  <td
+                    className={CELL}
+                    title={line.vendorUnitCost == null ? 'Enter the vendor price first.' : line.markupPct == null && defaultMarkupPct != null ? `The quote's default of ${defaultMarkupPct}%.` : undefined}
+                  >
                     <Input
                       className={cx(BOX, 'text-right')} type="number" step="0.5" aria-label="Markup on cost, percent"
                       value={line.markupPct ?? ''}
                       // An empty cell on a priced line means the quote's default; the placeholder shows it.
                       placeholder={defaultMarkupPct != null && line.vendorUnitCost != null ? String(defaultMarkupPct) : '—'}
                       disabled={locked || line.vendorUnitCost == null}
-                      title={line.vendorUnitCost == null ? 'Enter the vendor price first.' : line.markupPct == null && defaultMarkupPct != null ? `The quote's default of ${defaultMarkupPct}%.` : undefined}
                       onChange={(e) => update(line.key, { markupPct: blank(e.target.value) })}
                     />
                   </td>

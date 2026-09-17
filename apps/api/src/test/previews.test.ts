@@ -83,6 +83,7 @@ describe('record previews', () => {
       data: {
         name: 'No Values',
         permissions: {
+          accounts: { read: 'all', create: false, update: 'none', delete: 'none', export: false },
           deals: { read: 'all', create: false, update: 'none', delete: 'none', export: false, fields: { amount: 'hidden' } },
           contacts: { read: 'all', create: false, update: 'none', delete: 'none', export: false, fields: { email: 'hidden' } },
         } as never,
@@ -99,6 +100,11 @@ describe('record previews', () => {
     assert.ok(!('amount' in dealCard) || dealCard.amount === null, 'a hidden deal value stays hidden on hover');
     const contactCard = (await preview(reader, 'contact', contact.id)).body as Record<string, unknown>;
     assert.ok(!('email' in contactCard) || contactCard.email === null, 'a hidden email stays hidden on hover');
+
+    // A total is the field it sums: hiding the amount hides the pipeline built out of amounts.
+    const accountCard = (await preview(reader, 'account', fx.customer.id)).body as Record<string, unknown>;
+    assert.ok(!('openValue' in accountCard), 'the open pipeline is deal amounts added up');
+    assert.equal(accountCard.openDeals, 1, 'how many deals there are is not the money in them');
     assert.equal((await preview(reader, 'lead', d.id)).status, 403, 'a module the role cannot read at all');
   });
 });

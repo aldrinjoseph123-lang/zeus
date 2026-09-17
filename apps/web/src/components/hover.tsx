@@ -24,16 +24,18 @@ export type PreviewType = 'account' | 'deal' | 'contact' | 'lead';
 export const preview = (type: PreviewType, id?: string | null) => (id ? { 'data-preview': `${type}:${id}` } : {});
 
 const LINK = /^\/(accounts|deals|contacts|leads)\/([^/?#]+)$/;
+/** One ancestor walk per pointer event, rather than one per kind of thing we might find. */
+const HOVERABLE = '[data-preview], a[href], [title], [data-tip], [data-tip-owned]';
 const TYPE_OF: Record<string, PreviewType> = { accounts: 'account', deals: 'deal', contacts: 'contact', leads: 'lead' };
 const PREVIEW_DELAY = 400;
 const TIP_DELAY = 200;
 const LONG_PRESS = 500;
+const TIP_ID = 'zeus-tooltip';
 
 interface Target { el: HTMLElement; type: PreviewType; id: string }
 
-function previewTarget(from: EventTarget | null): Target | null {
-  const node = (from as Element | null)?.closest?.<HTMLElement>('[data-preview], a[href]');
-  if (!node || node.closest('[data-no-preview]')) return null;
+function asPreview(node: HTMLElement): Target | null {
+  if (node.closest('[data-no-preview]')) return null;
   if (node.dataset.preview) {
     const [type, id] = node.dataset.preview.split(':');
     return { el: node, type: type as PreviewType, id };
@@ -43,9 +45,21 @@ function previewTarget(from: EventTarget | null): Target | null {
   return { el: node, type: TYPE_OF[match[1]], id: match[2] };
 }
 
-function tipTarget(from: EventTarget | null): { el: HTMLElement; text: string } | null {
-  const el = (from as Element | null)?.closest?.<HTMLElement>('[title], [data-tip], [data-tip-owned]');
-  if (!el) return null;
+/** What the pointer is over: a record to preview, a tooltip to show, or neither. */
+function hovered(from: EventTarget | null): { preview: Target | null; tip: { el: HTMLElement; text: string } | null } {
+  let node = (from as Element | null)?.closest?.<HTMLElement>(HOVERABLE) ?? null;
+  while (node) {
+    const target = asPreview(node);
+    if (target) return { preview: target, tip: null };
+    const tip = tipTarget(node);
+    if (tip) return { preview: null, tip };
+    // A link Zeus does not preview, or an element whose title has been withdrawn: keep looking up.
+    node = node.parentElement?.closest<HTMLElement>(HOVERABLE) ?? null;
+  }
+  return { preview: null, tip: null };
+}
+
+function tipTarget(el: HTMLElement): { el: HTMLElement; text: string } | null {
   const title = el.getAttribute('title');
   if (title !== null) {
     // The browser shows `title` itself after a second; moved, it shows only ours.
@@ -71,6 +85,8 @@ export function HoverLayer() {
   const [tip, setTip] = useState<{ text: string; rect: DOMRect } | null>(null);
   const [card, setCard] = useState<{ type: PreviewType; id: string; rect: DOMRect } | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  /** The element the open card belongs to, so it can follow a list that redraws under it. */
+  const anchor = useRef<HTMLElement | null>(null);
   const timers = useRef<{ tip?: number; open?: number; close?: number; press?: number }>({});
   const pressed = useRef<{ x: number; y: number; opened: boolean } | null>(null);
   /** The record whose card is open, or about to open; and the element whose tooltip is. */
@@ -82,11 +98,18 @@ export function HoverLayer() {
     const running = timers.current;
     const clear = (name: keyof typeof running) => { window.clearTimeout(running[name]); running[name] = undefined; };
     const inCard = (node: EventTarget | null) => Boolean(node && cardRef.current?.contains(node as Node));
-    const closeCard = () => { clear('open'); clear('close'); openFor.current = null; pendingFor.current = null; setCard(null); };
-    const closeTip = () => { clear('tip'); tipEl.current = null; setTip(null); };
+    const closeCard = () => { clear('open'); clear('close'); openFor.current = null; pendingFor.current = null; anchor.current = null; setCard(null); };
+    const closeTip = () => {
+      clear('tip');
+      // Leave nothing pointing at a tooltip that is gone.
+      if (tipEl.current?.getAttribute('aria-describedby') === TIP_ID) tipEl.current.removeAttribute('aria-describedby');
+      tipEl.current = null;
+      setTip(null);
+    };
     const openCard = (target: Target) => {
       pendingFor.current = null;
       openFor.current = `${target.type}:${target.id}`;
+      anchor.current = target.el;
       setCard({ type: target.type, id: target.id, rect: target.el.getBoundingClientRect() });
     };
 
@@ -94,7 +117,7 @@ export function HoverLayer() {
       if ('pointerType' in e && e.pointerType === 'touch') return;
       if (e.type === 'focusin' && !(e.target as Element).matches?.(':focus-visible')) return;
       if (inCard(e.target)) { clear('close'); return; }
-      const target = previewTarget(e.target);
+      const { preview: target, tip: tipped } = hovered(e.target);
       if (target) {
         closeTip();
         clear('close');
@@ -105,12 +128,15 @@ export function HoverLayer() {
         running.open = window.setTimeout(() => openCard(target), PREVIEW_DELAY);
         return;
       }
-      const tipped = tipTarget(e.target);
       if (tipped && tipped.el === tipEl.current) return;
       closeTip();
       if (!tipped) return;
       tipEl.current = tipped.el;
-      running.tip = window.setTimeout(() => setTip({ text: tipped.text, rect: tipped.el.getBoundingClientRect() }), TIP_DELAY);
+      running.tip = window.setTimeout(() => {
+        // A control with its own text keeps it; the tooltip is what describes it.
+        if (!tipped.el.getAttribute('aria-label')) tipped.el.setAttribute('aria-describedby', TIP_ID);
+        setTip({ text: tipped.text, rect: tipped.el.getBoundingClientRect() });
+      }, TIP_DELAY);
     };
 
     const out = (e: PointerEvent | FocusEvent) => {
@@ -135,7 +161,7 @@ export function HoverLayer() {
       if (inCard(e.target)) return;
       if (e.pointerType !== 'touch') { closeCard(); return; }
       closeCard();
-      const target = previewTarget(e.target);
+      const target = hovered(e.target).preview;
       if (!target) return;
       pressed.current = { x: e.clientX, y: e.clientY, opened: false };
       running.press = window.setTimeout(() => {
@@ -187,6 +213,23 @@ export function HoverLayer() {
     };
   }, []);
 
+  /**
+   * A list that redraws under an open card would leave it pointing at a row that has moved, so
+   * the card follows its name. Only repositions: closing on a detached anchor shut the card
+   * while the pointer was resting on it, because a redraw can replace the very element the card
+   * was opened from. A shift big enough to move the name out from under the pointer closes the
+   * card anyway — that is the browser's own leave event, and it is the right answer.
+   */
+  useEffect(() => {
+    if (!card) return;
+    const tick = window.setInterval(() => {
+      const rect = anchor.current?.isConnected ? anchor.current.getBoundingClientRect() : null;
+      if (!rect) return;
+      setCard((open) => (open && (rect.top !== open.rect.top || rect.left !== open.rect.left) ? { ...open, rect } : open));
+    }, 250);
+    return () => window.clearInterval(tick);
+  }, [card]);
+
   return createPortal(
     <>
       {tip ? <Tooltip text={tip.text} rect={tip.rect} /> : null}
@@ -214,6 +257,7 @@ function Tooltip({ text, rect }: { text: string; rect: DOMRect }) {
   const above = rect.top > 44;
   return (
     <div
+      id={TIP_ID}
       role="tooltip"
       className="pointer-events-none fixed z-[70] max-w-[280px] -translate-x-1/2 border border-n800 bg-n950 px-2 py-1 text-[12px] leading-snug text-white shadow-[var(--shadow-md)]"
       style={{
