@@ -52,8 +52,9 @@ test('a long press previews on a touch screen, and a tap still opens the record'
   const cdp = await ctx.newCDPSession(page);
   const card = page.locator('[data-hover-card]');
 
-  await page.goto('/leads');
-  const name = page.locator('tbody tr [data-preview^="lead:"]').first();
+  // Accounts, not leads: a freshly seeded container has accounts on day one and need not have leads.
+  await page.goto('/accounts');
+  const name = page.locator('tbody tr [data-preview^="account:"]').first();
   await expect(name).toBeVisible();
   const box = (await name.boundingBox())!;
   const x = box.x + 8;
@@ -64,12 +65,14 @@ test('a long press previews on a touch screen, and a tap still opens the record'
   await page.waitForTimeout(700);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card).toBeVisible();
-  await expect(page).toHaveURL(/\/leads$/);
+  await expect(page).toHaveURL(/\/accounts$/);
 
-  // A tap elsewhere puts it away; a plain tap on the name opens the record.
+  // A tap elsewhere puts it away; a plain tap on the name opens the record. Read the name's
+  // position again first: closing the card lets the page settle, and the row moves with it.
   await page.touchscreen.tap(20, 800);
   await expect(card).toBeHidden();
-  await page.touchscreen.tap(x, y);
-  await expect(page).toHaveURL(/\/leads\/.+/);
+  const settled = (await name.boundingBox())!;
+  await page.touchscreen.tap(settled.x + 8, settled.y + settled.height / 2);
+  await expect(page).toHaveURL(/\/accounts\/.+/);
   await ctx.close();
 });
