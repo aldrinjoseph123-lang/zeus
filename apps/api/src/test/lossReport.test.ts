@@ -85,3 +85,70 @@ describe('the report catalogue offers what the role can open', () => {
     }
   });
 });
+
+/**
+ * The menu and the server have to agree.
+ *
+ * Twice now a screen has been offered to a role that could not open it: the quotes report
+ * scoped on a field quotes do not have, and the report catalogue listing all twenty reports
+ * to a role with two modules. Both were found by opening what was offered, so that is what
+ * this does — for every shipped role, and for a role built from two modules.
+ */
+describe('every screen a role is offered opens for it', () => {
+  /** Screen → the module the menu gates it on, as components/Layout.tsx does. */
+  const SCREENS: Array<[string, string]> = [
+    ['/api/dashboard/overview', 'dashboard'], ['/api/deals', 'deals'], ['/api/leads', 'leads'],
+    ['/api/accounts', 'accounts'], ['/api/partners', 'partners'], ['/api/contacts', 'contacts'],
+    ['/api/activities', 'activities'], ['/api/quotes', 'quotes'], ['/api/invoices', 'invoices'],
+    ['/api/purchase-orders', 'invoices'], ['/api/products', 'products'],
+    ['/api/subscriptions', 'deals'], ['/api/subscriptions/summary', 'deals'],
+    ['/api/reports', 'reports'], ['/api/targets', 'reports'], ['/api/imports', 'imports'],
+    ['/api/settings', 'settings'], ['/api/users', 'users'], ['/api/roles', 'roles'],
+    ['/api/audit', 'audit'], ['/api/system/logs', 'audit'], ['/api/system/status', 'audit'],
+    ['/api/email-log', 'audit'], ['/api/backups', 'backups'], ['/api/sessions', 'users'],
+    ['/api/notification-rules', 'settings'], ['/api/scheduled-reports', 'settings'],
+    ['/api/integrations/health', 'integrations'], ['/api/portal-admin/users', 'portal'],
+    // The queue is part of the dashboard, and the panel only asks for it when the reader can
+    // approve something — so the module that gates it is the dashboard, not deals.
+    ['/api/approvals/pending', 'dashboard'],
+  ];
+
+  async function sweep(user: { id: string; cookie: string }, label: string) {
+    const me = (await request(app, user as never).get('/api/auth/me')).body as { user: { id: string; role: { permissions: Record<string, { read?: string }> } } };
+    const perms = me.user.role.permissions ?? {};
+    const wrong: string[] = [];
+    for (const [url, module] of [...SCREENS, [`/api/coaching/${me.user.id}`, 'deals'] as [string, string]]) {
+      const read = perms[module]?.read ?? 'none';
+      const res = await request(app, user as never).get(url);
+      if (read !== 'none' && res.status !== 200) wrong.push(`${label}: ${url} is offered (${module}: ${read}) but answered ${res.status}`);
+      if (read === 'none' && res.status === 200) wrong.push(`${label}: ${url} is not offered (${module}) but opened anyway`);
+    }
+    return wrong;
+  }
+
+  it('for every shipped role', async () => {
+    const wrong = [
+      ...(await sweep(fx.admin, 'Administrator')),
+      ...(await sweep(fx.manager, 'Sales Manager')),
+      ...(await sweep(fx.rep, 'Sales Executive')),
+    ];
+    assert.deepEqual(wrong, []);
+  });
+
+  it('and for a role put together from two modules', async () => {
+    const role = await prisma.role.create({
+      data: {
+        name: 'Two Modules',
+        permissions: {
+          deals: { read: 'all', create: false, update: 'none', delete: 'none', export: false },
+          accounts: { read: 'all', create: false, update: 'none', delete: 'none', export: false },
+          reports: { read: 'all', create: false, update: 'none', delete: 'none', export: true },
+        } as never,
+      },
+    });
+    const user = await prisma.user.create({ data: { email: 'twomodules@test.local', name: 'two', passwordHash: 'x', roleId: role.id } });
+    const { SESSION_COOKIE, signSessionToken } = await import('../auth/session.js');
+    const wrong = await sweep({ id: user.id, cookie: `${SESSION_COOKIE}=${await signSessionToken(user.id, 12)}` }, 'Two Modules');
+    assert.deepEqual(wrong, []);
+  });
+});
