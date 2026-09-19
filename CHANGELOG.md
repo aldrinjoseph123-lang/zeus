@@ -14,6 +14,15 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Fixed — a quote's VAT rate on screen
+
+- **Changing a quote's VAT rate now moves its totals straight away.** The rate box changed the
+  quote, but the VAT and total beside it went on counting at the old rate until the quote was
+  saved and reopened, so a zero-rated quote showed 5% VAT while it was being written. What was
+  saved was always right; the screen now agrees with it before the save.
+- **Security update:** `fast-uri`, the address parser inside Fastify, moved to a patched release
+  (high-severity advisories for host confusion). Nothing to do after the deploy.
+
 ### Fixed — reports a role was offered but could not open
 
 - **The report catalogue now offers what the role can actually open.** It listed every report

@@ -100,6 +100,26 @@ test.describe('quote worksheet', () => {
     expect(errors.filter((e) => !/status of 400/.test(e))).toEqual([]);
   });
 
+  test('a new VAT rate moves the totals on screen before saving, to what the server then stores', async ({ page, request }) => {
+    const accounts = await (await request.get(`/api/accounts?search=${encodeURIComponent(E2E_ACCOUNT)}`)).json();
+    const quote = await (await request.post('/api/quotes', {
+      data: { accountId: accounts.data[0].id, lines: [{ description: 'Firewall support, one year', quantity: 1, unitPrice: 1000 }] },
+    })).json();
+
+    await page.goto(`/quotes/${quote.id}`);
+    const total = page.getByText('Total', { exact: true }).locator('..');
+    await expect(total).toContainText('1,050.00');
+
+    // Zero-rated: the quote's rate governs every line, so the total drops at once.
+    await page.getByLabel('VAT percent').fill('0');
+    await expect(total).toContainText('1,000.00');
+
+    await page.getByRole('button', { name: /^save$/i }).click();
+    await expect(page.getByText('Quote saved.')).toBeVisible();
+    const saved = await (await request.get(`/api/quotes/${quote.id}`)).json();
+    expect(Number(saved.total)).toBe(1000);
+  });
+
   test('reads a pasted vendor quote in, checks it against the vendor total, and applies it', async ({ page, request }) => {
     const accounts = await (await request.get(`/api/accounts?search=${encodeURIComponent(E2E_ACCOUNT)}`)).json();
     const created = await request.post('/api/quotes', { data: { accountId: accounts.data[0].id, defaultMarkupPct: 20, lines: [] } });

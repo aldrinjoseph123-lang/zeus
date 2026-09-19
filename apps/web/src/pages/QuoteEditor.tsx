@@ -124,7 +124,7 @@ export default function QuoteEditor() {
               markupPct: line.markupPct == null ? null : Number(line.markupPct),
               priceFromWorksheet: line.priceFromWorksheet,
             }))
-          : [blankLine(vatRate)],
+          : [blankLine(Number(quote.vatRate))],
       );
     } else if (isNew && settings) {
       setVatRate(Number(settings['finance.vatRate'] ?? 5));
@@ -133,7 +133,8 @@ export default function QuoteEditor() {
     }
   }, [quote, isNew, settings]);
 
-  const totals = useMemo(() => previewTotals(lines, discountPct), [lines, discountPct]);
+  // A quote line has no rate of its own: the quote's governs every taxable line, as it does on the server.
+  const totals = useMemo(() => previewTotals(lines.map((line) => ({ ...line, vatRate })), discountPct), [lines, discountPct, vatRate]);
   // Markup is on cost, margin on the sell price; both are shown because people price in one
   // and Zeus's rules measure the other.
   const markupPct = totals.totalCost > 0 ? ((totals.netAfterDiscount - totals.totalCost) / totals.totalCost) * 100 : null;
@@ -495,7 +496,7 @@ export default function QuoteEditor() {
                   Discount
                   <Input
                     className="w-16 px-1.5 py-0.5 text-right text-[12px]"
-                    type="number" min="0" max="100" step="0.5"
+                    type="number" min="0" max="100" step="0.5" aria-label="Discount percent"
                     value={discountPct}
                     disabled={locked}
                     onChange={(e) => setDiscountPct(Number(e.target.value))}
@@ -512,7 +513,7 @@ export default function QuoteEditor() {
                   VAT
                   <Input
                     className="w-16 px-1.5 py-0.5 text-right text-[12px]"
-                    type="number" min="0" max="100" step="0.5"
+                    type="number" min="0" max="100" step="0.5" aria-label="VAT percent"
                     value={vatRate}
                     disabled={locked}
                     onChange={(e) => setVatRate(Number(e.target.value))}
