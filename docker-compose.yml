@@ -3,10 +3,17 @@
 # Caddy terminates TLS and gets a certificate automatically once ZEUS_DOMAIN
 # points at this server. For a LAN-only install set ZEUS_DOMAIN=:80.
 
+# Docker keeps every log line forever by default; on one box that is the disk filling
+# up one day. 50 MB a service, then the oldest file goes.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '5' }
+
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-zeus}
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
@@ -32,6 +39,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *logging
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +68,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *logging
     depends_on:
       - app
     environment:

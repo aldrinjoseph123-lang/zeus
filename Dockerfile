@@ -12,12 +12,11 @@ COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY apps/portal/package.json apps/portal/
+# The API's postinstall generates the Prisma client, so the schema must be here first.
+COPY apps/api/prisma/schema.prisma apps/api/prisma/
 # ci, not install: the lockfile decides, so an image built today matches one built in
 # six months. Install scripts stay on because Prisma fetches its engines in one.
 RUN npm ci --include=dev
-
-COPY apps/api/prisma apps/api/prisma
-RUN npx prisma generate --schema apps/api/prisma/schema.prisma
 
 COPY . .
 RUN npm run build --workspace=apps/api \

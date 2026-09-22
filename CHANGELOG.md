@@ -14,6 +14,19 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Changed — the box looks after itself a little more
+
+- **Container logs are capped.** Docker kept every log line forever; now each service keeps
+  50 MB and drops the oldest. **Needs a hand:** the first deploy with this recreates the
+  database and Caddy containers too (their compose config changed), so expect a few seconds
+  more downtime than usual that night. `deploy.sh` still dumps the database first.
+- **CI now fails on a high-severity dependency advisory** in the runtime tree, and the lint
+  step fails if the warning count grows (30 in the app, 1 in the portal — the number can only
+  come down). `SECURITY.md` tells a finder how to report privately.
+- **`npm ci` generates the Prisma client itself** (a `postinstall`), so a fresh checkout or
+  a wiped `node_modules` no longer boots the API into `does not provide an export named
+  'PrismaClient'`.
+
 ### Fixed — a quote's VAT rate on screen
 
 - **Changing a quote's VAT rate now moves its totals straight away.** The rate box changed the

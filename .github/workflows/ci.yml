@@ -71,6 +71,9 @@ jobs:
       - run: npm ci
       - run: npm run db:generate
       - run: npm run lint
+      # Advisories of high severity and above, in the tree that ships; the exceptions
+      # and their reasons are in scripts/audit.mjs.
+      - run: npm run audit
       - run: npm run build --if-present
       - run: npm test
 
