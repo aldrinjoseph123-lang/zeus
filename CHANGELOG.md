@@ -23,6 +23,9 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 - **CI now fails on a high-severity dependency advisory** in the runtime tree, and the lint
   step fails if the warning count grows (30 in the app, 1 in the portal — the number can only
   come down). `SECURITY.md` tells a finder how to report privately.
+- **A deploy also checks the app page.** `deploy.sh` waited for `/api/health`, which proves
+  the API and its database; a build that shipped no bundle was healthy and blank. It now
+  also fetches `/` and rolls back if the page is not there.
 - **CI is a third of the length.** The test job took 26 minutes, 18 of them a second run of
   the API suite for coverage in which every test file waited on the database pool's idle
   timeout before exiting. The pool now lets the process exit when idle (`allowExitOnIdle`,
