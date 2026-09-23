@@ -16,6 +16,8 @@ const schema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:5174'),
   /** Where the partner/customer portal is served — its own host, so its cookie cannot cross over. */
   PORTAL_URL: z.string().url().default('http://localhost:5175'),
+  /** The release tag the box is running; compose passes ZEUS_TAG through. */
+  ZEUS_VERSION: z.string().default('dev'),
   SEED_ADMIN_EMAIL: z.string().email().default('admin@protect24x7.ae'),
   SEED_ADMIN_PASSWORD: z.string().default('ChangeMe#2026'),
   UPLOAD_DIR: z.string().default('./uploads'),

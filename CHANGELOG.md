@@ -14,6 +14,13 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Added — which release this is, and what changed in it
+
+- **Settings → System status names the running release** and shows that release's entry
+  from this changelog, so whoever is looking at the box can see what the last deploy
+  brought without opening GitHub. `/api/health` reports the version too, so `deploy.sh`
+  prints it the moment a release comes up. Nothing to do: compose passes the tag through.
+
 ### Changed — the box looks after itself a little more
 
 - **Container logs are capped.** Docker kept every log line forever; now each service keeps

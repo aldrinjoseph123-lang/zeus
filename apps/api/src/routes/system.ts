@@ -8,6 +8,7 @@ import { runDataHealthChecks } from '../services/dataHealth.js';
 import { tableXlsx } from '../services/xlsx.js';
 import { audit } from '../lib/audit.js';
 import { clientIp } from '../lib/http.js';
+import { changes, version } from '../lib/release.js';
 
 /**
  * Status page + system log for the internal team. Both are read-only and gated by
@@ -24,6 +25,8 @@ export default async function systemRoutes(app: FastifyInstance): Promise<void> 
 
     return {
       service: 'zeus-api',
+      version,
+      changes,
       time: new Date().toISOString(),
       ok: components.every((c) => c.ok),
       process: {

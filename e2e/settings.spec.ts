@@ -106,3 +106,17 @@ test('settings: the save bar counts edits and asks before they are thrown away',
   await page.goto('/settings/company');
   await expect(page.getByLabel('City')).toHaveValue(stored);
 });
+
+test('system status names the release it is running', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.goto('/settings/status');
+  // "dev" on a dev server and in CI's image; the tag on the box. Either way it is named.
+  const version = page.locator('dt', { hasText: 'Version' }).locator('..').locator('dd');
+  await expect(version).toHaveText(/^(dev|v\d+\.\d+\.\d+)$/);
+  if (process.env.E2E_SCREENSHOT) {
+    await page.setViewportSize({ width: 1280, height: 2600 });
+    await page.screenshot({ path: process.env.E2E_SCREENSHOT, fullPage: true });
+  }
+  expect(errors).toEqual([]);
+});

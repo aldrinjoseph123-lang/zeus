@@ -34,6 +34,18 @@ describe('system status', () => {
     assert.ok(body.process.uptimeSeconds >= 0);
     assert.ok(body.components.some((c) => c.key === 'backups'));
   });
+
+  it('names the release it is running and what changed in it', async () => {
+    const body = (await request(app, fx.admin).get('/api/system/status')).body as { version: string; changes: string };
+    assert.equal(body.version, 'dev', 'no ZEUS_VERSION in the test environment');
+    assert.equal(typeof body.changes, 'string');
+    const { changesFor } = await import('../lib/release.js');
+    const log = '# Changelog\n\n## Unreleased\n\n- soon\n\n## v1.6.0 — 16 September 2026\n\n### Added\n\n- **hover.** cards\n\n## v1.5.0 — 12 September 2026\n\n- partners\n';
+    assert.equal(changesFor('v1.6.0', log), '## v1.6.0 — 16 September 2026\n\n### Added\n\n- **hover.** cards');
+    assert.equal(changesFor('dev', log), '## Unreleased\n\n- soon');
+    assert.equal(changesFor('v1.5.0', log), '## v1.5.0 — 12 September 2026\n\n- partners', 'the last section runs to the end');
+    assert.equal(changesFor('v9.9.9', log), '', 'a version the changelog does not know shows nothing');
+  });
 });
 
 describe('system log', () => {

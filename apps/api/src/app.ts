@@ -191,7 +191,7 @@ export async function buildApp() {
 
   app.get('/api/health', async () => {
     await prisma.$queryRaw`SELECT 1`;
-    return { ok: true, service: 'zeus-api', time: new Date().toISOString() };
+    return { ok: true, service: 'zeus-api', version: env.ZEUS_VERSION, time: new Date().toISOString() };
   });
 
   await app.register(authRoutes);

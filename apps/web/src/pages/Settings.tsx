@@ -3071,6 +3071,8 @@ function AuditSection() {
 
 interface SystemStatus {
   ok: boolean;
+  version: string;
+  changes: string;
   time: string;
   process: { uptimeSeconds: number; startedAt: string; node: string; pid: number; rssMb: number; heapUsedMb: number };
   components: Array<{ key: string; label: string; ok: boolean; detail: string; latencyMs?: number; uptime: { day: number; week: number } | null }>;
@@ -3220,8 +3222,9 @@ function StatusSection() {
 
       <Card>
         <CardHeader title="Runtime" subtitle="The API process serving this app." />
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-4 sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-4 sm:grid-cols-5">
           {[
+            ['Version', data.version],
             ['Uptime', uptime(data.process.uptimeSeconds)],
             ['Node', data.process.node],
             ['Memory (RSS)', `${data.process.rssMb} MB`],
@@ -3234,6 +3237,44 @@ function StatusSection() {
           ))}
         </dl>
       </Card>
+
+      {data.changes ? (
+        <Card>
+          <CardHeader
+            title={data.version === 'dev' ? 'Unreleased changes' : `What changed in ${data.version}`}
+            subtitle="From the changelog shipped with this release."
+          />
+          <ReleaseNotes text={data.changes} />
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+/** One changelog entry: its headings, bullets, bold and code — nothing more is used. */
+function ReleaseNotes({ text }: { text: string }) {
+  const code = (s: string) => s.split(/(`[^`]+`)/).map((part, i) =>
+    part.startsWith('`') ? <code key={i} className="font-mono text-[12px]">{part.slice(1, -1)}</code> : part);
+  const rich = (s: string) => s.split(/(\*\*[^*]+\*\*)/).map((part, i) =>
+    part.startsWith('**') ? <strong key={i}>{code(part.slice(2, -2))}</strong> : code(part));
+  // The changelog wraps its lines by hand: a bullet or paragraph runs until the next blank line.
+  const blocks: Array<{ kind: 'h' | 'li' | 'p'; text: string }> = [];
+  let open = false;
+  for (const raw of text.split('\n').slice(1)) {
+    const line = raw.trim();
+    if (!line) { open = false; continue; }
+    if (line.startsWith('### ')) { blocks.push({ kind: 'h', text: line.slice(4) }); open = false; }
+    else if (line.startsWith('- ')) { blocks.push({ kind: 'li', text: line.slice(2) }); open = true; }
+    else if (open) blocks[blocks.length - 1].text += ` ${line}`;
+    else { blocks.push({ kind: 'p', text: line }); open = true; }
+  }
+  return (
+    <div className="space-y-2 px-4 py-4 text-[13px]">
+      {blocks.map((b, i) => (
+        b.kind === 'h' ? <h4 key={i} className="eyebrow mt-3 first:mt-0">{b.text}</h4>
+          : b.kind === 'li' ? <p key={i} className="flex gap-2"><span aria-hidden="true">•</span><span>{rich(b.text)}</span></p>
+            : <p key={i} className="text-muted">{rich(b.text)}</p>
+      ))}
     </div>
   );
 }

@@ -51,6 +51,8 @@ services:
       # The partner/customer portal answers on its own hostname; the default keeps it unreachable from outside.
       PORTAL_URL: ${PORTAL_URL:-http://localhost:5175}
       NODE_ENV: production
+      # Shown in Settings → System status and by /api/health, with that release's notes.
+      ZEUS_VERSION: ${ZEUS_TAG:-dev}
       PORT: 4000
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@protect24x7.ae}
       SEED_ADMIN_PASSWORD: "${SEED_ADMIN_PASSWORD:?set a first-login password in .env}"
