@@ -10,7 +10,7 @@ import { env, isProd } from './env.js';
  * One adapter (and therefore one pg pool) per process, which is what the single-node
  * deployment wants — the previous PrismaClient managed its own pool the same way.
  */
-const adapter = new PrismaPg({ connectionString: env.DATABASE_URL });
+const adapter = new PrismaPg({ connectionString: env.DATABASE_URL, allowExitOnIdle: true });
 
 export const prisma = new PrismaClient({
   adapter,
