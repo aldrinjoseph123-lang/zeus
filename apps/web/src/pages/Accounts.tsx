@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Plus } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
+import { ExportButton } from '../components/exportButton';
 import { useAuth } from '../lib/auth';
 import { relative } from '../lib/format';
 import {
@@ -90,7 +91,7 @@ export default function Accounts() {
           </button>
           {can('accounts', 'export') ? (
             <div className="ml-auto flex gap-2">
-              <Button size="sm" icon={<Download size={13} />} onClick={() => exportAccounts('xlsx')}>Excel</Button>
+              <ExportButton list="accounts" query={{ search: debounced, type, industry, ownerId, stale: stale || undefined }} />
               <Button size="sm" icon={<Download size={13} />} onClick={() => exportAccounts('pdf')}>PDF</Button>
             </div>
           ) : null}

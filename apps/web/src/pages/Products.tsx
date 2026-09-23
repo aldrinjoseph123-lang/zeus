@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { api, ApiError, qs } from '../lib/api';
+import { ExportButton } from '../components/exportButton';
 import { useAuth } from '../lib/auth';
 import { money, percent } from '../lib/format';
 import {
@@ -47,6 +48,7 @@ export default function Products() {
           <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search SKU, name, vendor…" className="w-full sm:w-72" />
           <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1); }} placeholder="All types" options={[{ value: 'PRODUCT', label: 'Products' }, { value: 'SERVICE', label: 'Services' }]} className="w-[140px]" />
           <ListSelect listKey="lists.productCategories" value={category} onChange={(v) => { setCategory(v); setPage(1); }} placeholder="All categories" className="w-[190px]" />
+          <div className="ml-auto"><ExportButton list="products" query={{ search: debounced, type, category }} /></div>
         </Toolbar>
 
         {isLoading ? (

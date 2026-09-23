@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, LayoutGrid, Plus, Rows3 } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
+import { ExportButton } from '../components/exportButton';
 import { useAuth } from '../lib/auth';
 import { date, daysBetween, money, moneyShort, percent } from '../lib/format';
 import {
@@ -354,7 +355,7 @@ function DealList() {
           />
           {can('deals', 'export') ? (
             <>
-              <Button size="sm" icon={<Download size={13} />} onClick={() => exportList('xlsx')}>Excel</Button>
+              <ExportButton list="deals" query={{ search: debounced, status, ownerId, type, hasPartner: channel, sortBy, sortDir }} />
               <Button size="sm" icon={<Download size={13} />} onClick={() => exportList('pdf')}>PDF</Button>
             </>
           ) : null}

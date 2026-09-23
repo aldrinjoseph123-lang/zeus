@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Plus } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
+import { ExportButton } from '../components/exportButton';
 import { useAuth } from '../lib/auth';
 import { date, money, relative } from '../lib/format';
 import {
@@ -76,7 +77,7 @@ export default function Leads() {
           <OwnerSelect value={ownerId} onChange={(v) => { setOwnerId(v); setPage(1); }} className="w-[160px]" />
           {can('leads', 'export') ? (
             <div className="ml-auto flex gap-2">
-              <Button size="sm" icon={<Download size={13} />} onClick={() => exportLeads('xlsx')}>Excel</Button>
+              <ExportButton list="leads" query={{ search: debounced, status, source, ownerId }} />
               <Button size="sm" icon={<Download size={13} />} onClick={() => exportLeads('pdf')}>PDF</Button>
             </div>
           ) : null}

@@ -14,6 +14,16 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Added — export the list you are looking at
+
+- **Every list exports to Excel, exactly as filtered.** Deals, leads, accounts, contacts, quotes,
+  invoices and products have an Excel button that downloads what is on screen — the search,
+  every filter, the sort and the reader's own view (owner scope and hidden fields apply as on
+  the page). The Excel buttons on deals, leads, accounts and quotes used to download a
+  *report* that ignored most of the filters; PDF still does. Ten thousand rows at most; the
+  sheet says so if there were more. Needs the module's **export** permission, as before; each
+  export is in the audit trail with its filters.
+
 ### Added — which release this is, and what changed in it
 
 - **Settings → System status names the running release** and shows that release's entry

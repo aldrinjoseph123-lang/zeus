@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Plus } from 'lucide-react';
-import { api, ApiError, download, qs } from '../lib/api';
+import { Plus } from 'lucide-react';
+import { api, qs } from '../lib/api';
+import { ExportButton } from '../components/exportButton';
 import { useAuth } from '../lib/auth';
 import { date, money, percent } from '../lib/format';
 import {
   Badge, Button, Card, DataTable, EmptyState, Loading, PageHeader, Pagination, SearchInput,
-  Select, useDebounced, useToast,
+  Select, useDebounced,
 } from '../components/ui';
 import { preview } from '../components/hover';
 import { Toolbar } from '../components/pickers';
@@ -28,7 +29,6 @@ const STATUS_TONE: Record<string, 'neutral' | 'info' | 'secure' | 'accent' | 'wa
 
 export default function Quotes() {
   const navigate = useNavigate();
-  const toast = useToast();
   const { can, sees } = useAuth();
 
   const [search, setSearch] = useState('');
@@ -50,14 +50,7 @@ export default function Quotes() {
         description="AED, 5% VAT applied to taxable lines. Every quote prints on the Zeus letterhead."
         actions={
           <>
-            {can('quotes', 'export') ? (
-              <Button
-                icon={<Download size={14} />}
-                onClick={() => download(`/reports/quotes?format=xlsx${qs({ status })}`, 'zeus-quotes.xlsx').catch((err) => toast.push(err instanceof ApiError ? err.message : 'Export failed.', 'error'))}
-              >
-                Excel
-              </Button>
-            ) : null}
+            <ExportButton list="quotes" query={{ search: debounced, status }} />
             {can('quotes', 'create') ? (
               <Button to="/quotes/new" variant="accent" icon={<Plus size={14} />}>New quote</Button>
             ) : null}

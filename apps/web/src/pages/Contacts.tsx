@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { api, ApiError, qs } from '../lib/api';
+import { ExportButton } from '../components/exportButton';
 import { useAuth } from '../lib/auth';
 import {
   Badge, Button, Card, DataTable, EmptyState, ErrorNote, Field, Input, Loading, Modal,
@@ -48,6 +49,7 @@ export default function Contacts() {
         <Toolbar>
           <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search name, email, phone, account…" className="w-full sm:w-80" />
           <OwnerSelect value={ownerId} onChange={(v) => { setOwnerId(v); setPage(1); }} className="w-[160px]" />
+          <div className="ml-auto"><ExportButton list="contacts" query={{ search: debounced, ownerId }} /></div>
         </Toolbar>
 
         {can('contacts', 'update') || can('contacts', 'delete') ? (

@@ -27,6 +27,7 @@ import quoteRoutes from './routes/quotes.js';
 import activityRoutes from './routes/activities.js';
 import dashboardRoutes from './routes/dashboard.js';
 import reportRoutes from './routes/reports.js';
+import exportRoutes from './routes/exports.js';
 import importRoutes from './routes/imports.js';
 import attachmentRoutes from './routes/attachments.js';
 import invoiceRoutes from './routes/invoices.js';
@@ -206,6 +207,7 @@ export async function buildApp() {
   await app.register(activityRoutes);
   await app.register(dashboardRoutes);
   await app.register(reportRoutes);
+  await app.register(exportRoutes);
   await app.register(importRoutes);
   await app.register(attachmentRoutes);
   await app.register(invoiceRoutes);

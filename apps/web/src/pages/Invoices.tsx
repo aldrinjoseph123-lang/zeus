@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Plus } from 'lucide-react';
 import { api, ApiError, download, qs } from '../lib/api';
+import { ExportButton } from '../components/exportButton';
 import { useAuth } from '../lib/auth';
 import { date, money } from '../lib/format';
 import {
@@ -51,6 +52,7 @@ export default function Invoices() {
           {can('invoices', 'create') ? (
             <Button to="/invoices/new" variant="accent" icon={<Plus size={14} />}>New invoice</Button>
           ) : null}
+          <ExportButton list="invoices" query={{ search: debounced, status, type: docType, overdue: overdue || undefined }} />
           {can('invoices', 'export') ? (
             <Button
               icon={<Download size={14} />}
