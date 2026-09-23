@@ -26,6 +26,13 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 - **A deploy also checks the app page.** `deploy.sh` waited for `/api/health`, which proves
   the API and its database; a build that shipped no bundle was healthy and blank. It now
   also fetches `/` and rolls back if the page is not there.
+- **Every CI run is now an upgrade drill.** The previous release's own image boots first
+  and writes a working company into the database (staff, vendors, deals, invoices,
+  subscriptions); the new image then boots on top of it, so its migrations are applied to
+  rows shaped by the release before — what `deploy.sh` will do on the box — rather than to
+  an empty database. A migration that only works on empty tables now fails in CI.
+- **A nightly run shuffles the test files** (06:00 Dubai, on `main`) to catch two tests
+  leaning on each other's leftovers, and prints the order so a failure can be replayed.
 - **CI is a third of the length.** The test job took 26 minutes, 18 of them a second run of
   the API suite for coverage in which every test file waited on the database pool's idle
   timeout before exiting. The pool now lets the process exit when idle (`allowExitOnIdle`,

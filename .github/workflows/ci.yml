@@ -7,6 +7,10 @@ on:
   # Kept for pull requests from forks, whose pushes never reach this repo. Same-repo
   # PRs are filtered out at the job level below so they do not run twice.
   pull_request:
+  # Nightly, on main: the API suite in a random file order (see the test job). 02:00 UTC
+  # is 06:00 in Dubai, before anyone is in.
+  schedule:
+    - cron: '0 2 * * *'
 
 # A newer push to the same branch makes the run in flight irrelevant — cancel it rather
 # than paying for a Docker build whose result nobody will read.
@@ -18,7 +22,7 @@ jobs:
   test:
     # Skip the duplicate run when a PR comes from a branch in this repo — the push
     # event already covered it. Fork PRs have no such push, so they still run.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
 
     # Postgres 17 matches the production image; the harness refuses any DB whose
@@ -85,9 +89,25 @@ jobs:
       # exist to stop coverage sliding, so raise them when it rises rather than leaving
       # the slack. A failing test fails this step too; read the output before the totals.
       - name: API tests, with coverage that must not slide
+        if: github.event_name != 'schedule'
         working-directory: apps/api
         # DATABASE_URL and TEST_DATABASE_URL come from the job-level env above.
         run: npm run test:coverage
+
+      # Nightly: the same suite with the files in a random order, one process each, to
+      # find two tests talking to each other through leftover state — both such faults
+      # this project has had were found by accident. Node sorts the files it is given,
+      # so the order comes from the shell, and it is printed so a failure can be re-run.
+      - name: Nightly — the suite in a random file order
+        if: github.event_name == 'schedule'
+        working-directory: apps/api
+        run: |
+          files=$(ls src/test/*.test.ts | shuf)
+          echo "$files" | tr '\n' ' '; echo
+          for f in $files; do
+            npx tsx --test --test-force-exit --test-concurrency=1 "$f" \
+              || { echo "::error::$f failed in this order — see the list above"; exit 1; }
+          done
 
   # The Dockerfile is what actually gets deployed, so CI has to prove it still builds
   # *and* still boots. Its own job rather than a step above: a deploy break should read
@@ -95,7 +115,7 @@ jobs:
   docker:
     # Skip the duplicate run when a PR comes from a branch in this repo — the push
     # event already covered it. Fork PRs have no such push, so they still run.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
 
     # packages: write is what lets a tag push publish the image to ghcr.io below.
@@ -111,11 +131,13 @@ jobs:
         env:
           POSTGRES_USER: zeus
           POSTGRES_PASSWORD: zeus
-          POSTGRES_DB: zeus_boot
+          # The name matters: dist/simulate.js refuses any database not named zeus_sim,
+          # zeus_demo or zeus_audit, which is what keeps it away from a live system.
+          POSTGRES_DB: zeus_sim
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U zeus -d zeus_boot"
+          --health-cmd "pg_isready -U zeus -d zeus_sim"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -145,14 +167,44 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # A migration that applies cleanly to an empty database can still fail on a full
+      # one: a data migration, a NOT NULL added to a column with rows, a unique index
+      # over values that already repeat. This runs the previous release's own image on
+      # the database first and has it write a working company (dist/simulate.js: staff,
+      # vendors, deals, invoices, subscriptions), so the boot below is a real upgrade —
+      # this image's pending migrations applied to rows shaped by the release before it,
+      # which is what deploy.sh will do on the box.
+      - name: Upgrade drill — the previous release fills the database
+        run: |
+          prev=$(git ls-remote --tags --refs origin 'v*' | sed 's|.*/||' \
+                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$GITHUB_REF_NAME" | sort -V | tail -1)
+          echo "previous release: $prev"
+          docker run -d --name zeus-prev --network host \
+            -e DATABASE_URL='postgresql://zeus:zeus@localhost:5432/zeus_sim?schema=public' \
+            -e APP_SECRET='ci-boot-check-secret-not-used-anywhere-0123456789ab' \
+            -e APP_URL='http://localhost:4000' \
+            -e SEED_ADMIN_PASSWORD='CiBootCheck#2026' \
+            -e RATE_LIMIT_MAX='5000' \
+            "ghcr.io/${{ github.repository }}:$prev"
+          for i in $(seq 1 90); do
+            curl -fsS -o /dev/null http://localhost:4000/api/health 2>/dev/null && break
+            if [ "$(docker inspect -f '{{.State.Running}}' zeus-prev)" != "true" ]; then
+              echo "::error::$prev exited before becoming healthy"; docker logs zeus-prev 2>&1 | tail -30; exit 1
+            fi
+            sleep 1
+          done
+          docker exec zeus-prev node dist/simulate.js
+          docker rm -f zeus-prev
+
       # Building an image only proves it compiles. This proves it *runs*: the entrypoint
-      # waits for Postgres, applies migrations, seeds, and serves /api/health — the exact
-      # sequence a real deploy performs, and the one a change to the data layer (a Prisma
-      # major, a driver adapter, a Node bump) would break without touching a single test.
-      - name: Boot the image and wait for it to serve traffic
+      # waits for Postgres, applies the pending migrations to the database the previous
+      # release just filled, re-seeds, and serves /api/health — the exact sequence a real
+      # deploy performs, and the one a change to the data layer (a Prisma major, a driver
+      # adapter, a Node bump) would break without touching a single test.
+      - name: Boot the image on that database and wait for it to serve traffic
         run: |
           docker run -d --name zeus-boot --network host \
-            -e DATABASE_URL='postgresql://zeus:zeus@localhost:5432/zeus_boot?schema=public' \
+            -e DATABASE_URL='postgresql://zeus:zeus@localhost:5432/zeus_sim?schema=public' \
             -e APP_SECRET='ci-boot-check-secret-not-used-anywhere-0123456789ab' \
             -e APP_URL='http://localhost:4000' \
             -e SEED_ADMIN_PASSWORD='CiBootCheck#2026' \
@@ -278,9 +330,10 @@ jobs:
       - name: Container logs
         if: always()
         run: |
+          echo "───── previous release (only if the drill failed) ─────"; docker logs zeus-prev 2>&1 || true
           echo "───── app ─────"; docker logs zeus-boot 2>&1 || true
           echo "───── caddy ─────"; docker logs zeus-caddy 2>&1 | tail -40 || true
 
       - name: Stop the containers
         if: always()
-        run: docker rm -f zeus-boot zeus-caddy 2>/dev/null || true
+        run: docker rm -f zeus-prev zeus-boot zeus-caddy 2>/dev/null || true
