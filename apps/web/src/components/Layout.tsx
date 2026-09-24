@@ -422,8 +422,7 @@ const PAGES = [
 /** One search box across deals, accounts, leads and contacts — and a ⌘K palette. */
 function GlobalSearch() {
   const [term, setTerm] = useState('');
-  // Four requests per round, so query the settled term rather than every keystroke:
-  // typing a customer name was up to 44 calls against a rate limit the office shares.
+  // Query the settled term rather than every keystroke: the office shares one rate limit.
   const settled = useDebounced(term, 300);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -447,19 +446,11 @@ function GlobalSearch() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // One request for every kind of record; the server decides what this person may see.
   const { data, isFetching } = useQuery({
     queryKey: ['global-search', settled],
     enabled: settled.trim().length >= 2,
-    queryFn: async () => {
-      const search = encodeURIComponent(settled.trim());
-      const [deals, accounts, leads, contacts] = await Promise.all([
-        can('deals', 'read') ? api.get<{ data: Array<{ id: string; reference: string; name: string; account: { name: string } }> }>(`/deals?search=${search}&pageSize=5`) : { data: [] },
-        can('accounts', 'read') ? api.get<{ data: Array<{ id: string; name: string; type: string }> }>(`/accounts?search=${search}&pageSize=5`) : { data: [] },
-        can('leads', 'read') ? api.get<{ data: Array<{ id: string; firstName: string; lastName: string; company: string }> }>(`/leads?search=${search}&pageSize=5`) : { data: [] },
-        can('contacts', 'read') ? api.get<{ data: Array<{ id: string; firstName: string; lastName: string; account: { name: string } | null }> }>(`/contacts?search=${search}&pageSize=5`) : { data: [] },
-      ]);
-      return { deals: deals.data, accounts: accounts.data, leads: leads.data, contacts: contacts.data };
-    },
+    queryFn: () => api.get<{ groups: Array<{ label: string; rows: Array<{ id: string; primary: string; secondary: string; path: string; type?: 'deal' | 'account' | 'lead' | 'contact' }> }> }>(`/search?q=${encodeURIComponent(settled.trim())}`),
   });
 
   useEffect(() => {
@@ -486,10 +477,10 @@ function GlobalSearch() {
 
   const groups = [
     { label: 'Navigate', rows: navRows },
-    { label: 'Deals', rows: (data?.deals ?? []).map((d) => ({ id: d.id, primary: `${d.reference} · ${d.name}`, secondary: d.account.name, path: `/deals/${d.id}`, card: preview('deal', d.id) })) },
-    { label: 'Accounts', rows: (data?.accounts ?? []).map((a) => ({ id: a.id, primary: a.name, secondary: a.type, path: `/accounts/${a.id}`, card: preview('account', a.id) })) },
-    { label: 'Leads', rows: (data?.leads ?? []).map((l) => ({ id: l.id, primary: `${l.firstName} ${l.lastName}`, secondary: l.company, path: `/leads/${l.id}`, card: preview('lead', l.id) })) },
-    { label: 'Contacts', rows: (data?.contacts ?? []).map((c) => ({ id: c.id, primary: `${c.firstName} ${c.lastName}`, secondary: c.account?.name ?? '—', path: `/contacts?search=${encodeURIComponent(c.firstName)}`, card: preview('contact', c.id) })) },
+    ...(data?.groups ?? []).map((group) => ({
+      label: group.label,
+      rows: group.rows.map((row) => ({ ...row, card: row.type ? preview(row.type, row.id) : {} })),
+    })),
   ].filter((group) => group.rows.length > 0);
 
   return (

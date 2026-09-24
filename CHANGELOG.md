@@ -14,6 +14,15 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Changed — the search box finds everything, in one request
+
+- **⌘K finds quotes, invoices and purchase orders** — by number, by the customer's PO number,
+  by supplier invoice number — and products by SKU, alongside the deals, accounts, leads and
+  contacts it found before. Whatever was typed exactly comes first. It is one request now
+  instead of four, which also means far less of the office's shared rate limit is spent on
+  typing. Each kind of record shows only to a role that may read it, and only what that
+  role's own list would show.
+
 ### Added — export the list you are looking at
 
 - **Every list exports to Excel, exactly as filtered.** Deals, leads, accounts, contacts, quotes,
