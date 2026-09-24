@@ -14,6 +14,15 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Changed — the request limit is per person, not per office
+
+- **The rate limit counts per session.** It was 300 requests a minute per address, and an
+  office shares one address — so a colleague's typing spent your budget and the "too many
+  requests" landed on whoever clicked next. Each signed-in session now has its own 300;
+  portal visitors likewise; only anonymous traffic (the sign-in form) still shares the
+  address's budget, which is where a limit on strangers belongs. `RATE_LIMIT_MAX` still sets
+  the number.
+
 ### Changed — the search box finds everything, in one request
 
 - **⌘K finds quotes, invoices and purchase orders** — by number, by the customer's PO number,

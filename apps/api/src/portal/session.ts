@@ -54,6 +54,19 @@ export function clearPortalSession(reply: FastifyReply): void {
   reply.clearCookie(PORTAL_COOKIE, { path: '/' });
 }
 
+/** The portal session id a request carries, verified but not checked for liveness — for
+ * the rate limiter, which runs on every request and must not touch the database. */
+export async function portalSidFromRequest(request: FastifyRequest): Promise<string | null> {
+  const token = request.cookies?.[PORTAL_COOKIE];
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secret, { issuer: ISSUER });
+    return typeof payload.sid === 'string' ? payload.sid : typeof payload.sub === 'string' ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function portalClaimsFromRequest(request: FastifyRequest): Promise<PortalClaims | null> {
   const token = request.cookies?.[PORTAL_COOKIE];
   if (!token) return null;

@@ -4,6 +4,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
+import { rateLimitKey } from './auth/rateLimitKey.js';
 import fastifyStatic from '@fastify/static';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -126,11 +127,15 @@ export async function buildApp() {
    * drive a real built image, where NODE_ENV is production and turning it off would
    * change what is being tested. So the ceiling is configurable instead, and CI boots
    * that instance with a high one. The default is the number that actually ships.
+   *
+   * The budget is per session, not per address — see rateLimitKey. An office behind one
+   * address used to share a single 300 a minute.
    */
   await app.register(rateLimit, {
     global: process.env.NODE_ENV !== 'test',
     max: env.RATE_LIMIT_MAX,
     timeWindow: '1 minute',
+    keyGenerator: rateLimitKey,
   });
 
   /** Roles trusted with money and the roster — 2FA is required for them, not optional. */
