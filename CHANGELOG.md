@@ -14,6 +14,22 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Added — a customer can accept a quotation themselves
+
+- **The quotation email carries an accept link.** It opens the quote — the sell side only,
+  never cost or margin — with a PDF and, while the quote is open, one button. Accepting
+  records the person's name and email, the moment and the origin; the quote turns
+  Accepted, the owner is told as before, a note lands on the timeline and the audit trail.
+  The link is unguessable and stops working a day after the quote's validity (30 days if
+  none). Anyone holding it can accept, as they could by replying "agreed" — the record of
+  who clicked is the point.
+- **Accept link** button on the quote copies the same link for pasting into a chat. Asking
+  again gives the same link while it lives, so an emailed one is never quietly cancelled.
+  The quote page says who accepted online and when. Staff can still mark a quote accepted
+  after a phone call, as before.
+- **Needs a hand:** none — `APP_URL` is already what customers reach. The page lives at
+  `/q/<token>` on it.
+
 ### Changed — the nightly integrity sweep no longer loads every attachment at once
 
 - The file-presence check walks the `Attachment` table a page at a time with twenty stats

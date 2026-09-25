@@ -23,6 +23,7 @@ import Activities from './pages/Activities';
  */
 // The detail screens are the heaviest and nobody lands on one first: keep them out
 // of the chunk the login page has to wait for.
+const AcceptQuote = lazy(() => import('./pages/AcceptQuote'));
 const DealDetail = lazy(() => import('./pages/DealDetail'));
 const LeadDetail = lazy(() => import('./pages/LeadDetail'));
 const AccountDetail = lazy(() => import('./pages/AccountDetail'));
@@ -57,6 +58,8 @@ export default function App() {
     <Suspense fallback={<Loading />}>
       <Routes>
       <Route path="/login" element={<Login />} />
+      {/* A customer's link from the quotation email: no sign-in, the token is the key. */}
+      <Route path="/q/:token" element={<AcceptQuote />} />
 
       <Route element={<Layout />}>
         <Route index element={<Guard module="dashboard"><Dashboard /></Guard>} />

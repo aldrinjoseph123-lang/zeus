@@ -73,6 +73,9 @@ describe('conventions the whole codebase keeps', () => {
       // Margin reaches only roles with deals:approve — everyone else gets an empty
       // list rather than a masked one, which is the stricter answer.
       'routes/approvals.ts',
+      // The customer's own view of a quote: an explicit select of the sell side, no reader
+      // role to mask for. quoteAcceptance.test.ts pins that no cost field is in it.
+      'routes/quoteAcceptance.ts',
     ]);
     const leaky = sourceFiles('routes')
       .filter((f) => !EXEMPT.has(f))

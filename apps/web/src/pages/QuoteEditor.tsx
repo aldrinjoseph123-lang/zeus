@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Copy, FileDown, Mail, Plus, Save, Upload } from 'lucide-react';
+import { ArrowLeft, Copy, FileDown, Link2, Mail, Plus, Save, Upload } from 'lucide-react';
 import { api, ApiError, download } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { date, dateInput, money, percent } from '../lib/format';
@@ -19,6 +19,7 @@ import { ApprovalBar, type ApprovalState } from '../components/approvals';
 
 interface QuoteFull extends ApprovalState {
   id: string; number: string; version: number; status: string; issueDate: string; validUntil: string | null;
+  acceptedAt: string | null; acceptedByName: string | null; acceptedByEmail: string | null;
   discountPct: string | number; vatRate: string | number; terms: string | null; notes: string | null;
   /** Absent for roles that cannot see cost. */
   defaultMarkupPct?: string | number | null;
@@ -65,6 +66,17 @@ export default function QuoteEditor() {
   const [lines, setLines] = useState<EditableLine[]>([blankLine()]);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // The same link the quotation email carries, for pasting into a chat. Valid until a day
+  // after the quote's validity; asking again returns the same link while it lives.
+  const copyAcceptLink = async () => {
+    try {
+      const { url, expiresAt } = await api.post<{ url: string; expiresAt: string }>(`/quotes/${id}/accept-link`, {});
+      await navigator.clipboard.writeText(url);
+      toast.push(`Accept link copied — works until ${date(expiresAt)}.`);
+    } catch (err) {
+      toast.push(err instanceof ApiError ? err.message : 'Could not make the link.', 'error');
+    }
+  };
 
   const { data: quote, isLoading, error: loadError } = useQuery({
     queryKey: ['quote', id],
@@ -238,7 +250,7 @@ export default function QuoteEditor() {
         description={
           isNew
             ? 'VAT is applied only to taxable lines. Totals update as you type; the server recalculates on save.'
-            : `${quote?.status} · issued ${date(quote?.issueDate)}${quote?.deal ? ` · ${quote.deal.reference}` : ''}`
+            : `${quote?.status} · issued ${date(quote?.issueDate)}${quote?.deal ? ` · ${quote.deal.reference}` : ''}${quote?.acceptedByName ? ` · accepted online by ${quote.acceptedByName} (${quote.acceptedByEmail}) on ${date(quote.acceptedAt)}` : ''}`
         }
         actions={
           <>
@@ -246,6 +258,9 @@ export default function QuoteEditor() {
               <>
                 <Button icon={<FileDown size={14} />} onClick={() => download(`/quotes/${id}/pdf`, `${quote?.number}.pdf`).catch((err) => toast.push(err.message, 'error'))}>PDF</Button>
                 {can('quotes', 'update') ? <Button icon={<Mail size={14} />} onClick={() => setSending(true)}>Email</Button> : null}
+                {can('quotes', 'update') && !locked && quote?.status !== 'REJECTED' ? (
+                  <Button icon={<Link2 size={14} />} onClick={() => copyAcceptLink()}>Accept link</Button>
+                ) : null}
                 {can('quotes', 'create') ? <Button icon={<Copy size={14} />} onClick={() => revise.mutate()}>New version</Button> : null}
               </>
             ) : null}

@@ -30,6 +30,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import reportRoutes from './routes/reports.js';
 import exportRoutes from './routes/exports.js';
 import searchRoutes from './routes/search.js';
+import quoteAcceptanceRoutes from './routes/quoteAcceptance.js';
 import importRoutes from './routes/imports.js';
 import attachmentRoutes from './routes/attachments.js';
 import invoiceRoutes from './routes/invoices.js';
@@ -63,6 +64,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     routeTable: RouteEntry[];
     publicPaths: Set<string>;
+    publicPrefixes: string[];
   }
 }
 
@@ -143,7 +145,11 @@ export async function buildApp() {
   /** Reachable without 2FA even when it is required, so a nagged user can still fix it. */
   const TWO_FA_SETUP_PATHS = new Set(['/api/auth/2fa/enrol', '/api/auth/2fa/confirm', '/api/auth/logout', '/api/auth/change-password']);
 
+  /** Links handed to people outside Zeus — a customer accepting a quotation. Each route
+   * under here is gated by an unguessable token, never by a session. */
+  const PUBLIC_PREFIXES = ['/api/public/'];
   app.decorate('publicPaths', PUBLIC_PATHS);
+  app.decorate('publicPrefixes', PUBLIC_PREFIXES);
 
   // One gate for the whole API: resolve the session, then reject anonymous traffic.
   app.addHook('onRequest', async (request, reply) => {
@@ -155,7 +161,7 @@ export async function buildApp() {
     if (user) request.user = user as never;
 
     const pathOnly = request.url.split('?')[0];
-    if (PUBLIC_PATHS.has(pathOnly)) return;
+    if (PUBLIC_PATHS.has(pathOnly) || PUBLIC_PREFIXES.some((p) => pathOnly.startsWith(p))) return;
     if (!user) return reply.status(401).send({ error: 'Sign in required.' });
 
     const isWrite = request.method !== 'GET' && request.method !== 'HEAD';
@@ -215,6 +221,7 @@ export async function buildApp() {
   await app.register(reportRoutes);
   await app.register(exportRoutes);
   await app.register(searchRoutes);
+  await app.register(quoteAcceptanceRoutes);
   await app.register(importRoutes);
   await app.register(attachmentRoutes);
   await app.register(invoiceRoutes);

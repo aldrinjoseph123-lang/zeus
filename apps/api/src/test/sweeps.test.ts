@@ -54,6 +54,9 @@ describe('sweep: every route in the table', () => {
 
     const publicPaths = app.publicPaths;
     const routes = apiRoutes().filter((r) => !publicPaths.has(r.url))
+      // Token-gated links for people outside Zeus (a customer accepting a quotation): the
+      // gate's own prefix list, so a new one cannot drift from this sweep either.
+      .filter((r) => !app.publicPrefixes.some((p) => r.url.startsWith(p)))
       // The portal has its own cookie and its own gate; its sign-in routes are public
       // for the same reason the staff one is.
       .filter((r) => !r.url.startsWith('/api/portal/auth/'));

@@ -21,6 +21,7 @@ import { sendMail } from '../services/graph.js';
 import { notify, emailTemplate } from '../services/notify.js';
 import { touch } from '../lib/touch.js';
 import { resolvePrice } from '../services/priceBook.js';
+import { acceptLinkFor } from '../services/quoteAcceptance.js';
 
 const lineSchema = z.object({
   id: z.string().optional(),
@@ -58,7 +59,7 @@ const quoteSchema = z.object({
   lines: z.array(lineSchema).default([]),
 });
 
-const quoteInclude = {
+export const quoteInclude = {
   account: true,
   contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
   deal: { select: { id: true, reference: true, name: true } },
@@ -203,7 +204,7 @@ async function marginFlag(quote: { subtotal: unknown; discountAmt: unknown; tota
 }
 
 /** A quote cannot be sent until a manager has signed it off (when approval is on). */
-async function ensureQuoteApproved(id: string): Promise<void> {
+export async function ensureQuoteApproved(id: string): Promise<void> {
   const q = await prisma.quote.findUnique({ where: { id }, select: { number: true, total: true, approvalStatus: true, approvalNote: true } });
   if (!q) throw notFound('Quote not found.');
   const requirement = await approvalRequired('quotes', { total: q.total });
@@ -213,6 +214,21 @@ async function ensureQuoteApproved(id: string): Promise<void> {
         ?? `${q.number} needs a manager's approval before it can be sent.${requirement.reason ? ` ${requirement.reason}` : ''}`,
     );
   }
+}
+
+/** What happens when a quote is accepted, whoever accepted it: the owner is told. */
+export async function announceAcceptance(quote: { id: string; number: string; total: unknown; dealId: string | null; preparedById: string | null; account: { name: string }; deal: { ownerId: string | null } | null }): Promise<void> {
+  await notify({
+    event: 'quote_accepted',
+    title: `Quote accepted — ${quote.number}`,
+    body: `${quote.account.name} · ${formatAed(num(quote.total))} incl. VAT`,
+    link: quote.dealId ? `/deals/${quote.dealId}` : `/quotes/${quote.id}`,
+    ownerId: quote.deal?.ownerId ?? quote.preparedById,
+    facts: [
+      { title: 'Customer', value: quote.account.name },
+      { title: 'Total', value: formatAed(num(quote.total)) },
+    ],
+  });
 }
 
 export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
@@ -445,19 +461,7 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
       include: { account: true, deal: true },
     });
 
-    if (status === 'ACCEPTED') {
-      await notify({
-        event: 'quote_accepted',
-        title: `Quote accepted — ${quote.number}`,
-        body: `${quote.account.name} · ${formatAed(num(quote.total))} incl. VAT`,
-        link: quote.dealId ? `/deals/${quote.dealId}` : `/quotes/${quote.id}`,
-        ownerId: quote.deal?.ownerId ?? quote.preparedById,
-        facts: [
-          { title: 'Customer', value: quote.account.name },
-          { title: 'Total', value: formatAed(num(quote.total)) },
-        ],
-      });
-    }
+    if (status === 'ACCEPTED') await announceAcceptance(quote);
 
     await audit({ user: request.user, action: 'update', entity: 'Quote', entityId: id, summary: `${quote.number} → ${status}`, ip: clientIp(request) });
     return maskFields(request.user, 'quotes', quote);
@@ -573,6 +577,9 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
 
     const pdf = await quotePdf(quote as unknown as QuotePdfData);
     const subject = parsed.data.subject ?? `Quotation ${quote.number} — ${quote.account.name}`;
+    // The customer can accept from the email itself; the same link is also shown on the
+    // quote for staff to paste into a chat.
+    const accept = await acceptLinkFor(quote);
 
     await sendMail({
       log: { kind: 'quote', entity: 'Quote', entityId: quote.id, userId: request.user.id },
@@ -581,13 +588,14 @@ export default async function quoteRoutes(app: FastifyInstance): Promise<void> {
       subject,
       html: emailTemplate(
         subject,
-        parsed.data.message ?? `Please find attached quotation ${quote.number} for ${formatAed(num(quote.total))} including VAT.`,
-        undefined,
+        parsed.data.message ?? `Please find attached quotation ${quote.number} for ${formatAed(num(quote.total))} including VAT. You can review and accept it online with the button below.`,
+        accept.url,
         [
           { title: 'Quotation', value: quote.number },
           { title: 'Total', value: formatAed(num(quote.total)) },
           { title: 'Valid until', value: quote.validUntil ? new Date(quote.validUntil).toLocaleDateString('en-GB') : '—' },
         ],
+        'REVIEW AND ACCEPT',
       ),
       attachments: [{ filename: `${quote.number}.pdf`, contentBytes: pdf.toString('base64'), contentType: 'application/pdf' }],
     });

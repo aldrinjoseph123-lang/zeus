@@ -701,6 +701,15 @@ model Quote {
   preparedBy   User?     @relation(fields: [preparedById], references: [id])
   sentAt       DateTime?
   acceptedAt   DateTime?
+  /// The customer's own way to accept: a link in the quotation email that opens the quote
+  /// and offers an Accept button. The token is the capability — anyone holding the link can
+  /// accept, as they could by replying "agreed" — so it is unguessable and stops working
+  /// after the quote's validity. Who clicked, and from where, is kept for the record.
+  acceptToken          String?   @unique
+  acceptTokenExpiresAt DateTime?
+  acceptedByName       String?
+  acceptedByEmail      String?
+  acceptedFromIp       String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
