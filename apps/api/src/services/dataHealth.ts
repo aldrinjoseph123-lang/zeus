@@ -284,15 +284,27 @@ async function softDeleteDrift(): Promise<Finding> {
 /** An attachment row whose file is gone downloads as a 404 the moment a user clicks
  * it. Better to know on the day it happens than from the person who needed the file. */
 async function attachmentFilesPresent(): Promise<Finding> {
-  const attachments = await prisma.attachment.findMany({ select: { id: true, filename: true, storedName: true } });
-
+  // A page at a time, never the whole table: this runs unattended at night on a small
+  // box, and the table only grows. Twenty stats in flight keeps a slow disk honest.
   const missing: string[] = [];
-  for (const a of attachments) {
-    try {
-      await access(path.join(env.UPLOAD_DIR, path.basename(a.storedName)));
-    } catch {
-      missing.push(a.filename);
+  let checked = 0;
+  for (let after: string | undefined; ;) {
+    const page = await prisma.attachment.findMany({
+      select: { id: true, filename: true, storedName: true },
+      orderBy: { id: 'asc' }, take: 500, ...(after ? { cursor: { id: after }, skip: 1 } : {}),
+    });
+    if (!page.length) break;
+    for (let i = 0; i < page.length; i += 20) {
+      await Promise.all(page.slice(i, i + 20).map(async (a) => {
+        try {
+          await access(path.join(env.UPLOAD_DIR, path.basename(a.storedName)));
+        } catch {
+          missing.push(a.filename);
+        }
+      }));
     }
+    checked += page.length;
+    after = page[page.length - 1].id;
   }
 
   return {
@@ -302,7 +314,7 @@ async function attachmentFilesPresent(): Promise<Finding> {
     examples: sample(missing),
     detail: missing.length
       ? `${missing.length} attachment(s) whose file is missing from the uploads directory.`
-      : `${attachments.length} attachment(s) present.`,
+      : `${checked} attachment(s) present.`,
   };
 }
 

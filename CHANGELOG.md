@@ -14,6 +14,12 @@ Deploy any version with `./docker/deploy.sh vX.Y.Z`; roll back with the previous
 
 ## Unreleased
 
+### Changed — the nightly integrity sweep no longer loads every attachment at once
+
+- The file-presence check walks the `Attachment` table a page at a time with twenty stats
+  in flight, instead of holding the whole table in memory. Same strictness; safe as the
+  data grows on a small box.
+
 ### Changed — the request limit is per person, not per office
 
 - **The rate limit counts per session.** It was 300 requests a minute per address, and an
